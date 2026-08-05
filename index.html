@@ -1,0 +1,2286 @@
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#F2EFE9">
+<title>PARCIAL — natação</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --deck:#F2EFE9; --ink:#12181C; --ink-2:#5A6670; --line:#D8D3C9;
+  --clock:#E0342A; --rope:#F2B705; --water:#0E6E8C; --ok:#1B7F5A; --card:#FFF;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --disp:'Barlow Condensed',ui-sans-serif,system-ui,sans-serif;
+  --body:'Barlow',ui-sans-serif,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --sh:0 1px 0 var(--line),0 2px 12px rgba(18,24,28,.05);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--deck);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;
+  padding-bottom:calc(76px + var(--sab));-webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px}
+h1,h2,h3{font-family:var(--disp);font-weight:700;margin:0;line-height:1.06}
+h1{font-size:30px;text-transform:uppercase} h2{font-size:23px;text-transform:uppercase}
+h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
+.eyebrow{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+.t{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--ink-2)} .small{font-size:14px} .xs{font-size:12.5px}
+.center{text-align:center}
+header{position:sticky;top:0;z-index:30;background:var(--deck);border-bottom:1px solid var(--line);padding-top:var(--sat)}
+.rope{height:6px;background:repeating-linear-gradient(90deg,var(--rope) 0 14px,var(--ink) 14px 28px)}
+.hbar{display:flex;align-items:center;gap:9px;padding:9px 0 10px;min-height:52px}
+.brand{font-family:var(--disp);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.06em}
+.brand span{color:var(--clock)}
+.pill{font-family:var(--disp);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;border:1.5px solid var(--ink);
+  border-radius:999px;padding:3px 10px;font-weight:600;white-space:nowrap;background:none;color:var(--ink);min-height:0}
+.pill.pro{border-color:var(--rope);background:var(--rope)}
+.pill.tec{border-color:var(--water);color:var(--water)}
+.grow{flex:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px;margin:12px 0;box-shadow:var(--sh)}
+.card.tight{padding:11px 13px}
+.row{display:flex;gap:10px;align-items:center} .row.wrap{flex-wrap:wrap}
+.sep{height:1px;background:var(--line);margin:13px 0}
+button{font-family:var(--disp);font-weight:600;font-size:16px;letter-spacing:.04em;text-transform:uppercase;
+  border:1.5px solid var(--ink);background:var(--card);color:var(--ink);border-radius:11px;padding:12px 15px;cursor:pointer;
+  min-height:46px;transition:transform .06s,background .12s}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:3px solid var(--water);outline-offset:2px}
+button.primary{background:var(--ink);color:var(--deck)}
+button.danger{border-color:var(--clock);color:var(--clock)}
+button.ghost{border-color:var(--line);color:var(--ink-2);font-weight:500}
+button.sm{padding:8px 12px;font-size:14px;border-radius:9px;min-height:38px}
+button.full{width:100%}
+input,select,textarea{font-family:var(--body);font-size:16px;width:100%;padding:12px 13px;border:1.5px solid var(--line);
+  border-radius:11px;background:var(--card);color:var(--ink);min-height:46px;-webkit-appearance:none;appearance:none}
+select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%235A6670' stroke-width='1.8' fill='none'/></svg>");
+  background-repeat:no-repeat;background-position:right 14px center}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--water)}
+textarea{min-height:170px;font-family:var(--mono);font-size:15px;line-height:1.6}
+label{display:block;font-family:var(--disp);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin:0 0 5px}
+.field{margin:12px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.opt{display:flex;gap:8px;flex-wrap:wrap}
+.opt button{flex:1;min-width:96px;font-size:14px;padding:11px 8px}
+.opt button.on{background:var(--ink);color:var(--deck);border-color:var(--ink)}
+.perfil{display:flex;gap:13px;align-items:flex-start;text-align:left;width:100%;padding:16px;border-radius:14px;
+  text-transform:none;font-family:var(--body);font-size:16px;font-weight:400;letter-spacing:0;background:var(--card)}
+.perfil .ic{font-family:var(--disp);font-size:26px;font-weight:700;width:44px;height:44px;flex:0 0 44px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;background:var(--deck);border:1.5px solid var(--line)}
+.perfil b{font-family:var(--disp);font-size:20px;text-transform:uppercase;display:block;line-height:1.1}
+.perfil.on{border-color:var(--ink);border-width:2px}
+.perfil.on .ic{background:var(--ink);color:var(--deck);border-color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);text-align:left;
+  padding:7px 5px;border-bottom:1.5px solid var(--line);font-weight:600}
+td{padding:8px 5px;border-bottom:1px solid var(--line)}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+td input{padding:7px 5px;font-family:var(--mono);font-size:15px;text-align:center;border-radius:8px;min-height:40px}
+.z{display:inline-block;font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  padding:2px 8px;border-radius:6px;border:1.5px solid}
+.z1{border-color:#8FA3AD;color:#5A6670} .z2{border-color:var(--water);color:var(--water)}
+.z3{border-color:var(--rope);color:#9A7300} .z4{border-color:var(--clock);color:var(--clock)}
+.tag{font-family:var(--disp);font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--deck);
+  padding:3px 8px;border-radius:6px;display:inline-block}
+.tag.w{background:var(--water)} .tag.r{background:var(--clock)} .tag.y{background:var(--rope);color:var(--ink)}
+.tag.o{background:none;border:1.5px solid var(--line);color:var(--ink-2)}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1.5px solid var(--ink);z-index:40;
+  padding-bottom:var(--sab)}
+.navin{max-width:560px;margin:0 auto;display:flex}
+nav button{flex:1;border:none;border-radius:0;background:none;padding:9px 1px 10px;font-size:11px;letter-spacing:.04em;
+  color:var(--ink-2);min-height:0}
+nav button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--clock)}
+nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
+.toast{position:fixed;left:50%;bottom:calc(88px + var(--sab));transform:translateX(-50%);background:var(--ink);color:var(--deck);
+  padding:11px 18px;border-radius:999px;font-family:var(--disp);letter-spacing:.05em;text-transform:uppercase;font-size:14px;
+  z-index:80;opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center}
+.toast.on{opacity:1}
+.empty{text-align:center;padding:36px 16px;color:var(--ink-2)}
+.empty .big{font-family:var(--disp);font-size:22px;text-transform:uppercase;color:var(--ink);margin-bottom:6px}
+.bar{height:9px;background:var(--line);border-radius:5px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--water)}
+.kpi .v{font-family:var(--mono);font-weight:700;font-size:25px;line-height:1}
+.kpi .l{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chip{font-family:var(--mono);font-size:13.5px;border:1px solid var(--line);border-radius:7px;padding:3px 8px;background:var(--card)}
+.chip.best{border-color:var(--rope);background:#FFFCF0;font-weight:700}
+.item{border-left:3px solid var(--line);padding:9px 0 9px 12px;margin:10px 0}
+.item.sel{border-left-color:var(--clock);background:#FFFAF9}
+.item .d{font-family:var(--disp);font-weight:700;font-size:19px;text-transform:uppercase}
+.item .i{font-family:var(--mono);font-size:13px;color:var(--water);font-weight:700}
+.blk{margin:17px 0 4px;display:flex;align-items:center;gap:9px}
+.blk .ln{flex:1;height:1px;background:var(--line)}
+.lst{display:flex;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid var(--line);width:100%;
+  text-align:left;background:none;border-left:none;border-right:none;border-top:none;border-radius:0;
+  text-transform:none;font-family:var(--body);font-size:16px;font-weight:400;letter-spacing:0;padding-left:2px}
+.av{width:40px;height:40px;flex:0 0 40px;border-radius:50%;background:var(--deck);border:1.5px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-family:var(--disp);font-weight:700;font-size:16px}
+.sheet{position:fixed;inset:0;z-index:90;display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(18,24,28,.45);opacity:0;pointer-events:none;transition:opacity .2s}
+.sheet.on{opacity:1;pointer-events:auto}
+.sheet .inner{background:var(--card);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + var(--sab));
+  transform:translateY(16px);transition:transform .22s;max-height:88vh;overflow:auto}
+.sheet.on .inner{transform:translateY(0)}
+.grab{width:38px;height:4px;background:var(--line);border-radius:2px;margin:0 auto 14px}
+.btnlink{display:flex;align-items:center;justify-content:center;text-decoration:none;font-family:var(--disp);
+  font-weight:600;font-size:16px;letter-spacing:.04em;text-transform:uppercase;border:1.5px solid var(--ink);
+  background:var(--ink);color:var(--deck);border-radius:11px;padding:12px 15px;min-height:46px;width:100%;margin-top:9px}
+.btnlink.zap{background:#25D366;border-color:#1EA952;color:#062B14}
+.btnlink.out{background:var(--card);color:var(--ink)}
+.destin{display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink)}
+.hide{display:none!important}
+.ficha th,.ficha td{border:1px solid var(--line);text-align:center;padding:6px 3px;font-size:13.5px}
+.ficha td.nome{text-align:left;font-weight:600}
+svg.chart{width:100%;height:auto;display:block}
+.note{padding:11px 13px;border-left:3px solid var(--water);background:#F4FAFC;font-size:14px;border-radius:0 8px 8px 0}
+.note.warn{border-color:var(--clock);background:#FFF6F5}
+.note.ok{border-color:var(--ok);background:#F4FBF8}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{nav,header,.noprint{display:none!important}body{padding:0;background:#fff}.card{break-inside:avoid;box-shadow:none}}
+</style>
+
+<header id="hdr" class="hide">
+  <div class="rope"></div>
+  <div class="wrap hbar">
+    <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
+    <div class="brand">PAR<span>CIAL</span></div>
+    <button class="pill" id="pRole" onclick="abrirConta()">—</button>
+    <div class="grow"></div>
+    <button class="pill" id="pModo" onclick="abrirModo()">·</button>
+    <button class="sm ghost" onclick="sincronizar(false)">↻</button>
+  </div>
+</header>
+
+<main class="wrap" id="app"></main>
+<nav class="hide" id="nav"><div class="navin" id="navin"></div></nav>
+<div class="toast" id="toast"></div>
+<div class="sheet" id="sheet" onclick="if(event.target===this)fecharSheet()">
+  <div class="inner"><div class="grab"></div><div id="sheetBody"></div></div>
+</div>
+
+<!-- Firebase (SDK "compat" — funciona em <script> comum, sem build).
+     Só entra em ação quando FB_CONFIG estiver preenchido lá embaixo. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
+<script>
+/* =====================================================================
+   PARCIAL v04 — natação  ·  iPhone-first
+   Perfis: atleta · atleta PRO · técnico
+   ===================================================================== */
+const VER='v08';
+/* ─────────────────────────────────────────────────────────────
+   CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
+   o acesso ou liberar para outra pessoa. Independe do técnico.
+   ───────────────────────────────────────────────────────────── */
+const CODIGO_PRO='BARBATO-PRO-2026';
+
+/* ---------- armazenamento (nuvem do app, com reserva em memória) ---------- */
+const MEM={};
+
+/* ─────────────────────────────────────────────────────────────
+   FIREBASE — sincronia entre pessoas (técnico + atletas).
+   Cole aqui a configuração do SEU projeto:
+     Console do Firebase › ⚙ Configurações do projeto › Seus apps › SDK.
+   Enquanto os campos estiverem vazios, o app roda só neste aparelho
+   (ótimo para testar). Preenchido + publicado no GitHub Pages = todo
+   mundo que abrir o mesmo endereço passa a compartilhar os dados,
+   cada um com a sua conta.
+   ───────────────────────────────────────────────────────────── */
+const FB_CONFIG={
+  apiKey:'AIzaSyDhi2wF_9CmIquSPWNpanPKe1Z9gMoBk-o',
+  authDomain:'parcial-cdb0e.firebaseapp.com',
+  projectId:'parcial-cdb0e',
+  storageBucket:'parcial-cdb0e.firebasestorage.app',
+  messagingSenderId:'612432062815',
+  appId:'1:612432062815:web:f4fca1e40b64ab823f2eea'
+};
+let FB=null, fdb=null, fauth=null;
+try{
+  if(FB_CONFIG.apiKey && typeof firebase!=='undefined'){
+    firebase.initializeApp(FB_CONFIG);
+    fdb=firebase.firestore(); fauth=firebase.auth();
+    FB=true;
+  }
+}catch(e){ console.warn('Firebase não iniciou:',e.message); }
+
+const NUVEM=(typeof window!=='undefined'&&window.storage&&typeof window.storage.get==='function');
+let LOCAL=false;
+try{ if(!FB&&!NUVEM&&typeof localStorage!=='undefined'){localStorage.setItem('__t','1');localStorage.removeItem('__t');LOCAL=true} }catch(e){}
+const PFX='parcial_';
+/* Firestore não aceita '/' em id de documento; as chaves do app não têm,
+   mas trocamos por precaução. */
+const fkey=k=>k.replace(/\//g,'∕');
+const DB={
+  async get(k,sh=true){
+    if(FB){
+      if(k==='sessao'){try{const v=localStorage.getItem(PFX+'sessao');return v?JSON.parse(v):null}catch(e){return null}}
+      try{const s=await fdb.collection('kv').doc(fkey(k)).get();return s.exists?JSON.parse(s.data().v):null}
+      catch(e){console.warn('DB.get',k,e.message);return null}
+    }
+    if(NUVEM){try{const r=await window.storage.get(k,sh);return r?JSON.parse(r.value):null}catch(e){return null}}
+    if(LOCAL){try{const v=localStorage.getItem(PFX+k);return v?JSON.parse(v):null}catch(e){return null}}
+    return MEM[k]!==undefined?JSON.parse(MEM[k]):null;
+  },
+  async set(k,v,sh=true){
+    if(FB){
+      if(k==='sessao'){try{localStorage.setItem(PFX+'sessao',JSON.stringify(v));return true}catch(e){return false}}
+      try{
+        await fdb.collection('kv').doc(fkey(k)).set({
+          v:JSON.stringify(v),
+          dono:k.startsWith('pro_')?(fauth.currentUser?fauth.currentUser.uid:null):null,
+          equipe:k.startsWith('eq_')?k.split('_')[1]:null,
+          at:firebase.firestore.FieldValue.serverTimestamp()
+        });
+        return true;
+      }catch(e){toast('Falha ao salvar');console.warn('DB.set',k,e.message);return false}
+    }
+    if(NUVEM){try{await window.storage.set(k,JSON.stringify(v),sh);return true}catch(e){toast('Falha ao salvar');return false}}
+    if(LOCAL){try{localStorage.setItem(PFX+k,JSON.stringify(v));return true}
+      catch(e){toast('Memória cheia — exporte um backup');return false}}
+    MEM[k]=JSON.stringify(v); return true;
+  }
+};
+const EMREDE=!!(FB||NUVEM);
+const MODO=EMREDE?'em rede':(LOCAL?'neste aparelho':'temporário');
+
+function exportarBackup(){
+  const dados={};
+  if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
+    if(k&&k.startsWith(PFX))dados[k.slice(PFX.length)]=JSON.parse(localStorage.getItem(k))}}
+  else Object.keys(MEM).forEach(k=>dados[k]=JSON.parse(MEM[k]));
+  const pacote={app:'PARCIAL',versao:VER,em:new Date().toISOString(),dados};
+  try{
+    const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
+    const a=document.createElement('a'); a.href=url; a.download=`parcial-backup-${hoje()}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Backup gerado');
+  }catch(e){
+    sheet(`<h2>Backup</h2><p class="small muted">Copie e guarde este texto.</p>
+      <textarea id="bkTxt" style="min-height:200px;font-size:11px">${esc(JSON.stringify(pacote))}</textarea>
+      <button class="primary full" style="margin-top:10px" onclick="copiarTexto('bkTxt')">Copiar</button>`);
+  }
+}
+async function importarBackup(inp){
+  const f=inp.files[0]; if(!f)return;
+  try{
+    const j=JSON.parse(await f.text());
+    if(!j.dados)return toast('Arquivo não reconhecido');
+    let n=0; for(const [k,v] of Object.entries(j.dados)){ await DB.set(k,v); n++ }
+    toast(`${n} registros restaurados`);
+    const ses=await DB.get('sessao',false);
+    if(ses&&ses.email){const u=await DB.get(kUser(ses.email)); if(u)return entrarSessao(u)}
+    S.vista='entrada'; render();
+  }catch(e){ toast('Não consegui ler o backup') }
+}
+/* chaves */
+const kUser=em=>`u_${em.toLowerCase()}`;
+const kEq=eq=>`eq_${eq}`;                     /* {slug,nome,criadoEm,tecnicoEmail,codigoPro} */
+const kEqUsers=eq=>`eq_${eq}_users`;          /* [emails] */
+const kLib=eq=>`eq_${eq}_libs`;               /* liberações por CPF */
+const kTrIdx=eq=>`eq_${eq}_tridx`;
+const kTr=(eq,id)=>`eq_${eq}_tr_${id}`;
+const kCIdx=eq=>`eq_${eq}_cidx`;
+const kCmp=(eq,id)=>`eq_${eq}_cmp_${id}`;
+const kPro=uid=>`pro_${uid}`;                 /* {pbs,garmin,seco,resultados} */
+const kTok=t=>`tok_${t}`;
+
+/* ---------- estado ---------- */
+const S={
+  vista:'entrada', perfilEscolhido:null, u:null, eq:null,
+  aba:'treinos', sub:null, treino:null, tridx:[], cidx:[], comp:null,
+  provaSel:null, atletaSel:null, pro:null, elenco:[], libs:[],
+  escrevendo:false, selMulti:[], filtroNivel:'todos'
+};
+const NIVEIS=['Master','Aperfeiçoamento','Águas Abertas'];
+S.pilha=[];
+
+/* ---------- histórico de navegação ----------
+   Cada mudança de tela guarda uma fotografia do estado. O botão voltar
+   desfaz passo a passo até o começo do cadastro. */
+function fotografia(){
+  return{vista:S.vista,perfil:S.perfilEscolhido,aba:S.aba,sub:S.sub||null,
+    atletaSel:S.atletaSel||null,provaSel:S.provaSel==null?null:S.provaSel,
+    treinoId:S.treino?.id||null,compId:S.comp?.id||null};
+}
+function push(){
+  const f=fotografia(),topo=S.pilha[S.pilha.length-1];
+  if(topo&&JSON.stringify(topo)===JSON.stringify(f))return;
+  S.pilha.push(f); if(S.pilha.length>50)S.pilha.shift();
+  try{history.pushState({p:S.pilha.length},'')}catch(e){}
+}
+async function voltar(){
+  if(document.getElementById('sheet').classList.contains('on'))return fecharSheet();
+  const f=S.pilha.pop();
+  if(!f){
+    if(S.u)return toast('Você já está no início');
+    S.vista='entrada'; S.perfilEscolhido=null; return render();
+  }
+  S.vista=f.vista; S.perfilEscolhido=f.perfil; S.aba=f.aba; S.sub=f.sub;
+  S.atletaSel=f.atletaSel; S.provaSel=f.provaSel; S.editando=false;
+  if(S.u){
+    if(f.treinoId){ if(S.treino?.id!==f.treinoId)S.treino=await DB.get(kTr(S.u.equipe,f.treinoId)) }
+    if(f.compId){ if(S.comp?.id!==f.compId)S.comp=await DB.get(kCmp(S.u.equipe,f.compId)) } else S.comp=null;
+  }
+  render(); window.scrollTo(0,0);
+}
+try{ window.addEventListener('popstate',()=>{if(S.pilha.length)voltar()}) }catch(e){}
+
+/* ---------- utilidades ---------- */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const fmtInt=ms=>{const x=fmt(ms,true);return x.replace(/\.00$/,'')};
+const hoje=()=>new Date().toISOString().slice(0,10);
+const brData=d=>d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'';
+const brCurta=d=>d?d.slice(8,10)+'/'+d.slice(5,7):'';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const slug=s=>(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const iniciais=n=>(n||'').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
+const prim=n=>(n||'').trim().split(/\s+/)[0];
+function fmt(ms,curto){
+  if(ms==null||isNaN(ms))return'—';
+  const cs=Math.floor(Math.abs(ms)/10),s=Math.floor(cs/100),c=cs%100,m=Math.floor(s/60),sg=s%60,sn=ms<0?'-':'';
+  if(m>0)return`${sn}${m}:${String(sg).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
+  return`${sn}${curto?sg:String(sg).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
+}
+function parseTempo(x){
+  if(x==null||x==='')return null;
+  const t=String(x).trim().replace(/["″]/g,'').replace(/['′h]/g,':').replace(',','.');
+  const p=t.split(':').map(n=>parseFloat(n)).filter(n=>!isNaN(n));
+  if(!p.length)return null;
+  if(p.length===1)return Math.round(p[0]*1000);
+  if(p.length===2)return Math.round((p[0]*60+p[1])*1000);
+  return Math.round((p[0]*3600+p[1]*60+p[2])*1000);
+}
+let tT; function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');
+  clearTimeout(tT);tT=setTimeout(()=>e.classList.remove('on'),2600)}
+function sheet(html){document.getElementById('sheetBody').innerHTML=html;document.getElementById('sheet').classList.add('on')}
+function fecharSheet(){document.getElementById('sheet').classList.remove('on')}
+const val=id=>(document.getElementById(id)?.value||'').trim();
+
+/* ---------- telefone ---------- */
+const soDig=t=>(t||'').replace(/\D/g,'');
+function telValido(t){const d=soDig(t);return d.length>=10&&d.length<=13}
+function telWa(t){                       /* formato internacional para o link */
+  let d=soDig(t); if(!d)return null;
+  if(d.length<=11)d='55'+d;              /* assume Brasil quando vier só DDD + número */
+  return d;
+}
+function telBr(t){
+  const d=soDig(t); if(!d)return '';
+  const n=d.length>11?d.slice(-11):d;
+  return n.length===11?`(${n.slice(0,2)}) ${n.slice(2,7)}-${n.slice(7)}`
+       : n.length===10?`(${n.slice(0,2)}) ${n.slice(2,6)}-${n.slice(6)}`:d;
+}
+async function copiarTexto(id){
+  const el=document.getElementById(id); if(!el)return;
+  try{ await navigator.clipboard.writeText(el.value); toast('Texto copiado'); return }catch(e){}
+  try{ el.removeAttribute('readonly'); el.focus(); el.select(); el.setSelectionRange(0,999999);
+       if(document.execCommand('copy')){toast('Texto copiado');return} }catch(e){}
+  toast('Toque e segure no texto para copiar');
+}
+
+/* ---------- CPF ---------- */
+function cpfLimpo(c){return(c||'').replace(/\D/g,'')}
+function cpfValido(c){
+  c=cpfLimpo(c); if(c.length!==11||/^(\d)\1{10}$/.test(c))return false;
+  let s=0; for(let i=0;i<9;i++)s+=+c[i]*(10-i);
+  let d=(s*10)%11; if(d===10)d=0; if(d!==+c[9])return false;
+  s=0; for(let i=0;i<10;i++)s+=+c[i]*(11-i);
+  d=(s*10)%11; if(d===10)d=0; return d===+c[10];
+}
+const cpfMasc=c=>{c=cpfLimpo(c);return c.length===11?`${c.slice(0,3)}.${c.slice(3,6)}.${c.slice(6,9)}-${c.slice(9)}`:c};
+
+/* ---------- senha ---------- */
+async function hash(txt,sal){
+  const dado=sal+'::'+txt;
+  if(typeof crypto!=='undefined'&&crypto.subtle){
+    const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(dado));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  let h=5381; for(let i=0;i<dado.length;i++)h=((h<<5)+h+dado.charCodeAt(i))>>>0;
+  return 'f'+h.toString(16);
+}
+const novoSal=()=>Math.random().toString(36).slice(2,12);
+
+/* idade (em anos) a partir da data de nascimento YYYY-MM-DD */
+function idadeDe(nasc){
+  if(!nasc)return null;
+  const d=new Date(nasc+'T00:00:00'); if(isNaN(d))return null;
+  const h=new Date(); let a=h.getFullYear()-d.getFullYear();
+  const m=h.getMonth()-d.getMonth(); if(m<0||(m===0&&h.getDate()<d.getDate()))a--;
+  return a;
+}
+/* idade para exibir — calcula do nascimento; cai para o campo antigo se preciso */
+function anos(u){ const a=idadeDe(u&&u.nascimento); return a!=null?a:((u&&u.idade!=null)?u.idade:'—'); }
+
+/* =====================================================================
+   AUTENTICAÇÃO
+   ===================================================================== */
+function traduzErroFB(code){
+  const m={
+    'auth/email-already-in-use':'Já existe conta com este e-mail',
+    'auth/invalid-email':'E-mail inválido',
+    'auth/weak-password':'Senha muito fraca (mínimo 6 caracteres)',
+    'auth/user-not-found':'E-mail não cadastrado',
+    'auth/wrong-password':'Senha incorreta',
+    'auth/invalid-credential':'E-mail ou senha incorretos',
+    'auth/too-many-requests':'Muitas tentativas. Aguarde um instante',
+    'auth/network-request-failed':'Sem conexão. Tente de novo'
+  };
+  return m[code]||'Não consegui completar. Tente de novo';
+}
+
+/* Cadastro no modo em rede (Firebase). Cria a conta de verdade e só depois
+   valida CPF/código/equipe — assim as liberações não precisam ficar públicas.
+   Se a validação falhar, a conta recém-criada é removida. */
+async function cadastrarFB(dados){
+  const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,codigoPro,nivel}=dados;
+  if(!equipe)return toast('Informe o nome da equipe');
+  if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
+  const id=idadeDe(nascimento);
+  if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
+  if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
+  if(!senha||senha.length<6)return toast('A senha precisa de ao menos 6 caracteres');
+  if(senha!==senha2)return toast('As senhas não conferem');
+
+  const em=email.toLowerCase(), eqSlug=slug(equipe);
+  let cred;
+  try{ cred=await fauth.createUserWithEmailAndPassword(em,senha); }
+  catch(e){ return toast(traduzErroFB(e.code)); }
+  const abortar=async msg=>{ try{await cred.user.delete()}catch(_){} return toast(msg); };
+
+  let eq=await DB.get(kEq(eqSlug));
+  let nivelFinal=nivel||'Master';
+  async function criarEquipe(dono){
+    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:CODIGO_PRO};
+    await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
+    await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
+    return nova;
+  }
+
+  if(perfil==='tecnico'){
+    if(!eq)eq=await criarEquipe(em);
+    else if(!eq.tecnicoEmail){eq.tecnicoEmail=em;await DB.set(kEq(eqSlug),eq)}
+  }else if(perfil==='pro'){
+    const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
+    const aceito=cod===CODIGO_PRO.toUpperCase()||(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());
+    if(!aceito)return abortar('Código PRO inválido');
+    if(!eq)eq=await criarEquipe(null);
+    nivelFinal='Master';
+  }else{
+    if(!eq)return abortar('Equipe não encontrada. Confira o nome com seu técnico.');
+    if(!cpfValido(cpf))return abortar('CPF inválido');
+    const libs=await DB.get(kLib(eqSlug))||[];
+    const lib=libs.find(l=>l.cpf===cpfLimpo(cpf));
+    if(!lib)return abortar('CPF não liberado pelo técnico');
+    if(lib.usado)return abortar('Este CPF já tem conta ativa');
+    nivelFinal=lib.nivel||'Master';
+    lib.usado=true; lib.email=em; await DB.set(kLib(eqSlug),libs);
+  }
+
+  /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
+     dos dados PRO (só o dono lê pro_<uid>). */
+  const u={id:cred.user.uid,perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
+    email:em,nascimento,idade:id,telefone:soDig(telefone),
+    tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
+    nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,criadoEm:Date.now()};
+  await DB.set(kUser(u.email),u);
+  const us=await DB.get(kEqUsers(eqSlug))||[]; if(!us.includes(u.email)){us.push(u.email);await DB.set(kEqUsers(eqSlug),us)}
+  await entrarSessao(u);
+  toast('Conta criada. Bem-vindo!');
+}
+
+async function autenticarFB(email,senha){
+  const em=(email||'').toLowerCase();
+  try{ await fauth.signInWithEmailAndPassword(em,senha); }
+  catch(e){ return toast(traduzErroFB(e.code)); }
+  const u=await DB.get(kUser(em));
+  if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Refaça o cadastro.'); }
+  if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada pelo técnico'); }
+  await entrarSessao(u); toast('Bom treino, '+prim(u.nome)+'!');
+}
+
+async function cadastrar(dados){
+  if(FB)return cadastrarFB(dados);
+  const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,codigoPro,nivel}=dados;
+  if(!equipe)return toast('Informe o nome da equipe');
+  if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
+  const id=idadeDe(nascimento);
+  if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
+  if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
+  if(!senha||senha.length<6)return toast('A senha precisa de ao menos 6 caracteres');
+  if(senha!==senha2)return toast('As senhas não conferem');
+  if(await DB.get(kUser(email)))return toast('Já existe conta com este e-mail');
+
+  const eqSlug=slug(equipe);
+  let eq=await DB.get(kEq(eqSlug));
+  let nivelFinal=nivel||'Master';
+
+  async function criarEquipe(dono){
+    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:CODIGO_PRO};
+    await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
+    await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
+    return nova;
+  }
+
+  if(perfil==='tecnico'){
+    if(!eq)eq=await criarEquipe(email.toLowerCase());
+    else if(!eq.tecnicoEmail){eq.tecnicoEmail=email.toLowerCase();await DB.set(kEq(eqSlug),eq)}
+  }else if(perfil==='pro'){
+    /* O PRO não depende de liberação do técnico: a tranca é o código mestre. */
+    const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
+    const aceito=cod===CODIGO_PRO.toUpperCase()||(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());
+    if(!aceito)return toast('Código PRO inválido');
+    if(!eq)eq=await criarEquipe(null);   /* equipe nasce sem técnico; ele entra depois */
+    nivelFinal='Master';
+  }else{
+    if(!eq)return toast('Equipe não encontrada. Confira o nome com seu técnico.');
+    if(!cpfValido(cpf))return toast('CPF inválido');
+    const libs=await DB.get(kLib(eqSlug))||[];
+    const lib=libs.find(l=>l.cpf===cpfLimpo(cpf));
+    if(!lib)return toast('CPF não liberado pelo técnico');
+    if(lib.usado)return toast('Este CPF já tem conta ativa');
+    nivelFinal=lib.nivel||'Master';
+    lib.usado=true; lib.email=email.toLowerCase(); await DB.set(kLib(eqSlug),libs);
+  }
+
+  const sal=novoSal();
+  const u={id:uid(),perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
+    email:email.toLowerCase(),nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
+    tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
+    ativo:true,criadoEm:Date.now()};
+  await DB.set(kUser(u.email),u);
+  const us=await DB.get(kEqUsers(eqSlug))||[]; us.push(u.email); await DB.set(kEqUsers(eqSlug),us);
+  await entrarSessao(u);
+  toast('Conta criada. Bem-vindo!');
+}
+
+async function autenticar(email,senha){
+  if(FB)return autenticarFB(email,senha);
+  const u=await DB.get(kUser((email||'').toLowerCase()));
+  if(!u)return toast('E-mail não cadastrado');
+  if(u.ativo===false)return toast('Conta desativada pelo técnico');
+  if(await hash(senha,u.sal)!==u.senha)return toast('Senha incorreta');
+  await entrarSessao(u); toast('Bom treino, '+prim(u.nome)+'!');
+}
+async function entrarSessao(u){
+  S.u=u; await DB.set('sessao',{email:u.email},false);
+  S.eq=await DB.get(kEq(u.equipe));
+  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
+  await carregarDados(); ligarSincronia(); render();
+}
+/* PRO liga/desliga o chapéu de gestão da equipe */
+function alternarGestao(){
+  S.gestao=!S.gestao; S.aba='treinos'; S.sub=null; S.provaSel=null; S.atletaSel=null; S.treino=null; S.comp=null; S.pilha=[];
+  fecharSheet(); toast(S.gestao?'Modo gestão ativado':'Modo gestão desativado'); render();
+}
+async function sair(){
+  await DB.set('sessao',null,false);
+  if(FB){try{await fauth.signOut()}catch(e){}}
+  S.u=null;S.vista='entrada';S.perfilEscolhido=null;S.treino=null;S.comp=null;S.pilha=[];fecharSheet();render();
+}
+
+/* ---------- recuperação de senha ---------- */
+async function pedirReset(email){
+  if(FB){
+    const em=(email||'').toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em))return toast('E-mail inválido');
+    try{ await fauth.sendPasswordResetEmail(em); toast('Enviamos um link de recuperação para '+em); }
+    catch(e){ toast(traduzErroFB(e.code)); }
+    return;
+  }
+  const u=await DB.get(kUser((email||'').toLowerCase()));
+  if(!u)return toast('E-mail não cadastrado');
+  const tok=uid()+uid();
+  await DB.set(kTok(tok),{email:u.email,exp:Date.now()+1000*60*60*2});
+  /* PONTO DE INTEGRAÇÃO: aqui o back-end envia o e-mail com o link abaixo. */
+  const link=location.origin+location.pathname+'#recuperar='+tok;
+  sheet(`<h2>Link de recuperação</h2>
+    <p class="small muted" style="margin:8px 0 12px">Válido por 2 horas. Na versão publicada este link chega no e-mail
+    <b>${esc(u.email)}</b> automaticamente. Enquanto o envio não está ligado, copie e abra o endereço abaixo.</p>
+    <textarea id="rcLink" style="min-height:70px;font-size:12.5px">${esc(link)}</textarea>
+    <button class="full primary" style="margin-top:10px" onclick="copiarTexto('rcLink')">Copiar link</button>
+    <button class="full ghost" style="margin-top:8px" onclick="S.vista='reset';S.tok='${tok}';fecharSheet();render()">Redefinir agora</button>`);
+}
+async function aplicarReset(tok,senha,senha2){
+  if(!senha||senha.length<6)return toast('Mínimo de 6 caracteres');
+  if(senha!==senha2)return toast('As senhas não conferem');
+  const t=await DB.get(kTok(tok));
+  if(!t)return toast('Link inválido');
+  if(Date.now()>t.exp)return toast('Link expirado — peça outro');
+  const u=await DB.get(kUser(t.email)); if(!u)return toast('Conta não encontrada');
+  u.sal=novoSal(); u.senha=await hash(senha,u.sal);
+  await DB.set(kUser(u.email),u); await DB.set(kTok(tok),null);
+  toast('Senha redefinida'); S.vista='entrada'; S.perfilEscolhido=null; render();
+}
+function copiar(t){
+  if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>toast('Copiado'),()=>toast('Copie manualmente'));
+  else toast('Copie manualmente');
+}
+
+/* =====================================================================
+   CARGA DE DADOS
+   ===================================================================== */
+async function carregarDados(){
+  if(!S.u)return;
+  const eq=S.u.equipe;
+  S.tridx=await DB.get(kTrIdx(eq))||[];
+  S.cidx=await DB.get(kCIdx(eq))||[];
+  S.libs=await DB.get(kLib(eq))||[];
+  const emails=await DB.get(kEqUsers(eq))||[];
+  const elenco=[];
+  for(const em of emails){const u=await DB.get(kUser(em)); if(u&&u.perfil!=='tecnico')elenco.push(u)}
+  S.elenco=elenco.sort((a,b)=>a.nome.localeCompare(b.nome));
+  const meus=ehGestor()?S.tridx:S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
+  if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
+  if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
+  if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[]};
+  S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
+}
+async function sincronizar(sil){
+  if(!S.u)return;
+  const u=await DB.get(kUser(S.u.email)); if(u)S.u=u;
+  await carregarDados(); if(!sil)toast('Atualizado'); render();
+}
+setInterval(()=>{if(S.u&&!S.escrevendo)sincronizar(true)},12000);
+
+/* Sincronia instantânea (Firebase): qualquer alteração feita por outra
+   pessoa recarrega os dados aqui em ~0,3s. Ignora os ecos das próprias
+   gravações. Fica ligada uma vez, após o login. */
+let _fbSnap=null,_fbTimer=null;
+function ligarSincronia(){
+  if(!FB||_fbSnap)return;
+  _fbSnap=fdb.collection('kv').onSnapshot(s=>{
+    if(s.metadata.hasPendingWrites||S.escrevendo)return;
+    clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!S.escrevendo)sincronizar(true)},350);
+  },e=>console.warn('sync',e.message));
+}
+async function salvarPro(){ if(S.u?.perfil==='pro')await DB.set(kPro(S.u.id),S.pro) }
+
+/* =====================================================================
+   TELAS DE ENTRADA
+   ===================================================================== */
+function telaEntrada(){
+  return`
+  <div style="height:26px"></div>
+  <div class="center">
+    <div class="brand" style="font-size:34px">PAR<span>CIAL</span></div>
+    <div class="eyebrow" style="margin-top:4px">prancheta digital de natação</div>
+  </div>
+  <div class="card" style="margin-top:22px">
+    <div class="eyebrow">quem é você</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+      ${[['atleta','A','Atleta','Recebe os treinos do técnico, lança os tempos e devolve tudo pra ele.'],
+         ['pro','P','Atleta PRO','Tudo do atleta, mais Garmin, melhores tempos, histórico e relatório. Entra pelo código mestre, sem depender do técnico.'],
+         ['tecnico','T','Técnico','Comanda a equipe, monta os treinos por nível e cronometra as competições.']]
+        .map(([k,i,t,d])=>`<button class="perfil ${S.perfilEscolhido===k?'on':''}" onclick="push();S.perfilEscolhido='${k}';render()">
+          <span class="ic">${i}</span><span><b>${t}</b><span class="small muted">${d}</span></span></button>`).join('')}
+    </div>
+    ${S.perfilEscolhido?`<div class="grid2" style="margin-top:14px">
+      <button class="primary" onclick="push();S.vista='cadastro';render()">Criar conta</button>
+      <button onclick="push();S.vista='login';render()">Já tenho conta</button>
+    </div>`:`<div class="small muted center" style="margin-top:14px">Escolha um perfil para continuar</div>`}
+  </div>
+  ${botaoDemo()}`;
+}
+
+function telaLogin(){
+  return`
+  <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
+  <h1>Entrar</h1>
+  <div class="card">
+    <div class="field"><label>E-mail</label>
+      <input id="lgEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" placeholder="voce@email.com"></div>
+    <div class="field"><label>Senha</label>
+      <input id="lgSenha" type="password" autocomplete="current-password" placeholder="mínimo 6 caracteres"></div>
+    <button class="primary full" onclick="autenticar(val('lgEmail'),val('lgSenha'))">Entrar</button>
+    <button class="ghost full" style="margin-top:9px" onclick="pedirReset(val('lgEmail'))">Esqueci minha senha</button>
+    <div class="xs muted" style="margin-top:9px">Digite o e-mail antes de pedir a recuperação.</div>
+  </div>`;
+}
+
+function telaReset(){
+  return`<div style="height:20px"></div><h1>Nova senha</h1>
+  <div class="card">
+    <div class="field"><label>Senha</label><input id="rsA" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>Repita a senha</label><input id="rsB" type="password" autocomplete="new-password"></div>
+    <button class="primary full" onclick="aplicarReset(S.tok,val('rsA'),val('rsB'))">Redefinir</button>
+    <button class="ghost full" style="margin-top:9px" onclick="voltar()">Cancelar</button>
+  </div>`;
+}
+
+function telaCadastro(){
+  const p=S.perfilEscolhido;
+  const titulo={atleta:'Conta de atleta',pro:'Conta PRO',tecnico:'Conta de técnico'}[p];
+  return`
+  <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
+  <h1>${titulo}</h1>
+  <div class="card">
+    <div class="field"><label>Nome da equipe</label>
+      <input id="cdEquipe" autocapitalize="words" placeholder="${p==='atleta'?'exatamente como o técnico informou':'ex.: A3 Swim Team'}">
+      ${p==='atleta'?'<div class="xs muted" style="margin-top:5px">Precisa bater com a equipe já criada pelo técnico.</div>':''}
+      ${p==='pro'?'<div class="xs muted" style="margin-top:5px">Se a equipe ainda não existir, ela é criada agora e o técnico entra depois com o mesmo nome.</div>':''}</div>
+    <div class="field"><label>Nome completo</label><input id="cdNome" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
+    <div class="field"><label>E-mail</label><input id="cdEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
+    <div class="grid2">
+      <div class="field"><label>Data de nascimento</label><input id="cdNasc" type="date" max="${hoje()}"></div>
+      <div class="field"><label>WhatsApp</label><input id="cdTel" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div>
+    </div>
+    <div class="xs muted" style="margin:-4px 0 8px">Com o número cadastrado, os treinos e tempos vão direto para a sua conversa.</div>
+    ${p==='atleta'?`
+    <div class="field"><label>CPF</label><input id="cdCpf" inputmode="numeric" placeholder="000.000.000-00">
+      <div class="xs muted" style="margin-top:5px">O técnico precisa ter liberado este CPF.</div></div>`:''}
+    ${p!=='tecnico'?`
+    <div class="field"><label>Onde você compete</label>
+      <div class="opt"><button id="tpA" class="on" onclick="selTipo('piscina')">Piscina</button>
+        <button id="tpB" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}
+    ${p==='pro'?`<div class="field"><label>Código PRO</label>
+      <input id="cdPro" autocapitalize="characters" autocorrect="off" placeholder="código mestre">
+      <div class="xs muted" style="margin-top:5px">O perfil PRO não passa pelo técnico: quem tem o código entra direto, sem CPF e sem liberação.</div></div>`:''}
+    <div class="grid2">
+      <div class="field"><label>Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="6+ caracteres"></div>
+      <div class="field"><label>Repita</label><input id="cdSenha2" type="password" autocomplete="new-password"></div>
+    </div>
+    <button class="primary full" style="margin-top:6px" onclick="enviarCadastro()">Criar conta</button>
+  </div>`;
+}
+let TIPO='piscina';
+function selTipo(t){TIPO=t;
+  document.getElementById('tpA').classList.toggle('on',t==='piscina');
+  document.getElementById('tpB').classList.toggle('on',t==='aguas')}
+function enviarCadastro(){
+  cadastrar({perfil:S.perfilEscolhido,equipe:val('cdEquipe'),nome:val('cdNome'),email:val('cdEmail'),
+    nascimento:val('cdNasc'),telefone:val('cdTel'),senha:val('cdSenha'),senha2:val('cdSenha2'),
+    tipo:TIPO,cpf:val('cdCpf'),codigoPro:val('cdPro')});
+}
+
+/* ---------- conta / ajustes ---------- */
+function abrirConta(){
+  if(!S.u)return;
+  const u=S.u;
+  sheet(`<h2>${esc(u.nome)}</h2>
+    <div class="small muted">${esc(u.email)} · ${anos(u)} anos</div>
+    <div class="chips" style="margin:10px 0 4px">
+      <span class="tag ${u.perfil==='pro'?'y':u.perfil==='tecnico'?'w':'o'}">${u.perfil==='tecnico'?'técnico':u.perfil==='pro'?'atleta pro':'atleta'}</span>
+      <span class="tag o">${esc(u.equipeNome)}</span>
+      ${u.nivel?`<span class="tag o">${esc(u.nivel)}</span>`:''}
+      ${u.tipo?`<span class="tag o">${u.tipo==='aguas'?'águas abertas':'piscina'}</span>`:''}
+    </div>
+    <div class="sep"></div>
+    <div class="field"><label>WhatsApp</label>
+      <div class="row"><input id="acTel" type="tel" inputmode="tel" value="${telBr(u.telefone||'')}" placeholder="(67) 99999-9999">
+      <button class="sm" onclick="salvarTel()">Salvar</button></div>
+      ${u.telefone?'':'<div class="xs muted" style="margin-top:5px;color:var(--clock)">Sem telefone, ninguém consegue te enviar direto pelo WhatsApp.</div>'}</div>
+    <div class="sep"></div>
+    <div class="field"><label>Trocar senha</label><input id="acA" type="password" placeholder="senha atual"></div>
+    <div class="grid2"><input id="acB" type="password" placeholder="nova"><input id="acC" type="password" placeholder="repita"></div>
+    <button class="full" style="margin-top:10px" onclick="trocarSenha()">Salvar nova senha</button>
+    ${u.perfil==='tecnico'?`<div class="sep"></div><div class="xs muted">Código da equipe: <b class="t">${esc(S.eq?.codigoPro||'—')}</b></div>`:''}
+    ${u.perfil==='pro'?`<div class="sep"></div>
+      <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
+      ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
+    ${u.perfil==='pro'?`<div class="sep"></div>
+      <div class="row" style="align-items:center;gap:10px">
+        <div class="grow"><b>Gestão da equipe</b>
+          <div class="xs muted">Ative para ajudar o técnico: liberar CPFs, montar treinos e lançar tempos de todos.</div></div>
+        <button class="sm ${S.gestao?'primary':''}" onclick="alternarGestao()">${S.gestao?'Ativada':'Ativar'}</button></div>`:''}
+    <div class="sep"></div>
+    <button class="full ghost" onclick="abrirModo()">Dados e backup</button>
+    <button class="full danger" style="margin-top:9px" onclick="sair()">Sair da conta</button>
+    <div class="sep"></div>
+    <button class="full ghost" style="color:var(--clock)" onclick="apagarMinhaConta()">Apagar minha conta…</button>`);
+}
+function abrirModo(){
+  sheet(`<h2>Onde ficam os dados</h2>
+    <div class="note ${EMREDE?'ok':''}" style="margin:10px 0">${EMREDE
+      ? 'Modo <b>em rede</b>: técnico e atletas que abrirem este mesmo endereço enxergam as mesmas informações, cada um com a sua conta.'
+      : LOCAL
+        ? 'Modo <b>neste aparelho</b>: tudo fica gravado na memória do próprio celular e continua aqui quando você fechar e abrir de novo. Sem servidor, o que o técnico lança não chega sozinho no seu aparelho — use o compartilhamento por WhatsApp e guarde backups.'
+        : 'Modo <b>temporário</b>: os dados somem ao recarregar a página.'}</div>
+    <div class="sep"></div><div class="eyebrow">backup</div>
+    <p class="small muted" style="margin:6px 0 10px">Um arquivo com tudo: contas, treinos, competições e seus dados PRO.</p>
+    <button class="primary full" onclick="exportarBackup()">Exportar backup</button>
+    <div class="field" style="margin-top:12px"><label>Restaurar de um arquivo</label>
+      <input type="file" accept=".json,application/json" onchange="importarBackup(this)"></div>
+    <button class="ghost full" style="margin-top:6px" onclick="fecharSheet()">Fechar</button>`);
+}
+async function salvarTel(){
+  const t=val('acTel');
+  if(!telValido(t))return toast('Telefone inválido — use DDD + número');
+  S.u.telefone=soDig(t); await DB.set(kUser(S.u.email),S.u);
+  toast('Telefone salvo'); abrirConta();
+}
+async function trocarSenha(){
+  const a=val('acA'),b=val('acB'),c=val('acC');
+  if(FB){
+    if(b.length<6)return toast('Mínimo de 6 caracteres');
+    if(b!==c)return toast('As senhas não conferem');
+    try{
+      await fauth.signInWithEmailAndPassword(S.u.email,a);   // revalida a senha atual
+      await fauth.currentUser.updatePassword(b);
+      fecharSheet(); toast('Senha alterada');
+    }catch(e){ toast(traduzErroFB(e.code)); }
+    return;
+  }
+  if(await hash(a,S.u.sal)!==S.u.senha)return toast('Senha atual incorreta');
+  if(b.length<6)return toast('Mínimo de 6 caracteres');
+  if(b!==c)return toast('As senhas não conferem');
+  S.u.sal=novoSal(); S.u.senha=await hash(b,S.u.sal);
+  await DB.set(kUser(S.u.email),S.u); fecharSheet(); toast('Senha alterada');
+}
+
+/* =====================================================================
+   NAVEGAÇÃO
+   ===================================================================== */
+function render(){
+  const app=document.getElementById('app'),hdr=document.getElementById('hdr'),nav=document.getElementById('nav');
+  if(!S.u){
+    hdr.classList.add('hide');nav.classList.add('hide');
+    app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset}[S.vista]();
+    return;
+  }
+  hdr.classList.remove('hide');
+  document.getElementById('btnVoltar').classList.toggle('hide',!S.pilha.length);
+  const pm=document.getElementById('pModo');
+  if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
+  const b=document.getElementById('pRole');
+  b.textContent=S.u.perfil==='tecnico'?'técnico':(S.u.perfil==='pro'?(S.gestao?'PRO · gestão':'PRO'):prim(S.u.nome));
+  b.className='pill '+(S.u.perfil==='pro'?'pro':S.u.perfil==='tecnico'?'tec':'');
+  navBar();
+  const mapa=ehGestor()
+    ?{treinos:telaTreinosTec,elenco:telaElenco,competicao:telaCompeticao}
+    :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio};
+  app.innerHTML=(mapa[S.aba]||Object.values(mapa)[0])();
+}
+/* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
+function ehGestor(){ return !!(S.u&&(S.u.perfil==='tecnico'||(S.u.perfil==='pro'&&S.gestao))); }
+function navBar(){
+  const abas=ehGestor()
+    ?[['treinos','≡','Treinos'],['elenco','◎','Elenco'],['competicao','▲','Competição']]
+    :S.u.perfil==='pro'
+      ?[['treinos','≡','Treinos'],['competicao','▲','Provas'],['marcas','★','Marcas'],['garmin','⌁','Garmin'],['relatorio','◈','Relatório']]
+      :[['treinos','≡','Treinos'],['competicao','▲','Provas']];
+  document.getElementById('nav').classList.remove('hide');
+  document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
+    `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
+}
+function irPara(a){if(a!==S.aba)push();S.aba=a;S.sub=null;S.provaSel=null;S.atletaSel=null;S.comp=null;render();window.scrollTo(0,0)}
+
+/* =====================================================================
+   INTERPRETADOR DE TREINO
+   ===================================================================== */
+const ESTILOS=[[/borbol|golfin|\bfly\b|\bbf\b/i,'borboleta'],[/costas?|\bcs\b/i,'costas'],
+ [/peito|\bpt\b|bruç/i,'peito'],[/medley|\bmd\b|4\s*estilos/i,'medley'],[/livre|crawl|\bcr\b|\bfr\b/i,'livre']];
+const RECURSOS=[[/pernad|perna|kick/i,'pernada'],[/braçad|braço|pull/i,'braçada'],[/educativ|técnic|drill/i,'técnica'],
+ [/palmar|paddle/i,'palmar'],[/saíd|partida|start/i,'saída'],[/vira|turn/i,'virada'],[/filipin|pullout|submers/i,'filipina'],
+ [/progressiv/i,'progressivo'],[/boia|pull\s*buoy/i,'boia']];
+const CABECA=/^(aquecimen|aquec|warm|técnic|tecnic|educativ|principal|série|serie|conjunto|main|soltura|volta[\s-]*à?\s*calma|volta calma|desaquec|pré[\s-]*principal|pre[\s-]*principal|complemento|core|seco|dryland|travessia)/i;
+
+function interpretar(txt){
+  const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]};
+  for(const raw of (txt||'').split(/\r?\n/)){
+    const l=raw.trim(); if(!l)continue;
+    if(CABECA.test(l)||(!/\d/.test(l)&&l.length<=36)){
+      if(atual.itens.length)blocos.push(atual);
+      atual={id:uid(),titulo:l.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]};
+      if(!/\d/.test(l.replace(CABECA,'')))continue;
+    }
+    const it=linhaParaItem(l); if(it)atual.itens.push(it);
+  }
+  if(atual.itens.length)blocos.push(atual);
+  return blocos.length?blocos:[{id:uid(),titulo:'TREINO',itens:[]}];
+}
+function linhaParaItem(l){
+  let reps=1,dist=null;
+  const mx=l.match(/(\d{1,3})\s*[x×]\s*(\d{2,5})/i);
+  if(mx){reps=+mx[1];dist=+mx[2]}
+  else{const md=l.match(/(?:^|[^\d.,:'])(\d{2,5})\s*(m\b|mts?\b|metros)?/i); if(md&&+md[1]>=25)dist=+md[1];else return null}
+  if(!dist||dist<20)return null;
+  let estilo='livre'; for(const[re,v]of ESTILOS){if(re.test(l)){estilo=v;break}}
+  const tags=[]; for(const[re,v]of RECURSOS){if(re.test(l))tags.push(v)}
+  let intervalo=null;
+  const mi=l.match(/(?:sa[íi]da|int\.?|s\/|@|c\/)\s*(\d{1,2})\s*[:'′h]\s*(\d{2})/i)||l.match(/(\d{1,2})\s*[:'′h]\s*(\d{2})(?!\d)/);
+  if(mi)intervalo=(+mi[1]*60+ +mi[2])*1000;
+  const mp=l.match(/(?:pausa|rest|descanso)\s*(?:de\s*)?(\d{1,3})\s*["″s]?/i)||l.match(/(\d{1,3})\s*["″]\s*(?:de\s*)?(?:pausa|descanso)/i);
+  const forte=/máxim|maxim|all\s*out|tiro|forte|sprint|ritmo de prova|\brp\b|9[0-9]\s*%|100\s*%/i.test(l);
+  const parcial=/parcia|broken|quebrad|25\s*a\s*25|split/i.test(l)||(forte&&dist>=50&&dist<=100);
+  return{id:uid(),reps,dist,estilo,tags,intervalo,pausa:mp?+mp[1]*1000:null,parcial,forte,texto:l,vol:reps*dist};
+}
+const volTreino=t=>(t.blocos||[]).reduce((a,b)=>a+b.itens.reduce((x,i)=>x+i.vol,0),0);
+
+/* =====================================================================
+   MARCAS E ZONAS
+   ===================================================================== */
+const pbKey=(d,e,p)=>`${d} ${e} ${p||'SC25'}`;
+function pbDe(dados,dist,estilo){
+  if(!dados)return null;
+  const p=dados.pbs||{};
+  const c=Object.entries(p).filter(([k])=>{const[d,e]=k.split(' ');return +d===dist&&e===estilo}).map(([,v])=>v);
+  if(c.length)return Math.min(...c);
+  const p50=Object.entries(p).find(([k])=>k.startsWith(`50 ${estilo}`));
+  if(p50&&dist>=25){const b=p50[1];
+    if(dist===25)return b*.465; if(dist===100)return b*2.22; if(dist===200)return b*4.75;
+    return b*(dist/50)*1.06}
+  return null;
+}
+function zona(p){ if(p==null)return null;
+  if(p>=97)return{n:'ritmo de prova',c:'z4'}; if(p>=92)return{n:'velocidade',c:'z3'};
+  if(p>=86)return{n:'limiar',c:'z2'}; return{n:'aeróbio',c:'z1'} }
+
+/* =====================================================================
+   TREINOS — TÉCNICO
+   ===================================================================== */
+function telaTreinosTec(){
+  if(S.sub==='novo')return telaNovoTreino();
+  if(S.treino&&S.sub==='detalhe')return telaTreinoDetalhe();
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Treinos</h2><div class="grow"></div>
+    <button class="sm primary" onclick="push();S.sub='novo';S.selMulti=[];render()">+ Novo</button></div>
+  <div class="opt" style="margin-bottom:6px">
+    ${['todos',...NIVEIS].map(n=>`<button class="${S.filtroNivel===n?'on':''}" onclick="S.filtroNivel='${n}';render()">${n==='todos'?'Todos':n}</button>`).join('')}
+  </div>
+  ${S.tridx.filter(t=>S.filtroNivel==='todos'||t.nivel===S.filtroNivel).map(t=>`
+    <button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirTreino('${t.id}')">
+      <div class="av">${brCurta(t.data).slice(0,2)}</div>
+      <div class="grow"><b>${esc(t.titulo)}</b>
+        <div class="xs muted">${brData(t.data)} · ${(t.vol/1000).toFixed(1)}k · ${t.nAtletas||0} atleta(s)</div></div>
+      <span class="tag o">${esc(t.nivel||'')}</span>
+    </button>`).join('')||`<div class="empty"><div class="big">Nenhum treino ainda</div>
+      <p class="small">Cole o treino do dia e escolha quem vai recebê-lo.</p></div>`}`;
+}
+
+function telaNovoTreino(){
+  const ed=S.treino&&S.sub==='novo'&&S.editando;
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
+  <h2>${ed?'Editar treino':'Novo treino'}</h2>
+  <div class="card">
+    <div class="grid2">
+      <div class="field"><label>Data</label><input type="date" id="ntData" value="${ed?S.treino.data:hoje()}"></div>
+      <div class="field"><label>Nível</label><select id="ntNivel">${NIVEIS.map(n=>`<option ${ed&&S.treino.nivel===n?'selected':''}>${n}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Título</label><input id="ntTitulo" autocapitalize="sentences" value="${ed?esc(S.treino.titulo):''}" placeholder="ex.: Velocidade e filipina"></div>
+    <div class="field"><label>Cole o treino</label>
+      <textarea id="ntTexto" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" placeholder="Aquecimento&#10;400 livre solto&#10;&#10;Principal&#10;8x50 peito saída 1'20 forte&#10;16x25 tiro máximo pausa 45&quot;">${ed?esc(S.treino.textoBruto):''}</textarea></div>
+  </div>
+  <div class="card">
+    <div class="row"><div class="eyebrow">quem recebe</div><div class="grow"></div>
+      <button class="sm ghost" onclick="marcarTodosNivel()">Todos do nível</button></div>
+    ${S.elenco.length?S.elenco.map(a=>`
+      <button class="lst" onclick="alternaAtleta('${a.id}')">
+        <span class="av" style="${S.selMulti.includes(a.id)?'background:var(--ink);color:var(--deck);border-color:var(--ink)':''}">${S.selMulti.includes(a.id)?'✓':iniciais(a.nome)}</span>
+        <span class="grow"><b>${esc(a.nome)}</b><span class="xs muted" style="display:block">${esc(a.nivel||'')} · ${a.tipo==='aguas'?'águas abertas':'piscina'}</span></span>
+      </button>`).join(''):'<div class="small muted">Nenhum atleta cadastrado ainda. Libere CPFs na aba Elenco.</div>'}
+    <div class="small muted" style="margin-top:10px">${S.selMulti.length} selecionado(s)</div>
+  </div>
+  <button class="primary full" onclick="salvarTreino()">${ed?'Salvar alterações':'Publicar treino'}</button>
+  <div style="height:14px"></div>`;
+}
+function alternaAtleta(id){
+  S.selMulti=S.selMulti.includes(id)?S.selMulti.filter(x=>x!==id):[...S.selMulti,id];render();
+}
+function marcarTodosNivel(){
+  const n=document.getElementById('ntNivel').value;
+  const ids=S.elenco.filter(a=>a.nivel===n).map(a=>a.id);
+  S.selMulti=ids.length&&ids.every(i=>S.selMulti.includes(i))?[]:ids;
+  render();
+}
+async function salvarTreino(){
+  const data=val('ntData')||hoje(),titulo=val('ntTitulo')||'Treino',
+    nivel=document.getElementById('ntNivel').value,texto=document.getElementById('ntTexto').value;
+  if(!texto.trim())return toast('Cole o treino');
+  if(!S.selMulti.length)return toast('Escolha ao menos um atleta');
+  const editando=S.editando&&S.treino;
+  const id=editando?S.treino.id:uid();
+  const t={id,data,titulo,nivel,textoBruto:texto,blocos:interpretar(texto),para:[...S.selMulti],
+    registros:editando?(S.treino.registros||{}):{},autor:S.u.nome,atualizado:Date.now()};
+  await DB.set(kTr(S.u.equipe,id),t);
+  const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==id);
+  idx.unshift({id,data,titulo,nivel,vol:volTreino(t),para:t.para,nAtletas:t.para.length});
+  idx.sort((a,b)=>b.data.localeCompare(a.data));
+  await DB.set(kTrIdx(S.u.equipe),idx);
+  S.tridx=idx; S.treino=t; S.sub='detalhe'; S.editando=false; S.pilha.pop();
+  toast(`${t.blocos.reduce((n,b)=>n+b.itens.length,0)} séries · ${t.para.length} atleta(s)`);
+  render();
+}
+async function abrirTreino(id){
+  push(); S.treino=await DB.get(kTr(S.u.equipe,id)); S.sub='detalhe'; render(); window.scrollTo(0,0);
+}
+
+function telaTreinoDetalhe(){
+  const t=S.treino,tec=ehGestor();
+  const alvo=tec?S.elenco.filter(a=>(t.para||[]).includes(a.id)):[S.u];
+  const at=S.atletaSel?alvo.find(a=>a.id===S.atletaSel):alvo[0];
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Treinos</button>
+    <div class="grow"></div>
+    ${tec?`<button class="sm ghost" onclick="editarTreino()">Editar</button>
+    <button class="sm ghost" onclick="excluirTreino()">✕</button>`:''}</div>
+  <div class="row" style="align-items:flex-start">
+    <div><div class="eyebrow">${brData(t.data)} · ${esc(t.nivel||'')}</div><h2>${esc(t.titulo)}</h2></div>
+    <div class="grow"></div>
+    <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
+  </div>
+  ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
+    ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
+  </div></div>`:''}
+  ${at?(t.blocos||[]).map(b=>`
+    <div class="blk"><h3>${esc(b.titulo)}</h3><div class="ln"></div><span class="xs muted t">${b.itens.reduce((x,i)=>x+i.vol,0)}m</span></div>
+    ${b.itens.map(i=>linhaSerie(t,i,at)).join('')}`).join(''):'<div class="empty"><div class="big">Sem atletas neste treino</div></div>'}
+  <div class="row" style="margin:16px 0 30px">
+    <button class="ghost full" onclick="compartilharTreino()">Compartilhar treino e tempos</button>
+  </div>`;
+}
+function linhaSerie(t,i,at){
+  const r=(t.registros?.[at.id]?.[i.id])||{tempos:[],parciais:[]};
+  const ts=r.tempos.filter(x=>x!=null);
+  const dadosPB=at.id===S.u.id?S.pro:null;
+  const mel=ts.length?Math.min(...ts):null;
+  const pct=(dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
+  const z=zona(pct);
+  return`<div class="item ${ts.length?'sel':''}">
+    <div class="row" style="align-items:baseline;flex-wrap:wrap">
+      <span class="d">${i.reps>1?i.reps+'×':''}${i.dist}</span>
+      <span class="small muted">${i.estilo}${i.tags.length?' · '+i.tags.join(' · '):''}</span>
+      ${i.intervalo?`<span class="i">${fmtInt(i.intervalo)}</span>`:''}
+      ${i.pausa?`<span class="i">p${Math.round(i.pausa/1000)}"</span>`:''}
+      <div class="grow"></div>
+      ${z?`<span class="z ${z.c}">${pct.toFixed(0)}%</span>`:''}
+      <button class="sm ghost" onclick="abrirLancamento('${i.id}','${at.id}')">${ts.length?'Editar':'Lançar'}</button>
+    </div>
+    ${ts.length?`<div class="chips">${r.tempos.map((x,ix)=>x==null?'':
+      `<span class="chip ${x===mel?'best':''}">${ix+1}· ${fmt(x,true)}${i.parcial&&r.parciais[ix]!=null?` <span style="color:var(--water)">(${fmt(r.parciais[ix],true)}+${fmt(x-r.parciais[ix],true)})</span>`:''}</span>`).join('')}</div>`:''}
+  </div>`;
+}
+function abrirLancamento(itemId,atletaId){
+  const t=S.treino,item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId);
+  const at=(ehGestor()?S.elenco:[S.u]).find(a=>a.id===atletaId)||S.u;
+  const r=(t.registros?.[atletaId]?.[itemId])||{tempos:[],parciais:[]};
+  sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
+    <div class="small muted">${esc(at.nome)}${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
+    <div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>#</th>
+      ${item.parcial?`<th style="text-align:center">${item.dist/2}m</th>`:''}<th style="text-align:center">Tempo</th></tr></thead><tbody>
+      ${Array.from({length:item.reps},(_,i)=>`<tr><td class="n">${i+1}</td>
+        ${item.parcial?`<td><input inputmode="decimal" id="lp${i}" placeholder="—" value="${r.parciais[i]!=null?fmt(r.parciais[i],true):''}"></td>`:''}
+        <td><input inputmode="decimal" id="lt${i}" placeholder="—" value="${r.tempos[i]!=null?fmt(r.tempos[i],true):''}"></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="xs muted" style="margin-top:8px">Aceita 34.5 · 34,50 · 1:07.2 · 1'07"20</div>
+    <button class="primary full" style="margin-top:12px" onclick="salvarLancamento('${itemId}','${atletaId}',${item.reps},${item.parcial})">Salvar</button>`);
+}
+async function salvarLancamento(itemId,atletaId,reps,temParcial){
+  const tempos=[],parciais=[];
+  for(let i=0;i<reps;i++){
+    tempos.push(parseTempo(document.getElementById('lt'+i).value));
+    if(temParcial)parciais.push(parseTempo(document.getElementById('lp'+i).value));
+  }
+  while(tempos.length&&tempos[tempos.length-1]==null)tempos.pop();
+  const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
+  t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
+  t.registros[atletaId][itemId]={tempos,parciais,em:Date.now(),por:S.u.nome};
+  t.atualizado=Date.now();
+  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  fecharSheet(); toast('Tempos salvos'); render();
+}
+function editarTreino(){S.editando=true;S.selMulti=[...(S.treino.para||[])];S.sub='novo';render()}
+async function excluirTreino(){
+  sheet(`<h2>Excluir treino</h2><p class="small muted">"${esc(S.treino.titulo)}" e todos os tempos lançados serão apagados. Não dá para desfazer.</p>
+    <button class="danger full" style="margin-top:14px" onclick="confirmarExclusao()">Excluir</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
+}
+async function confirmarExclusao(){
+  const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==S.treino.id);
+  await DB.set(kTrIdx(S.u.equipe),idx); await DB.set(kTr(S.u.equipe,S.treino.id),null);
+  S.tridx=idx; S.treino=null; S.sub=null; S.pilha.pop(); fecharSheet(); toast('Treino excluído'); render();
+}
+
+/* =====================================================================
+   TREINOS — ATLETA
+   ===================================================================== */
+function telaTreinosAtleta(){
+  if(S.treino&&S.sub==='detalhe')return telaTreinoDetalhe();
+  const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Meus treinos</h2><div class="grow"></div>
+    <span class="tag o">${esc(S.u.nivel||'')}</span></div>
+  ${meus.length?meus.map(t=>{
+    return`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirTreino('${t.id}')">
+      <div class="av">${brCurta(t.data).slice(0,2)}</div>
+      <div class="grow"><b>${esc(t.titulo)}</b><div class="xs muted">${brData(t.data)} · ${(t.vol/1000).toFixed(1)}k</div></div>
+      <span class="tag o">abrir</span></button>`}).join(''):
+    `<div class="empty"><div class="big">Nada por aqui ainda</div><p class="small">Assim que o técnico publicar um treino para você, ele aparece nesta tela.</p></div>`}`;
+}
+
+/* =====================================================================
+   ELENCO — técnico
+   ===================================================================== */
+function telaElenco(){
+  if(S.atletaSel)return telaAtletaDetalhe();
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Elenco</h2><div class="grow"></div>
+    <button class="sm primary" onclick="abrirLiberacao()">+ Liberar CPF</button></div>
+  ${NIVEIS.map(n=>{
+    const g=S.elenco.filter(a=>a.nivel===n&&a.ativo!==false);
+    if(!g.length)return'';
+    return`<div class="blk"><h3>${n}</h3><div class="ln"></div><span class="xs muted">${g.length}</span></div>
+      <div class="card tight">${g.map(a=>`<button class="lst" onclick="push();S.atletaSel='${a.id}';render()">
+        <span class="av">${iniciais(a.nome)}</span>
+        <span class="grow"><b>${esc(a.nome)}</b><span class="xs muted" style="display:block">${anos(a)} anos · ${a.tipo==='aguas'?'águas abertas':'piscina'}${a.perfil==='pro'?' · PRO':''}</span></span>
+        <span class="tag o">›</span></button>`).join('')}</div>`}).join('')}
+  ${S.elenco.filter(a=>a.ativo===false).length?`<div class="blk"><h3>Desativados</h3><div class="ln"></div></div>
+    <div class="card tight">${S.elenco.filter(a=>a.ativo===false).map(a=>`<button class="lst" onclick="push();S.atletaSel='${a.id}';render()">
+      <span class="av" style="opacity:.5">${iniciais(a.nome)}</span><span class="grow muted">${esc(a.nome)}</span><span class="tag o">›</span></button>`).join('')}</div>`:''}
+  ${S.libs.filter(l=>!l.usado).length?`<div class="blk"><h3>Aguardando cadastro</h3><div class="ln"></div></div>
+    <div class="card tight">${S.libs.filter(l=>!l.usado).map(l=>`<div class="lst">
+      <span class="av">⏳</span><span class="grow"><b>${esc(l.nome||'—')}</b>
+        <span class="xs muted" style="display:block">${cpfMasc(l.cpf)} · ${esc(l.nivel)}</span></span>
+      <button class="sm ghost" onclick="removerLib('${l.cpf}')">✕</button></div>`).join('')}</div>`:''}
+  ${!S.elenco.length&&!S.libs.length?`<div class="empty"><div class="big">Elenco vazio</div>
+    <p class="small">Libere o CPF do atleta para que ele possa criar a conta dele.</p></div>`:''}`;
+}
+function abrirLiberacao(){
+  sheet(`<h2>Liberar atleta</h2>
+    <p class="small muted">Com o CPF liberado, o atleta cria a conta sozinho usando o nome da equipe <b>${esc(S.eq?.nome||'')}</b>.</p>
+    <div class="field"><label>Nome do atleta</label><input id="lbNome" autocapitalize="words"></div>
+    <div class="field"><label>CPF</label><input id="lbCpf" inputmode="numeric" placeholder="000.000.000-00"></div>
+    <div class="field"><label>Nível</label><select id="lbNivel">${NIVEIS.map(n=>`<option>${n}</option>`).join('')}</select></div>
+    <button class="primary full" onclick="salvarLib()">Liberar</button>`);
+}
+async function salvarLib(){
+  const nome=val('lbNome'),cpf=val('lbCpf'),nivel=document.getElementById('lbNivel').value;
+  if(!nome)return toast('Informe o nome');
+  if(!cpfValido(cpf))return toast('CPF inválido');
+  const libs=await DB.get(kLib(S.u.equipe))||[];
+  if(libs.some(l=>l.cpf===cpfLimpo(cpf)))return toast('Este CPF já está liberado');
+  libs.push({cpf:cpfLimpo(cpf),nome,nivel,usado:false,em:Date.now()});
+  await DB.set(kLib(S.u.equipe),libs); S.libs=libs;
+  fecharSheet(); toast('CPF liberado'); render();
+}
+async function removerLib(cpf){
+  const libs=(await DB.get(kLib(S.u.equipe))||[]).filter(l=>l.cpf!==cpf);
+  await DB.set(kLib(S.u.equipe),libs); S.libs=libs; toast('Liberação removida'); render();
+}
+
+function telaAtletaDetalhe(){
+  const a=S.elenco.find(x=>x.id===S.atletaSel); if(!a){S.atletaSel=null;return telaElenco()}
+  const seus=S.tridx.filter(t=>(t.para||[]).includes(a.id));
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Elenco</button></div>
+  <div class="row" style="align-items:center;gap:13px">
+    <div class="av" style="width:56px;height:56px;flex:0 0 56px;font-size:20px">${iniciais(a.nome)}</div>
+    <div><h2 style="font-size:24px">${esc(a.nome)}</h2>
+      <div class="small muted">${esc(a.email)}</div></div>
+  </div>
+  <div class="card">
+    <table><tbody>
+      <tr><td class="muted">Idade</td><td class="n">${anos(a)}</td></tr>
+      <tr><td class="muted">Nascimento</td><td class="n">${a.nascimento?brData(a.nascimento):'—'}</td></tr>
+      <tr><td class="muted">CPF</td><td class="n">${cpfMasc(a.cpf)||'—'}</td></tr>
+      <tr><td class="muted">WhatsApp</td><td class="n">${a.telefone?telBr(a.telefone):'<span style="color:var(--clock)">não cadastrado</span>'}</td></tr>
+      <tr><td class="muted">Modalidade</td><td>${a.tipo==='aguas'?'Águas abertas':'Piscina'}</td></tr>
+      <tr><td class="muted">Perfil</td><td>${a.perfil==='pro'?'Atleta PRO <span class="xs muted">(código mestre)</span>':'Atleta'}</td></tr>
+      <tr><td class="muted">Na equipe desde</td><td>${brData(new Date(a.criadoEm).toISOString().slice(0,10))}</td></tr>
+      <tr><td class="muted">Treinos recebidos</td><td class="n">${seus.length}</td></tr>
+    </tbody></table>
+  </div>
+  ${a.telefone?`<a class="btnlink zap" href="https://wa.me/${telWa(a.telefone)}" target="_blank" rel="noopener">Conversar no WhatsApp</a>`:''}
+  <div class="card">
+    <div class="eyebrow">nível</div>
+    <div class="opt" style="margin-top:8px">${NIVEIS.map(n=>`<button class="${a.nivel===n?'on':''}" onclick="mudarNivel('${a.id}','${n}')">${n}</button>`).join('')}</div>
+  </div>
+  ${seus.length?`<div class="card"><div class="eyebrow">últimos treinos</div>
+    ${seus.slice(0,6).map(t=>`<button class="lst" onclick="abrirTreino('${t.id}')">
+      <span class="grow"><b>${esc(t.titulo)}</b><span class="xs muted" style="display:block">${brData(t.data)}</span></span>
+      <span class="tag o">›</span></button>`).join('')}</div>`:''}
+  <div class="card">
+    <div class="eyebrow">administração</div>
+    <button class="full ghost" style="margin-top:9px" onclick="resetSenhaAtleta('${a.id}')">Gerar link de nova senha</button>
+    <button class="full ${a.ativo===false?'':'danger'}" style="margin-top:9px" onclick="alternarAtivo('${a.id}')">
+      ${a.ativo===false?'Reativar atleta':'Remover do app'}</button>
+    <div class="xs muted" style="margin-top:8px">Remover desativa o acesso e tira o atleta das listas, sem apagar o histórico de treinos.</div>
+    <button class="full ghost" style="margin-top:12px;color:var(--clock)" onclick="apagarAtleta('${a.id}')">Apagar definitivamente…</button>
+    <div class="xs muted" style="margin-top:6px">Apagar tira o atleta e os dados dele de vez e libera o CPF (o login continua no Firebase).</div>
+  </div><div style="height:20px"></div>`;
+}
+async function mudarNivel(id,n){
+  const a=S.elenco.find(x=>x.id===id); if(!a)return;
+  a.nivel=n; await DB.set(kUser(a.email),a);
+  const libs=await DB.get(kLib(S.u.equipe))||[];
+  const l=libs.find(x=>x.cpf===a.cpf); if(l){l.nivel=n;await DB.set(kLib(S.u.equipe),libs)}
+  toast('Nível atualizado'); render();
+}
+async function alternarAtivo(id){
+  const a=S.elenco.find(x=>x.id===id); if(!a)return;
+  a.ativo=a.ativo===false; await DB.set(kUser(a.email),a);
+  toast(a.ativo===false?'Atleta removido':'Atleta reativado'); render();
+}
+async function resetSenhaAtleta(id){
+  const a=S.elenco.find(x=>x.id===id); if(!a)return;
+  await pedirReset(a.email);
+}
+
+/* =====================================================================
+   APAGAR CONTAS
+   ===================================================================== */
+/* Apaga um documento de verdade (no Firestore) ou o esvazia (modo local). */
+async function apagarChave(k){
+  if(FB){ try{ await fdb.collection('kv').doc(fkey(k)).delete(); return true }catch(e){ console.warn('apagarChave',k,e.message); return false } }
+  return DB.set(k,null);
+}
+
+/* Qualquer um apaga a PRÓPRIA conta — login e dados. No modo em rede pede a
+   senha para reautenticar (o Firebase exige, e garante que é mesmo você). */
+function apagarMinhaConta(){
+  const u=S.u; if(!u)return;
+  sheet(`<h2>Apagar minha conta</h2>
+    <div class="note" style="margin:10px 0;border-color:var(--clock)">Isso apaga sua conta ${u.perfil==='tecnico'?'de técnico':''} e os seus dados desta equipe. <b>Não dá para desfazer.</b>
+    ${u.perfil==='tecnico'?' A equipe e os atletas continuam; a equipe fica sem técnico até alguém assumir.':''}</div>
+    ${FB?`<div class="field"><label>Confirme sua senha</label><input id="delPwd" type="password" placeholder="sua senha"></div>`:''}
+    <button class="full danger" style="margin-top:6px" onclick="confirmarApagarMinhaConta()">Apagar definitivamente</button>
+    <button class="full ghost" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
+}
+async function confirmarApagarMinhaConta(){
+  const u=S.u; if(!u)return;
+  if(FB){
+    const senha=val('delPwd');
+    if(!senha)return toast('Digite sua senha para confirmar');
+    try{ await fauth.signInWithEmailAndPassword(u.email,senha); }   /* reautentica */
+    catch(e){ return toast(traduzErroFB(e.code)); }
+  }
+  try{
+    if(u.perfil==='tecnico'){
+      const eq=await DB.get(kEq(u.equipe));
+      if(eq&&eq.tecnicoEmail===u.email){ eq.tecnicoEmail=null; await DB.set(kEq(u.equipe),eq); }
+    }
+    const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==u.email);
+    await DB.set(kEqUsers(u.equipe),us);
+    if(u.perfil!=='tecnico'&&u.cpf){                                 /* libera o CPF de volta */
+      const libs=await DB.get(kLib(u.equipe))||[];
+      const l=libs.find(x=>x.cpf===u.cpf); if(l){ l.usado=false; delete l.email; await DB.set(kLib(u.equipe),libs); }
+    }
+    if(u.perfil==='pro') await apagarChave(kPro(u.id));
+    await apagarChave(kUser(u.email));
+  }catch(e){ console.warn('apagar dados',e.message); }
+  if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
+  try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
+  S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
+  fecharSheet(); toast('Conta apagada'); render();
+}
+
+/* Técnico apaga os DADOS de um atleta (o login dele só o Console remove). */
+function apagarAtleta(id){
+  const a=S.elenco.find(x=>x.id===id); if(!a)return;
+  sheet(`<h2>Apagar ${esc(prim(a.nome))}?</h2>
+    <div class="note" style="margin:10px 0;border-color:var(--clock)">Remove o atleta e os dados dele desta equipe e libera o CPF. O histórico de treinos é mantido.
+    ${FB?'<br><br><b>O login</b> (e-mail e senha) dele continua existindo no Firebase — para apagar também o login, entre no Console do Firebase › Authentication › Users.':''}</div>
+    <button class="full danger" onclick="confirmarApagarAtleta('${a.id}')">Apagar definitivamente</button>
+    <button class="full ghost" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
+}
+async function confirmarApagarAtleta(id){
+  const a=S.elenco.find(x=>x.id===id); if(!a)return;
+  const us=(await DB.get(kEqUsers(S.u.equipe))||[]).filter(e=>e!==a.email);
+  await DB.set(kEqUsers(S.u.equipe),us);
+  if(a.cpf){ const libs=(await DB.get(kLib(S.u.equipe))||[]).filter(l=>l.cpf!==a.cpf); await DB.set(kLib(S.u.equipe),libs); }
+  if(a.perfil==='pro') await apagarChave(kPro(a.id));
+  await apagarChave(kUser(a.email));
+  S.atletaSel=null; if(S.pilha.length)S.pilha.pop();
+  await carregarDados(); fecharSheet(); toast('Atleta apagado'); render();
+}
+
+/* =====================================================================
+   COMPETIÇÃO
+   ===================================================================== */
+const PROVAS_CAT=[
+  {d:50,e:'livre'},{d:100,e:'livre'},{d:200,e:'livre'},{d:400,e:'livre'},{d:800,e:'livre'},{d:1500,e:'livre'},
+  {d:50,e:'peito'},{d:100,e:'peito'},{d:200,e:'peito'},
+  {d:50,e:'costas'},{d:100,e:'costas'},{d:200,e:'costas'},
+  {d:50,e:'borboleta'},{d:100,e:'borboleta'},{d:200,e:'borboleta'},
+  {d:100,e:'medley'},{d:200,e:'medley'},{d:400,e:'medley'}
+];
+const REVEZ=[
+  {r:4,d:50,e:'livre',gen:['masculino','feminino','misto']},
+  {r:4,d:50,e:'medley',gen:['masculino','feminino','misto']},
+  {r:4,d:100,e:'livre',gen:['masculino','feminino','misto']},
+  {r:4,d:100,e:'medley',gen:['masculino','feminino','misto']},
+  {r:4,d:200,e:'livre',gen:['masculino','feminino']}
+];
+const CAT_REV=['100+','160+','200+','240+','280+'];
+
+function passoDe(p,piscina){
+  if(p.tipo==='rev')return p.d;                      /* um parcial por percurso */
+  if(piscina==='LC50')return p.dist>=800?100:50;
+  return p.dist<=100?25:(p.dist<=400?50:100);
+}
+function nPassagens(p,piscina){
+  if(p.tipo==='rev')return p.r||4;
+  return Math.max(1,Math.round(p.dist/passoDe(p,piscina)));
+}
+const nomeProva=p=>p.tipo==='rev'
+  ? `${p.r}x${p.d}m ${p.estilo}${p.genero?' '+p.genero:''}`
+  : `${p.dist}m ${p.estilo}`;
+
+/* ---------- lista de competições ---------- */
+function telaCompeticao(){
+  if(!S.comp)return`
+    <div class="row" style="margin:16px 0 6px"><h2>Competição</h2></div>
+    ${S.cidx.map(c=>`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirComp('${c.id}')">
+      <div class="av">▲</div><div class="grow"><b>${esc(c.nome)}</b>
+        <div class="xs muted">${brData(c.data)} · ${esc(c.local||'')} · ${c.piscina}</div></div>
+      <span class="tag o">›</span></button>`).join('')}
+    <div class="card">
+      <div class="eyebrow">nova competição</div>
+      <div class="field"><label>Nome</label><input id="ccNome" autocapitalize="words" placeholder="ex.: Campeonato Brasileiro Master"></div>
+      <div class="grid2">
+        <div class="field"><label>Data</label><input type="date" id="ccData" value="${hoje()}"></div>
+        <div class="field"><label>Piscina</label><select id="ccPis"><option>SC25</option><option>LC50</option></select></div>
+      </div>
+      <div class="field"><label>Local</label><input id="ccLocal" autocapitalize="words" placeholder="Cidade / clube"></div>
+      <button class="primary full" onclick="criarComp()">Criar</button>
+    </div>`;
+  if(S.provaSel!=null)return telaProvaDetalhe();
+  const c=S.comp;
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="push();S.comp=null;S.provaSel=null;render()">‹ Competições</button></div>
+  <div class="row" style="align-items:flex-start">
+    <div><div class="eyebrow">${brData(c.data)} · ${esc(c.local||'')} · ${c.piscina}</div><h2>${esc(c.nome)}</h2></div>
+  </div>
+  <div class="card tight row wrap">
+    <div class="kpi"><div class="v">${c.provas.length}</div><div class="l">provas</div></div>
+    <div class="kpi"><div class="v">${c.provas.reduce((t,p)=>t+p.inscritos.length,0)}</div><div class="l">inscrições</div></div>
+    <div class="kpi"><div class="v">${c.provas.reduce((t,p)=>t+p.inscritos.filter(i=>i.parciais?.length).length,0)}</div><div class="l">com tempo</div></div>
+  </div>
+  ${c.provas.length?c.provas.map((p,ip)=>{
+    const done=p.inscritos.filter(i=>(i.parciais||[]).length>=nPassagens(p,c.piscina)).length;
+    return`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:9px 0" onclick="push();S.provaSel=${ip};render();window.scrollTo(0,0)">
+      <div class="av" style="font-size:13px">${p.codigo||ip+1}</div>
+      <div class="grow"><b>${nomeProva(p)}</b>
+        <div class="xs muted">${esc(p.categoria||'')} · ${p.inscritos.length} inscrito(s)</div></div>
+      <span class="tag ${done===p.inscritos.length&&done>0?'':'o'}">${done}/${p.inscritos.length}</span></button>`}).join(''):
+    `<div class="empty"><div class="big">Sem provas</div><p class="small">Carregue o balizamento ou inclua as provas à mão.</p></div>`}
+  ${blocoBalizamento()}
+  <div class="card"><div class="eyebrow">incluir prova</div>
+    <button class="full" style="margin-top:9px" onclick="abrirNovaProva('ind')">Prova individual</button>
+    <button class="full ghost" style="margin-top:8px" onclick="abrirNovaProva('rev')">Revezamento</button></div>
+  <div style="height:20px"></div>`;
+}
+async function criarComp(){
+  const nome=val('ccNome'); if(!nome)return toast('Dê um nome à competição');
+  const c={id:uid(),nome,data:val('ccData')||hoje(),local:val('ccLocal'),
+    piscina:document.getElementById('ccPis').value,provas:[],criadoEm:Date.now()};
+  await DB.set(kCmp(S.u.equipe,c.id),c);
+  const idx=[{id:c.id,nome:c.nome,data:c.data,local:c.local,piscina:c.piscina},...(await DB.get(kCIdx(S.u.equipe))||[])];
+  await DB.set(kCIdx(S.u.equipe),idx); S.cidx=idx; S.comp=c; render();
+}
+async function abrirComp(id){push();S.comp=await DB.get(kCmp(S.u.equipe,id));S.provaSel=null;render();window.scrollTo(0,0)}
+async function mutarComp(fn){
+  const f=await DB.get(kCmp(S.u.equipe,S.comp.id))||S.comp;
+  fn(f); f.atualizado=Date.now(); S.comp=f;
+  await DB.set(kCmp(S.u.equipe,f.id),f); render();
+}
+
+/* ---------- nova prova ---------- */
+function abrirNovaProva(tipo){
+  if(tipo==='ind'){
+    sheet(`<h2>Prova individual</h2>
+      <div class="field"><label>Prova</label><select id="npProva">
+        ${PROVAS_CAT.map((p,i)=>`<option value="${i}">${p.d}m ${p.e}</option>`).join('')}</select></div>
+      <div class="grid2">
+        <div class="field"><label>Nº na competição</label><input id="npCod" inputmode="numeric" placeholder="12"></div>
+        <div class="field"><label>Categoria</label><input id="npCat" autocapitalize="words" placeholder="Masculino 40-44"></div>
+      </div>
+      <button class="primary full" onclick="salvarNovaProva('ind')">Incluir</button>`);
+  }else{
+    sheet(`<h2>Revezamento</h2>
+      <div class="field"><label>Prova</label><select id="npRev">
+        ${REVEZ.map((r,i)=>`<option value="${i}">${r.r}x${r.d}m ${r.e}</option>`).join('')}</select></div>
+      <div class="grid2">
+        <div class="field"><label>Gênero</label><select id="npGen"><option>masculino</option><option>feminino</option><option>misto</option></select></div>
+        <div class="field"><label>Categoria</label><select id="npCatR">${CAT_REV.map(c=>`<option>${c}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Nº na competição</label><input id="npCodR" inputmode="numeric" placeholder="40"></div>
+      <button class="primary full" onclick="salvarNovaProva('rev')">Incluir</button>`);
+  }
+}
+async function salvarNovaProva(tipo){
+  if(tipo==='ind'){
+    const b=PROVAS_CAT[+document.getElementById('npProva').value];
+    await mutarComp(c=>c.provas.push({id:uid(),tipo:'ind',codigo:val('npCod')||null,dist:b.d,estilo:b.e,
+      categoria:val('npCat'),inscritos:[]}));
+  }else{
+    const b=REVEZ[+document.getElementById('npRev').value];
+    const gen=document.getElementById('npGen').value;
+    if(!b.gen.includes(gen))return toast('Este revezamento não tem categoria mista');
+    await mutarComp(c=>c.provas.push({id:uid(),tipo:'rev',codigo:val('npCodR')||null,r:b.r,d:b.d,estilo:b.e,
+      genero:gen,categoria:document.getElementById('npCatR').value,inscritos:[]}));
+  }
+  fecharSheet(); toast('Prova incluída');
+}
+
+/* ---------- balizamento ---------- */
+function blocoBalizamento(){
+  return`<div class="card noprint">
+    <div class="eyebrow">balizamento</div>
+    <h3 style="margin:4px 0 8px">Carregar a lista de largada</h3>
+    <p class="small muted">Mande a foto ou o PDF divulgado pela organização. O app lê provas, séries, raias, nomes e tempos de inscrição e monta as tabelas.</p>
+    <div class="field"><input type="file" id="fBal" accept="image/*,application/pdf" onchange="lerBalizamento(this)"></div>
+    <div id="balStatus" class="small muted"></div>
+    <div class="sep"></div>
+    <div class="eyebrow">ou cole o texto</div>
+    <div class="field"><textarea id="tBal" style="min-height:120px" onfocus="S.escrevendo=true" onblur="S.escrevendo=false"
+      placeholder="Prova 12 - 50m peito - Masculino 40-44&#10;Série 3&#10;3 - Rafael Nunes - A3 Swim Team - 32.10&#10;4 - Bruno Barbato - A3 Swim Team - 30.21"></textarea></div>
+    <button class="full" onclick="colarBalizamento()">Ler texto colado</button>
+  </div>`;
+}
+async function lerBalizamento(inp){
+  const f=inp.files[0]; if(!f)return;
+  const st=document.getElementById('balStatus'); st.textContent='Lendo o balizamento…';
+  try{
+    const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(f)});
+    const pdf=f.type==='application/pdf';
+    const cont=[pdf?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}
+                  :{type:'image',source:{type:'base64',media_type:f.type||'image/jpeg',data:b64}},
+      {type:'text',text:'Extraia o balizamento desta competição de natação. Responda SOMENTE com JSON, sem crases e sem texto ao redor. Formato: {"provas":[{"codigo":"12","dist":50,"estilo":"peito","categoria":"Masculino 40-44","inscritos":[{"serie":3,"raia":4,"nome":"Bruno Barbato","equipe":"A3 Swim Team","inscricao":"30.21"}]}]}. estilo: livre, costas, peito, borboleta ou medley. inscricao em mm:ss.cc ou ss.cc. Omita campos ausentes.'}];
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:cont}]})});
+    const d=await r.json();
+    const txt=(d.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('').replace(/```json|```/g,'').trim();
+    const j=JSON.parse(txt);
+    await incorporar(j.provas||[]);
+    st.textContent=`${(j.provas||[]).length} prova(s) importada(s).`; toast('Balizamento carregado');
+  }catch(e){ st.textContent='Não consegui ler este arquivo. Tente uma foto mais nítida, ou use o campo de texto abaixo.' }
+}
+async function colarBalizamento(){
+  const t=document.getElementById('tBal').value; if(!t.trim())return toast('Cole o balizamento');
+  const provas=[]; let p=null,serie=1;
+  for(const raw of t.split(/\r?\n/)){
+    const l=raw.trim(); if(!l)continue;
+    const mp=l.match(/prova\s*n?º?\s*([\dA-Za-z]+)?\s*[-–:]?\s*(\d{2,4})\s*m?\s*(livre|costas|peito|borboleta|medley|crawl)/i);
+    if(mp){p={codigo:mp[1]||null,dist:+mp[2],estilo:mp[3].toLowerCase()==='crawl'?'livre':mp[3].toLowerCase(),
+      categoria:l.split(/[-–]/).slice(3).join('-').trim(),inscritos:[]};provas.push(p);serie=1;continue}
+    const ms=l.match(/s[ée]rie\s*n?º?\s*(\d+)/i); if(ms){serie=+ms[1];continue}
+    const mr=l.match(/^(\d{1,2})\s*[-–|\t]\s*([^\-–|\t]+?)\s*(?:[-–|\t]\s*([^\-–|\t]+?))?\s*(?:[-–|\t]\s*([\d:.,']+))?$/);
+    if(mr&&p)p.inscritos.push({serie,raia:+mr[1],nome:mr[2].trim(),equipe:(mr[3]||'').trim(),inscricao:mr[4]||null});
+  }
+  if(!provas.length)return toast('Não reconheci o formato');
+  await incorporar(provas); toast(`${provas.length} prova(s) importada(s)`);
+}
+async function incorporar(lista){
+  await mutarComp(c=>{
+    for(const p of lista){
+      c.provas.push({id:uid(),tipo:'ind',codigo:p.codigo||null,dist:+p.dist||50,estilo:p.estilo||'livre',
+        categoria:p.categoria||'',
+        inscritos:(p.inscritos||[]).map(i=>({id:uid(),serie:+i.serie||1,raia:+i.raia||0,nome:i.nome||'',
+          equipe:i.equipe||'',inscricao:typeof i.inscricao==='string'?parseTempo(i.inscricao):(i.inscricao||null),
+          atletaId:acharAtleta(i.nome),parciais:[]})).sort((a,b)=>(a.serie-b.serie)||(a.raia-b.raia))});
+    }
+  });
+}
+function acharAtleta(nome){
+  if(!nome)return null;
+  const n=nome.trim().toLowerCase();
+  const a=S.elenco.find(x=>x.nome.toLowerCase()===n)||S.elenco.find(x=>x.nome.toLowerCase().startsWith(n.split(' ')[0]));
+  return a?a.id:null;
+}
+
+/* ---------- prova aberta: lançar parciais ---------- */
+function telaProvaDetalhe(){
+  const c=S.comp,p=c.provas[S.provaSel];
+  const np=nPassagens(p,c.piscina),passo=passoDe(p,c.piscina);
+  const cols=Array.from({length:np},(_,i)=>p.tipo==='rev'?`${i+1}º`:`${(i+1)*passo}m`);
+  const series=[...new Set(p.inscritos.map(i=>i.serie||1))].sort((a,b)=>a-b);
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Provas</button>
+    <div class="grow"></div><button class="sm ghost" onclick="removerProva()">✕</button></div>
+  <div><div class="eyebrow">${p.codigo?'Prova '+p.codigo+' · ':''}${esc(p.categoria||'')}</div>
+    <h2>${nomeProva(p)}</h2>
+    <div class="small muted">${p.tipo==='rev'?`um parcial por percurso de ${p.d}m`:`parciais a cada ${passo}m`} · ${c.piscina}</div></div>
+
+  ${p.inscritos.length?series.map(s=>{
+    const gr=p.inscritos.filter(i=>(i.serie||1)===s);
+    return`<div class="blk"><h3>Série ${s}</h3><div class="ln"></div></div>
+    <div class="card tight" style="overflow-x:auto">
+      <table class="ficha"><thead><tr><th>R</th><th style="text-align:left;min-width:96px">Atleta</th>
+        ${cols.map(x=>`<th style="min-width:74px">${x}</th>`).join('')}<th>Δ insc.</th></tr></thead><tbody>
+      ${gr.map(i=>{
+        const ix=p.inscritos.indexOf(i),ps=i.parciais||[],fin=ps.length>=np?ps[np-1]:null;
+        const dif=(fin&&i.inscricao)?fin-i.inscricao:null;
+        return`<tr><td class="n"><b>${i.raia||'—'}</b></td>
+          <td class="nome">${esc(prim(i.nome))}<div class="xs muted" style="font-weight:400">${esc(i.equipe||'')}</div></td>
+          ${cols.map((_,k)=>`<td><input inputmode="decimal" placeholder="—" value="${ps[k]!=null?fmt(ps[k],true):''}"
+            onchange="setParcial(${ix},${k},this.value)">
+            ${k>0&&ps[k]!=null&&ps[k-1]!=null?`<div class="xs t" style="color:var(--water)">${fmt(ps[k]-ps[k-1],true)}</div>`:''}</td>`).join('')}
+          <td class="n" style="color:${dif==null?'inherit':(dif<0?'var(--ok)':'var(--clock)')}">${dif==null?'—':(dif<0?'':'+')+fmt(dif,true)}</td></tr>`}).join('')}
+      </tbody></table></div>`}).join(''):
+    `<div class="empty"><div class="big">Sem inscritos</div><p class="small">Inclua os atletas desta prova.</p></div>`}
+
+  <div class="row" style="margin-top:12px">
+    <button class="ghost full" onclick="abrirInscricao()">+ Atleta</button>
+    <button class="ghost full" onclick="compartilharProva()">WhatsApp</button>
+  </div>
+  ${leituraProva(p,np,passo)}
+  <div style="height:20px"></div>`;
+}
+async function setParcial(ix,k,v){
+  const ms=parseTempo(v),ip=S.provaSel;
+  await mutarComp(c=>{const i=c.provas[ip].inscritos[ix]; i.parciais=i.parciais||[];
+    while(i.parciais.length<k)i.parciais.push(null);
+    i.parciais[k]=ms; while(i.parciais.length&&i.parciais[i.parciais.length-1]==null)i.parciais.pop()});
+  await gravarResultadoPro(ix);
+}
+function abrirInscricao(){
+  const p=S.comp.provas[S.provaSel];
+  sheet(`<h2>Incluir na prova</h2>
+    <div class="small muted">${nomeProva(p)}</div>
+    <div class="field"><label>Atleta da equipe</label><select id="isAt">
+      <option value="">— digitar outro nome —</option>
+      ${S.elenco.filter(a=>a.ativo!==false).map(a=>`<option value="${a.id}">${esc(a.nome)}</option>`).join('')}</select></div>
+    <div class="field"><label>Ou nome avulso</label><input id="isNome" autocapitalize="words"></div>
+    <div class="grid3">
+      <div class="field"><label>Série</label><input id="isSerie" inputmode="numeric" value="1"></div>
+      <div class="field"><label>Raia</label><input id="isRaia" inputmode="numeric" placeholder="4"></div>
+      <div class="field"><label>Inscrição</label><input id="isInsc" inputmode="decimal" placeholder="30.21"></div>
+    </div>
+    <button class="primary full" onclick="salvarInscricao()">Incluir</button>`);
+}
+async function salvarInscricao(){
+  const aId=val('isAt'),a=S.elenco.find(x=>x.id===aId);
+  const nome=a?a.nome:val('isNome');
+  if(!nome)return toast('Escolha ou digite um nome');
+  const ip=S.provaSel;
+  await mutarComp(c=>{c.provas[ip].inscritos.push({id:uid(),atletaId:a?a.id:null,nome,
+    equipe:a?S.eq.nome:'',serie:+val('isSerie')||1,raia:+val('isRaia')||0,
+    inscricao:parseTempo(val('isInsc')),parciais:[]});
+    c.provas[ip].inscritos.sort((x,y)=>(x.serie-y.serie)||(x.raia-y.raia))});
+  fecharSheet(); toast('Incluído');
+}
+async function removerProva(){
+  sheet(`<h2>Excluir prova</h2><p class="small muted">Os tempos lançados nesta prova serão perdidos.</p>
+    <button class="danger full" style="margin-top:12px" onclick="confirmarRemProva()">Excluir</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
+}
+async function confirmarRemProva(){
+  const ip=S.provaSel; await mutarComp(c=>c.provas.splice(ip,1));
+  S.provaSel=null; S.pilha.pop(); fecharSheet(); toast('Prova excluída'); render();
+}
+
+function leituraProva(p,np,passo){
+  const comTempo=p.inscritos.filter(i=>(i.parciais||[]).filter(x=>x!=null).length>=2);
+  if(!comTempo.length)return'';
+  return`<div class="card"><div class="eyebrow">leitura dos trechos</div>
+    ${comTempo.map(i=>{
+      const ps=(i.parciais||[]).filter(x=>x!=null);
+      const tr=ps.map((v,k)=>k===0?v:v-ps[k-1]);
+      const melhor=Math.min(...tr.slice(1));
+      const fin=ps.length>=np?ps[np-1]:null;
+      return`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+        <div class="row"><b>${esc(i.nome)}</b><div class="grow"></div>
+          ${fin?`<span class="t" style="font-weight:700">${fmt(fin,true)}</span>`:''}</div>
+        <div class="chips">${tr.map((t,k)=>`<span class="chip ${k>0&&t===melhor?'best':''}">${p.tipo==='rev'?(k+1)+'º':((k+1)*passo)+'m'} · ${fmt(t,true)}</span>`).join('')}</div>
+        ${tr.length>1?`<div class="xs muted" style="margin-top:5px">Do primeiro ao último trecho: <b class="t">${(tr[tr.length-1]-tr[0])>0?'+':''}${fmt(tr[tr.length-1]-tr[0],true)}</b></div>`:''}
+      </div>`}).join('')}</div>`;
+}
+function compartilharProva(){
+  const c=S.comp,p=c.provas[S.provaSel],np=nPassagens(p,c.piscina),passo=passoDe(p,c.piscina);
+  let t=`*${c.nome}* — ${brData(c.data)}\n${p.codigo?'Prova '+p.codigo+' · ':''}${nomeProva(p)}${p.categoria?' · '+p.categoria:''}\n`;
+  p.inscritos.forEach(i=>{
+    const ps=(i.parciais||[]).filter(x=>x!=null); if(!ps.length)return;
+    const tr=ps.map((v,k)=>k===0?v:v-ps[k-1]);
+    t+=`\n${i.raia?'Raia '+i.raia+' — ':''}${i.nome}\n  ${ps.map((v,k)=>`${p.tipo==='rev'?(k+1)+'º':((k+1)*passo)+'m'} ${fmt(v,true)}`).join(' | ')}`;
+    t+=`\n  trechos: ${tr.map(x=>fmt(x,true)).join(' · ')}`;
+    if(ps.length>=np&&i.inscricao){const d=ps[np-1]-i.inscricao; t+=`\n  ${d<0?'−':'+'}${fmt(Math.abs(d),true)} vs inscrição`}
+  });
+  enviar(t+`\n\nPARCIAL ${VER}`,destinosProva(p));
+}
+/* ---------- compartilhamento ----------
+   Dentro do app o navegador bloqueia janelas automáticas, então sempre
+   mostramos o texto com botão de copiar e links tocáveis pelo usuário. */
+function enviar(texto,destinos){
+  const enc=encodeURIComponent(texto);
+  const lista=(destinos||[]).filter(d=>d&&d.tel&&telValido(d.tel));
+  sheet(`<h2>Compartilhar</h2>
+    <p class="small muted" style="margin:6px 0 10px">Copie o texto e cole no WhatsApp, ou toque em um contato para abrir a conversa já com a mensagem pronta.</p>
+    <textarea id="shTxt" style="min-height:150px;font-size:13.5px">${esc(texto)}</textarea>
+    <button class="primary full" style="margin-top:10px" onclick="copiarTexto('shTxt')">Copiar texto</button>
+    <a class="btnlink zap" href="https://wa.me/?text=${enc}" target="_blank" rel="noopener">Abrir WhatsApp</a>
+    ${lista.length?`<div class="sep"></div><div class="eyebrow">enviar direto para</div>
+      ${lista.map(d=>`<a class="destin" href="https://wa.me/${telWa(d.tel)}?text=${enc}" target="_blank" rel="noopener">
+        <span class="av">${iniciais(d.nome)}</span>
+        <span class="grow"><b>${esc(d.nome)}</b><span class="xs muted" style="display:block">${telBr(d.tel)}</span></span>
+        <span class="tag" style="background:#25D366;color:#062B14">enviar</span></a>`).join('')}`:
+      `<div class="xs muted" style="margin-top:10px">Nenhum contato com telefone cadastrado. Peça para cada um preencher o telefone no cadastro — aí o envio vai direto para a conversa.</div>`}
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
+function destinosTreino(t){
+  if(ehGestor())
+    return S.elenco.filter(a=>(t.para||[]).includes(a.id)).map(a=>({nome:a.nome,tel:a.telefone}));
+  return S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[];
+}
+function destinosProva(p){
+  if(!ehGestor())return S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[];
+  const ids=[...new Set((p.inscritos||[]).map(i=>i.atletaId).filter(Boolean))];
+  return S.elenco.filter(a=>ids.includes(a.id)).map(a=>({nome:a.nome,tel:a.telefone}));
+}
+function compartilharTreino(){
+  const t=S.treino; if(!t)return;
+  const alvo=ehGestor()?S.elenco.filter(a=>(t.para||[]).includes(a.id)):[S.u];
+  let x=`*${t.titulo}* — ${brData(t.data)} · ${t.nivel||''}\n`;
+  for(const b of t.blocos||[]){
+    const ls=[];
+    for(const i of b.itens){
+      const partes=alvo.map(a=>{
+        const r=t.registros?.[a.id]?.[i.id]; const ts=(r?.tempos||[]).filter(y=>y!=null);
+        return ts.length?`${alvo.length>1?prim(a.nome)+': ':''}${ts.map(y=>fmt(y,true)).join(' / ')}`:null}).filter(Boolean);
+      ls.push(`${i.reps>1?i.reps+'x':''}${i.dist} ${i.estilo}${i.intervalo?` s/${fmtInt(i.intervalo)}`:''}${i.pausa?` p${Math.round(i.pausa/1000)}"`:''}${partes.length?'\n  '+partes.join('\n  '):''}`);
+    }
+    if(ls.length)x+=`\n_${b.titulo}_\n${ls.join('\n')}\n`;
+  }
+  enviar(x+`\nVolume: ${(volTreino(t)/1000).toFixed(1)}k · PARCIAL ${VER}`,destinosTreino(t));
+}
+
+/* ---------- competição na visão do atleta ---------- */
+function telaCompAtleta(){
+  if(!S.comp)return`<div class="row" style="margin:16px 0 6px"><h2>Provas</h2></div>
+    ${S.cidx.map(c=>`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirComp('${c.id}')">
+      <div class="av">▲</div><div class="grow"><b>${esc(c.nome)}</b>
+      <div class="xs muted">${brData(c.data)} · ${c.piscina}</div></div><span class="tag o">›</span></button>`).join('')
+      ||`<div class="empty"><div class="big">Nenhuma competição</div><p class="small">O técnico ainda não cadastrou provas.</p></div>`}`;
+  const c=S.comp;
+  const minhas=[];
+  c.provas.forEach(p=>p.inscritos.forEach(i=>{if(i.atletaId===S.u.id)minhas.push({p,i})}));
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="push();S.comp=null;S.provaSel=null;render()">‹ Competições</button></div>
+  <div><div class="eyebrow">${brData(c.data)} · ${esc(c.local||'')} · ${c.piscina}</div><h2>${esc(c.nome)}</h2></div>
+  ${minhas.length?minhas.map(({p,i})=>{
+    const np=nPassagens(p,c.piscina),passo=passoDe(p,c.piscina);
+    const ps=(i.parciais||[]).filter(x=>x!=null);
+    const tr=ps.map((v,k)=>k===0?v:v-ps[k-1]);
+    const fin=ps.length>=np?ps[np-1]:null;
+    const dif=(fin&&i.inscricao)?fin-i.inscricao:null;
+    return`<div class="card">
+      <div class="row"><div><div class="eyebrow">${p.codigo?'Prova '+p.codigo:''} ${esc(p.categoria||'')}</div>
+        <h3>${nomeProva(p)}</h3></div><div class="grow"></div>
+        <div class="kpi" style="text-align:right"><div class="v">${fin?fmt(fin,true):'—'}</div>
+          <div class="l">${i.serie?'série '+i.serie:''} ${i.raia?'· raia '+i.raia:''}</div></div></div>
+      ${ps.length?`<div class="chips" style="margin-top:8px">${tr.map((t,k)=>`<span class="chip">${p.tipo==='rev'?(k+1)+'º':((k+1)*passo)+'m'} · ${fmt(t,true)}</span>`).join('')}</div>`:
+        '<div class="small muted" style="margin-top:8px">Aguardando o técnico lançar os tempos.</div>'}
+      ${dif!=null?`<div class="note ${dif<0?'ok':'warn'}" style="margin-top:10px">${dif<0?'Você baixou ':'Ficou '}<b>${fmt(Math.abs(dif),true)}</b> ${dif<0?'em relação à':'acima da'} inscrição de ${fmt(i.inscricao,true)}.</div>`:''}
+    </div>`}).join(''):`<div class="empty"><div class="big">Você não está inscrito</div>
+      <p class="small">Nenhuma prova desta competição está no seu nome.</p></div>`}
+  ${minhas.length?`<button class="ghost full" onclick="compartilharMinhasProvas()">Compartilhar meus tempos</button><div style="height:20px"></div>`:''}`;
+}
+function compartilharMinhasProvas(){
+  const c=S.comp; let t=`*${c.nome}* — ${brData(c.data)}\n${S.u.nome}\n`;
+  c.provas.forEach(p=>p.inscritos.forEach(i=>{
+    if(i.atletaId!==S.u.id)return;
+    const np=nPassagens(p,c.piscina),passo=passoDe(p,c.piscina);
+    const ps=(i.parciais||[]).filter(x=>x!=null); if(!ps.length)return;
+    const tr=ps.map((v,k)=>k===0?v:v-ps[k-1]);
+    t+=`\n${nomeProva(p)} — ${fmt(ps[ps.length-1],true)}\n  ${tr.map((x,k)=>`${p.tipo==='rev'?(k+1)+'º':((k+1)*passo)+'m'} ${fmt(x,true)}`).join(' · ')}`;
+  }));
+  enviar(t+`\n\nPARCIAL ${VER}`,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
+}
+
+/* =====================================================================
+   PRO — resultados vindos da competição
+   ===================================================================== */
+async function gravarResultadoPro(ix){
+  const c=S.comp,p=c.provas[S.provaSel],i=p.inscritos[ix];
+  if(!i||!i.atletaId||p.tipo==='rev')return;
+  const at=S.elenco.find(a=>a.id===i.atletaId)||(S.u.id===i.atletaId?S.u:null);
+  if(!at||at.perfil!=='pro')return;
+  const np=nPassagens(p,c.piscina),ps=(i.parciais||[]).filter(x=>x!=null);
+  if(ps.length<np)return;
+  const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const chave=c.id+'_'+p.id;
+  const r={chave,comp:c.nome,data:c.data,piscina:c.piscina,prova:nomeProva(p),dist:p.dist,estilo:p.estilo,
+    tempo:ps[np-1],parciais:[...ps],inscricao:i.inscricao||null};
+  const k=(pro.resultados||[]).findIndex(x=>x.chave===chave);
+  if(k>=0)pro.resultados[k]=r; else (pro.resultados=pro.resultados||[]).push(r);
+  const key=pbKey(p.dist,p.estilo,c.piscina);
+  if(!pro.pbs[key]||r.tempo<pro.pbs[key])pro.pbs[key]=r.tempo;
+  await DB.set(kPro(at.id),pro);
+  if(S.u.id===at.id)S.pro=pro;
+}
+
+/* =====================================================================
+   PRO — MARCAS
+   ===================================================================== */
+function telaMarcas(){
+  const pro=S.pro||{pbs:{},resultados:[]};
+  const res=[...(pro.resultados||[])].sort((a,b)=>b.data.localeCompare(a.data));
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Marcas</h2><div class="grow"></div>
+    <button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button></div>
+  <div class="card">
+    <div class="eyebrow">melhores tempos</div>
+    ${Object.keys(pro.pbs||{}).length?`<table style="margin-top:6px"><tbody>
+      ${Object.entries(pro.pbs).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>{
+        const[d,e,pis]=k.split(' ');
+        return`<tr><td><b>${d}m ${e}</b> <span class="xs muted">${pis}</span></td>
+          <td class="n" style="text-align:right;font-weight:700">${fmt(v,true)}</td>
+          <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}
+    </tbody></table>`:'<div class="small muted" style="margin-top:6px">Nenhuma marca registrada. Toque em + Tempo.</div>'}
+  </div>
+  <div class="card">
+    <div class="eyebrow">histórico de competições</div>
+    ${res.length?res.map(r=>{
+      const tr=(r.parciais||[]).map((v,k)=>k===0?v:v-r.parciais[k-1]);
+      const pb=(pro.pbs||{})[pbKey(r.dist,r.estilo,r.piscina)];
+      return`<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--line)">
+        <div class="row"><div><b>${esc(r.prova)}</b>
+          <div class="xs muted">${esc(r.comp)} · ${brData(r.data)} · ${r.piscina}</div></div>
+          <div class="grow"></div>
+          <div class="kpi" style="text-align:right"><div class="v" style="font-size:20px">${fmt(r.tempo,true)}</div>
+            ${pb&&r.tempo<=pb?'<div class="l" style="color:var(--rope)">melhor marca</div>':''}</div></div>
+        ${tr.length>1?`<div class="chips">${tr.map((t,k)=>`<span class="chip">${k+1}º trecho · ${fmt(t,true)}</span>`).join('')}</div>`:''}
+      </div>`}).join(''):'<div class="small muted" style="margin-top:6px">Os tempos lançados pelo técnico nas competições caem aqui sozinhos.</div>'}
+  </div><div style="height:20px"></div>`;
+}
+function abrirNovaMarca(){
+  sheet(`<h2>Registrar tempo</h2>
+    <div class="field"><label>Prova</label><select id="mkProva">
+      ${PROVAS_CAT.map((p,i)=>`<option value="${i}">${p.d}m ${p.e}</option>`).join('')}</select></div>
+    <div class="grid2">
+      <div class="field"><label>Piscina</label><select id="mkPis"><option>SC25</option><option>LC50</option></select></div>
+      <div class="field"><label>Tempo</label><input id="mkTempo" inputmode="decimal" placeholder="30.21"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Data</label><input type="date" id="mkData" value="${hoje()}"></div>
+      <div class="field"><label>Competição</label><input id="mkComp" autocapitalize="words" placeholder="opcional"></div>
+    </div>
+    <button class="primary full" onclick="salvarMarca()">Salvar</button>`);
+}
+async function salvarMarca(){
+  const b=PROVAS_CAT[+document.getElementById('mkProva').value];
+  const pis=document.getElementById('mkPis').value,ms=parseTempo(val('mkTempo'));
+  if(!ms)return toast('Tempo inválido');
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const key=pbKey(b.d,b.e,pis);
+  if(!S.pro.pbs[key]||ms<S.pro.pbs[key])S.pro.pbs[key]=ms;
+  if(val('mkComp'))S.pro.resultados.push({chave:uid(),comp:val('mkComp'),data:val('mkData')||hoje(),piscina:pis,
+    prova:`${b.d}m ${b.e}`,dist:b.d,estilo:b.e,tempo:ms,parciais:[ms],inscricao:null});
+  await salvarPro(); fecharSheet(); toast('Registrado'); render();
+}
+async function apagarPB(k){delete S.pro.pbs[k];await salvarPro();render()}
+
+/* =====================================================================
+   PRO — GARMIN E TREINO EM SECO
+   ===================================================================== */
+function telaGarmin(){
+  const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
+  const seco=[...(S.pro?.seco||[])].sort((a,b)=>b.data.localeCompare(a.data));
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Garmin</h2></div>
+  ${g.length?`<div class="card"><div class="eyebrow">prontidão</div>
+    ${prontidao()}
+    <table style="margin-top:10px"><thead><tr><th>Data</th><th>FC rep</th><th>VFC</th><th>Sono</th><th>Nado</th></tr></thead><tbody>
+    ${g.slice(0,12).map(x=>`<tr><td class="small">${brCurta(x.data)}</td><td class="n">${x.fc??'—'}</td>
+      <td class="n">${x.hrv??'—'}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
+    </tbody></table></div>`:''}
+  <div class="card">
+    <div class="eyebrow">importar</div>
+    <p class="small muted">Aceita os arquivos de exportação do Garmin Connect: <b>healthStatusData</b> (FC repouso e VFC), <b>sleepData</b> e <b>summarizedActivities</b> (volume dos nados).</p>
+    <div class="field"><input type="file" id="fGar" accept=".json,application/json" multiple onchange="arquivoGarmin(this)"></div>
+    <div class="field"><label>Ou cole o JSON</label>
+      <textarea id="txGar" style="min-height:100px" onfocus="S.escrevendo=true" onblur="S.escrevendo=false"
+        placeholder='[{"calendarDate":"2026-08-01","restingHeartRate":48}]'></textarea></div>
+    <button class="full" onclick="importarGarmin(document.getElementById('txGar').value)">Importar texto</button>
+    <div class="sep"></div>
+    <div class="eyebrow">lançar à mão</div>
+    <div class="grid2" style="margin-top:8px">
+      <div><label>Data</label><input type="date" id="gD" value="${hoje()}"></div>
+      <div><label>FC repouso</label><input id="gFC" inputmode="numeric"></div>
+    </div>
+    <div class="grid3" style="margin-top:8px">
+      <div><label>VFC</label><input id="gH" inputmode="numeric"></div>
+      <div><label>Sono h</label><input id="gS" inputmode="decimal"></div>
+      <div><label>Sensação</label><input id="gP" inputmode="numeric" placeholder="1-10"></div>
+    </div>
+    <button class="primary full" style="margin-top:10px" onclick="lancarDia()">Gravar dia</button>
+  </div>
+  <div class="card">
+    <div class="eyebrow">treino fora d'água</div>
+    <p class="small muted">Fotografe a ficha da musculação ou do trabalho de core. Fica no histórico e entra no relatório.</p>
+    <div class="field"><input type="file" id="fSeco" accept="image/*" capture="environment" onchange="fotoSeco(this)"></div>
+    <div class="grid2">
+      <div class="field"><label>Tipo</label><select id="skTipo"><option>Musculação</option><option>Core</option><option>Mobilidade</option><option>Elástico</option><option>Outro</option></select></div>
+      <div class="field"><label>Data</label><input type="date" id="skData" value="${hoje()}"></div>
+    </div>
+    <div class="field"><label>Observação</label><input id="skObs" autocapitalize="sentences" placeholder="ex.: puxada + tríceps, 4x10"></div>
+    <div id="skPrev" class="small muted">Nenhuma foto escolhida.</div>
+    <button class="primary full" style="margin-top:10px" onclick="salvarSeco()">Salvar registro</button>
+    ${seco.length?`<div class="sep"></div>${seco.slice(0,8).map(s=>`<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)">
+      ${s.img?`<img src="${s.img}" style="width:52px;height:52px;object-fit:cover;border-radius:9px;border:1px solid var(--line)">`:'<div class="av">◻</div>'}
+      <div class="grow"><b>${esc(s.tipo)}</b><div class="xs muted">${brData(s.data)}${s.obs?' · '+esc(s.obs):''}</div></div>
+      <button class="sm ghost" onclick="apagarSeco('${s.id}')">✕</button></div>`).join('')}`:''}
+  </div><div style="height:20px"></div>`;
+}
+function prontidao(){
+  const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
+  const h=g.filter(x=>x.hrv!=null),f=g.filter(x=>x.fc!=null);
+  if(h.length<4&&f.length<4)return'<div class="small muted">Poucos dias para uma leitura confiável.</div>';
+  const m=[];let alerta=false;
+  if(h.length>=4){
+    const rec=h.slice(0,3).reduce((t,x)=>t+x.hrv,0)/3;
+    const base=h.slice(3,17).reduce((t,x)=>t+x.hrv,0)/Math.max(1,h.slice(3,17).length);
+    const d=((rec-base)/base)*100;
+    if(d<-8){m.push(`VFC ${Math.abs(d).toFixed(0)}% abaixo da linha de base.`);alerta=true}
+    else if(d>8)m.push(`VFC ${d.toFixed(0)}% acima da linha de base — boa janela para intensidade.`);
+    else m.push('VFC estável em relação à linha de base.');
+  }
+  if(f.length>=4){
+    const rec=f.slice(0,3).reduce((t,x)=>t+x.fc,0)/3;
+    const base=f.slice(3,17).reduce((t,x)=>t+x.fc,0)/Math.max(1,f.slice(3,17).length);
+    if(rec>base+3){m.push(`FC de repouso ${(rec-base).toFixed(0)} bpm acima do habitual.`);alerta=true}
+  }
+  const sono=g.filter(x=>x.sono!=null).slice(0,7);
+  if(sono.length>=3){const md=sono.reduce((t,x)=>t+x.sono,0)/sono.length;
+    if(md<6.5){m.push(`Média de sono de ${md.toFixed(1)}h nos últimos dias.`);alerta=true}}
+  return`<div class="note ${alerta?'warn':'ok'}">${m.join(' ')}</div>`;
+}
+async function arquivoGarmin(inp){
+  let n=0;
+  for(const f of inp.files){
+    const txt=await f.text();
+    n+=await importarGarmin(txt,true);
+  }
+  await salvarPro(); toast(`${n} dia(s) importado(s)`); render();
+}
+async function importarGarmin(raw,silencioso){
+  if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return 0}
+  let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return 0}
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const arr=Array.isArray(j)?j.flat():[j],mapa={};
+  (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
+  let n=0;
+  arr.forEach(o=>{
+    if(!o||typeof o!=='object')return;
+    const d=o.calendarDate||o.calendar_date||o.sleepStartTimestampLocal?.slice?.(0,10)||
+      (o.startTimeLocal?String(o.startTimeLocal).slice(0,10):null);
+    if(!d||!/^\d{4}-\d{2}-\d{2}/.test(d))return;
+    const dia=d.slice(0,10);
+    const g=mapa[dia]||{data:dia};
+    if(o.restingHeartRate!=null)g.fc=Math.round(o.restingHeartRate);
+    const hrv=o.hrvWeeklyAverage??o.lastNightAvg??o.avgOvernightHrv??o.weeklyAvg;
+    if(hrv!=null)g.hrv=Math.round(hrv);
+    if(o.sleepTimeSeconds!=null)g.sono=+(o.sleepTimeSeconds/3600).toFixed(1);
+    if(o.deepSleepSeconds!=null&&o.sleepTimeSeconds==null)g.sono=+((o.deepSleepSeconds+(o.lightSleepSeconds||0)+(o.remSleepSeconds||0))/3600).toFixed(1);
+    if((o.activityType==='lap_swimming'||o.activityType==='open_water_swimming')&&o.distance!=null)
+      g.nado=(g.nado||0)+Math.round(o.distance/100);
+    mapa[dia]=g;n++;
+  });
+  S.pro.garmin=Object.values(mapa);
+  if(!silencioso){await salvarPro();toast(`${n} registro(s) lido(s)`);render()}
+  return n;
+}
+async function lancarDia(){
+  const d=val('gD'); if(!d)return;
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  let g=(S.pro.garmin||[]).find(x=>x.data===d); if(!g){g={data:d};S.pro.garmin.push(g)}
+  const nm=id=>{const v=val(id);return v?parseFloat(v):undefined};
+  if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
+  if(nm('gS')!==undefined)g.sono=nm('gS'); if(nm('gP')!==undefined)g.pse=nm('gP');
+  await salvarPro(); toast('Gravado'); render();
+}
+let FOTO=null;
+function fotoSeco(inp){
+  const f=inp.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const max=760,esc2=Math.min(1,max/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*esc2); cv.height=Math.round(img.height*esc2);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      FOTO=cv.toDataURL('image/jpeg',.6);
+      const p=document.getElementById('skPrev');
+      if(p)p.innerHTML=`<img src="${FOTO}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">`;
+    };
+    img.src=r.result;
+  };
+  r.readAsDataURL(f);
+}
+async function salvarSeco(){
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  S.pro.seco=S.pro.seco||[];
+  S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
+    obs:val('skObs'),img:FOTO});
+  if(S.pro.seco.length>24)S.pro.seco=S.pro.seco.slice(0,24);
+  FOTO=null; await salvarPro(); toast('Registro salvo'); render();
+}
+async function apagarSeco(id){S.pro.seco=S.pro.seco.filter(x=>x.id!==id);await salvarPro();render()}
+
+/* =====================================================================
+   PRO — RELATÓRIO DE PERFORMANCE
+   ===================================================================== */
+async function coletarEsforcos(){
+  const out=[];
+  for(const meta of S.tridx.filter(t=>(t.para||[]).includes(S.u.id)).slice(0,25)){
+    const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
+    for(const b of t.blocos||[])for(const i of b.itens){
+      const r=t.registros?.[S.u.id]?.[i.id]; if(!r)continue;
+      (r.tempos||[]).forEach((x,k)=>{ if(x==null)return;
+        out.push({data:t.data,dist:i.dist,estilo:i.estilo,tags:i.tags,tempo:x,
+          p1:i.parcial?(r.parciais?.[k]??null):null,forte:i.forte,vol:i.vol})});
+    }
+  }
+  return out.sort((a,b)=>a.data.localeCompare(b.data));
+}
+let ESF=null;
+function telaRelatorio(){
+  if(!ESF){coletarEsforcos().then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
+  const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
+  const int=ESF.filter(e=>!tec.includes(e));
+  const comPct=int.map(e=>{const pb=pbDe(pro,e.dist,e.estilo);return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
+  const brk=int.filter(e=>e.p1!=null&&e.dist===50).map(e=>({...e,delta:e.tempo-2*e.p1}));
+  const sem=volumePorSemana();
+  const diag=diagnostico(comPct,brk,sem,pro);
+  return`
+  <div class="row noprint" style="margin:16px 0 6px"><h2>Relatório</h2><div class="grow"></div>
+    <button class="sm ghost" onclick="window.print()">PDF</button>
+    <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button></div>
+  <div class="card"><div class="eyebrow">panorama</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
+      <div class="kpi"><div class="v">${(ESF.reduce((t,e)=>t+e.dist,0)/1000).toFixed(1)}k</div><div class="l">metros cronometrados</div></div>
+      <div class="kpi"><div class="v">${comPct.length?(comPct.reduce((t,e)=>t+e.pct,0)/comPct.length).toFixed(0)+'%':'—'}</div><div class="l">%PB médio</div></div>
+    </div>
+  </div>
+  ${brk.length?`<div class="card"><div class="eyebrow">custo do segundo 25</div>
+    <h3 style="margin:3px 0 9px">Onde a velocidade escapa</h3>
+    ${graficoBarras(brk.slice(-10).map(e=>({rot:brCurta(e.data),v:e.delta})))}
+    <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b></div>
+  </div>`:''}
+  ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
+    ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
+  <div class="card"><div class="eyebrow">diagnóstico</div>
+    <h3 style="margin:3px 0 9px">Onde concentrar</h3>
+    ${diag.foco.map(f=>`<div class="note ${f.t}" style="margin-bottom:9px">${f.txt}</div>`).join('')}
+  </div>
+  <div class="card"><div class="eyebrow">sugestão</div>
+    <h3 style="margin:3px 0 9px">Próxima sessão</h3>
+    <div class="card tight" style="background:var(--deck);box-shadow:none">
+      <pre style="margin:0;font-family:var(--mono);font-size:13.5px;white-space:pre-wrap;line-height:1.6">${esc(diag.sessao)}</pre></div>
+    <div class="note ${diag.descansoTipo}" style="margin-top:10px">${diag.descanso}</div>
+    <div class="xs muted" style="margin-top:9px">Sugestão automática a partir dos seus dados. Combine com seu técnico antes de mudar o planejamento.</div>
+  </div>
+  ${pro.garmin?.length?`<div class="card"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}
+  ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
+    <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
+  <div style="height:20px"></div>`;
+}
+function volumePorSemana(){
+  const m={};
+  for(const meta of S.tridx.filter(t=>(t.para||[]).includes(S.u.id))){
+    const d=new Date(meta.data+'T00:00:00'); const on=new Date(d); on.setDate(d.getDate()-((d.getDay()+6)%7));
+    const k=on.toISOString().slice(0,10);
+    m[k]=(m[k]||0)+(meta.vol||0);
+  }
+  return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0])).slice(-8).map(([k,v])=>({rot:brCurta(k),m:v}));
+}
+function diagnostico(comPct,brk,sem,pro){
+  const foco=[];
+  const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
+  const deltaMd=brk.length?brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10):null;
+  const g=[...(pro.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
+  const h=g.filter(x=>x.hrv!=null);
+  let hrvBaixa=false;
+  if(h.length>=4){
+    const rec=h.slice(0,3).reduce((t,x)=>t+x.hrv,0)/3;
+    const base=h.slice(3,17).reduce((t,x)=>t+x.hrv,0)/Math.max(1,h.slice(3,17).length);
+    hrvBaixa=((rec-base)/base)<-0.08;
+  }
+  const subindo=sem.length>=2&&sem[sem.length-1].m>sem[sem.length-2].m*1.25;
+
+  if(deltaMd!=null){
+    if(deltaMd>2600)foco.push({t:'warn',txt:`O segundo 25 está custando em média <b>+${fmt(deltaMd,true)}</b> a mais que o primeiro. Esse é o seu maior ponto de perda: o limitador é manutenção de velocidade, não velocidade de largada.`});
+    else foco.push({t:'ok',txt:`Diferencial médio de <b>+${fmt(deltaMd,true)}</b> entre os 25. A manutenção está sob controle — dá para apertar o primeiro trecho sem medo.`});
+  }
+  if(md!=null){
+    if(md<90)foco.push({t:'',txt:`Os tiros estão saindo a <b>${md.toFixed(0)}%</b> da sua melhor marca. Volume de qualidade acumulado, mas pouco tempo em ritmo real de prova — vale trocar parte do limiar por séries curtas com descanso completo.`});
+    else if(md>=95)foco.push({t:'ok',txt:`Média de <b>${md.toFixed(0)}%</b> do seu melhor tempo nos tiros. Você está treinando perto do ritmo de prova; o ganho agora vem de frescor, não de mais carga.`});
+    else foco.push({t:'',txt:`Média de <b>${md.toFixed(0)}%</b> do melhor tempo. Faixa saudável de treino: mantenha e concentre a intensidade em menos repetições, com mais descanso.`});
+  }
+  if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Trabalho de tolerância ao lactato agora tende a render pouco e cobrar caro.'});
+  if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Segure a progressão por uma semana antes de somar carga.'});
+  if(!foco.length)foco.push({t:'',txt:'Ainda não há tiros suficientes registrados para um diagnóstico firme. Lance os tempos de mais algumas sessões.'});
+
+  let sessao,descanso,descansoTipo;
+  if(hrvBaixa){
+    sessao=`Aquecimento\n400 livre solto\n4x50 pernada 1'10\n\nPrincipal (leve)\n8x50 técnica 1'15\n4x25 progressivo pausa 40"\n\nSoltura\n300 livre`;
+    descanso='Priorize 48 horas de carga reduzida e sono acima de sete horas antes da próxima sessão forte.';
+    descansoTipo='warn';
+  }else if(deltaMd!=null&&deltaMd>2600){
+    sessao=`Aquecimento\n400 livre\n6x50 pernada peito 1'05\n\nPrincipal — manutenção de velocidade\n6x50 peito ritmo de prova saída 3'00 (parciais 25/25)\n8x25 peito máximo pausa 45"\n4x50 peito broken 10" no 25\n\nSoltura\n300 livre`;
+    descanso='Descanso completo entre os 50: o objetivo é repetir o segundo 25, não acumular fadiga.';
+    descansoTipo='';
+  }else{
+    sessao=`Aquecimento\n300 livre\n4x50 pernada peito 1'10\n\nPrincipal — velocidade\n10x25 peito máximo pausa 50"\n4x50 peito ritmo de prova saída 2'30\n2x50 peito com saída de bloco\n\nSoltura\n200 costas`;
+    descanso='Um dia leve entre sessões de velocidade. Mantenha o volume total estável nesta semana.';
+    descansoTipo='ok';
+  }
+  return{foco,sessao,descanso,descansoTipo};
+}
+function graficoBarras(arr,crescerBom){
+  if(!arr.length)return'';
+  const W=600,H=155,P=28,mx=Math.max(...arr.map(a=>a.v)),mn=Math.min(...arr.map(a=>a.v)),rg=(mx-mn)||1;
+  const bw=(W-2*P)/arr.length;
+  const bom=crescerBom?mx:mn;
+  return`<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${arr.map((a,i)=>{const h=20+((a.v-mn)/rg)*(H-2*P-20);
+      return`<rect x="${(P+i*bw+bw*.16).toFixed(1)}" y="${(H-P-h).toFixed(1)}" width="${(bw*.68).toFixed(1)}" height="${h.toFixed(1)}"
+        fill="${a.v===bom?'#1B7F5A':'#0E6E8C'}" rx="3"/>
+      <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${H-P+14}" font-size="10" fill="#5A6670" text-anchor="middle" font-family="Barlow,sans-serif">${a.rot}</text>
+      <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${(H-P-h-5).toFixed(1)}" font-size="11" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${crescerBom?(a.v/1000).toFixed(1)+'k':fmt(a.v,true)}</text>`}).join('')}
+    <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#D8D3C9"/></svg>`;
+}
+async function compartilharRelatorio(){
+  const pro=S.pro||{};
+  const e=ESF||await coletarEsforcos();
+  const int=e.filter(x=>!['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
+  const brk=int.filter(x=>x.p1!=null&&x.dist===50).map(x=>({...x,delta:x.tempo-2*x.p1}));
+  let t=`*Relatório — ${S.u.nome}*\n${brData(hoje())}\n\n`;
+  t+=`Tiros em intensidade: ${int.length}\n`;
+  if(brk.length)t+=`Custo médio do 2º 25: +${fmt(brk.slice(-10).reduce((a,x)=>a+x.delta,0)/Math.min(brk.length,10),true)}\n`;
+  const pbs=Object.entries(pro.pbs||{}).slice(0,6);
+  if(pbs.length)t+=`\nMelhores marcas\n${pbs.map(([k,v])=>`  ${k}: ${fmt(v,true)}`).join('\n')}\n`;
+  enviar(t+`\nPARCIAL ${VER}`,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
+}
+
+/* =====================================================================
+   DEMONSTRAÇÃO
+   ===================================================================== */
+function botaoDemo(){
+  if(FB)return'';   /* no modo em rede não há demonstração — só contas reais */
+  return`<div class="card" style="border-style:dashed;background:none;box-shadow:none">
+    <div class="eyebrow">demonstração</div>
+    <p class="small muted" style="margin:6px 0 10px">Equipe A3 Swim Team já montada, com treinos, competição e dados. Entre sem cadastro para conhecer.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="sm" onclick="demo('tecnico')">Ver como técnico</button>
+      <button class="sm" onclick="demo('pro')">Ver como Bruno (PRO)</button>
+      <button class="sm" onclick="demo('atleta')">Ver como atleta comum</button>
+    </div>
+  </div>`;
+}
+const DEMO={
+  eq:'A3 Swim Team',
+  contas:[
+    {perfil:'tecnico',nome:'Alexandre Ferrari',email:'tecnico@a3swim.com',telefone:'67991110001',idade:47,senha:'a3team2026'},
+    {perfil:'pro',nome:'Bruno Barbato',email:'bruno@a3swim.com',telefone:'67991110002',idade:42,senha:'bruno2026',cpf:'52998224725',nivel:'Master',tipo:'piscina'},
+    {perfil:'atleta',nome:'Rafael Nunes',email:'rafael@a3swim.com',telefone:'67991110003',idade:41,senha:'rafa2026',cpf:'11144477735',nivel:'Master',tipo:'piscina'},
+    {perfil:'atleta',nome:'Diego Matos',email:'diego@a3swim.com',telefone:'67991110004',idade:44,senha:'diego2026',cpf:'12345678909',nivel:'Master',tipo:'piscina'},
+    {perfil:'atleta',nome:'Camila Ferraz',email:'camila@a3swim.com',telefone:'67991110005',idade:37,senha:'cami2026',cpf:'39053344705',nivel:'Aperfeiçoamento',tipo:'piscina'},
+    {perfil:'atleta',nome:'Letícia Prado',email:'leticia@a3swim.com',telefone:'67991110006',idade:36,senha:'leti2026',cpf:'40532176871',nivel:'Águas Abertas',tipo:'aguas'}
+  ]
+};
+async function demo(perfil){
+  toast('Montando a equipe…');
+  const eqs=slug(DEMO.eq);
+  if(!await DB.get(kEq(eqs)))await semear();
+  const c=DEMO.contas.find(x=>x.perfil===perfil);
+  await autenticar(c.email,c.senha);
+}
+async function semear(){
+  if(FB)return toast('No modo em rede não há dados de demonstração — crie contas reais.');
+  const eqs=slug(DEMO.eq);
+  const eq={slug:eqs,nome:DEMO.eq,criadoEm:Date.now(),tecnicoEmail:DEMO.contas[0].email,codigoPro:'A3PRO2026'};
+  await DB.set(kEq(eqs),eq);
+  await DB.set(kLib(eqs),DEMO.contas.filter(c=>c.cpf).map(c=>({cpf:c.cpf,nome:c.nome,nivel:c.nivel,usado:true,email:c.email})));
+  const emails=[];
+  const ids={};
+  for(const c of DEMO.contas){
+    const sal=novoSal();
+    const u={id:uid(),perfil:c.perfil,equipe:eqs,equipeNome:DEMO.eq,nome:c.nome,email:c.email,idade:c.idade,telefone:c.telefone,
+      sal,senha:await hash(c.senha,sal),tipo:c.tipo||null,cpf:c.cpf||'',nivel:c.nivel||null,ativo:true,
+      criadoEm:Date.now()-1000*60*60*24*180};
+    ids[c.nome]=u.id;
+    await DB.set(kUser(u.email),u); emails.push(u.email);
+  }
+  await DB.set(kEqUsers(eqs),emails);
+
+  /* treinos */
+  const master=[ids['Bruno Barbato'],ids['Rafael Nunes'],ids['Diego Matos']];
+  const treinos=[
+    {d:-14,tit:'Base aeróbia e técnica de peito',niv:'Master',para:master,txt:
+`Aquecimento
+400 livre solto
+4x50 pernada peito 1'10
+
+Técnica
+8x25 filipina pausa 30"
+4x50 braçada peito 1'15
+
+Principal
+8x50 peito saída 1'20
+4x100 peito 2'10 progressivo
+
+Soltura
+200 livre`},
+    {d:-9,tit:'Velocidade curta — foco no segundo 25',niv:'Master',para:master,txt:
+`Aquecimento
+300 livre
+6x50 pernada peito 1'05
+
+Principal
+12x25 peito tiro máximo pausa 45"
+6x50 peito ritmo de prova saída 2'00
+
+Soltura
+200 costas`},
+    {d:-4,tit:'Broken 50 e manutenção',niv:'Master',para:master,txt:
+`Aquecimento
+400 medley
+4x50 livre 1'00
+
+Principal
+4x50 peito broken parciais saída 3'00
+8x25 peito forte pausa 40"
+
+Soltura
+200 livre`},
+    {d:0,tit:'Manutenção de velocidade',niv:'Master',para:master,txt:
+`Aquecimento
+400 livre solto
+4x50 pernada peito 1'10
+
+Principal
+8x25 peito tiro máximo pausa 45"
+4x50 peito ritmo de prova saída 2'30
+
+Soltura
+200 costas`},
+    {d:-3,tit:'Travessia — ritmo contínuo',niv:'Águas Abertas',para:[ids['Letícia Prado']],txt:
+`Aquecimento
+600 livre progressivo
+
+Principal
+3x800 livre ritmo de travessia pausa 60"
+8x50 livre forte 1'00
+
+Soltura
+300 livre`},
+    {d:-2,tit:'Técnica de crawl e viradas',niv:'Aperfeiçoamento',para:[ids['Camila Ferraz']],txt:
+`Aquecimento
+300 livre
+
+Técnica
+8x50 educativo crawl 1'20
+6x25 virada pausa 30"
+
+Principal
+10x50 livre 1'10
+
+Soltura
+200 costas`}
+  ];
+  const idx=[];
+  const rnd=(s=>()=>((s=(s*1664525+1013904223)%4294967296)/4294967296))(20260804);
+  const perfilPB={ [ids['Bruno Barbato']]:30210, [ids['Rafael Nunes']]:32100, [ids['Diego Matos']]:31800 };
+  for(const tr of treinos){
+    const dt=new Date(); dt.setDate(dt.getDate()+tr.d);
+    const data=dt.toISOString().slice(0,10);
+    const t={id:uid(),data,titulo:tr.tit,nivel:tr.niv,textoBruto:tr.txt,blocos:interpretar(tr.txt),
+      para:tr.para,registros:{},autor:'Alexandre Ferrari',atualizado:Date.now()};
+    if(tr.d!==0){
+      for(const aid of tr.para){
+        const pb=perfilPB[aid]||33500;
+        for(const b of t.blocos)for(const i of b.itens){
+          let f=i.forte?.965:.885;
+          if(i.tags.includes('pernada'))f=.66; if(i.tags.includes('braçada'))f=.80;
+          if(i.tags.includes('técnica')||i.tags.includes('filipina'))f=.74;
+          let base=pb*(i.dist/50);
+          if(i.dist===25)base=pb*.465; if(i.dist===100)base=pb*2.22; if(i.dist>=200)base=pb*(i.dist/50)*1.02;
+          const tempos=[],parciais=[];
+          const n=Math.min(i.reps,12);
+          for(let k=0;k<n;k++){
+            const x=Math.round((base/f)*(1+k*(i.forte?.007:.004))*(1+(rnd()-.5)*.012));
+            tempos.push(x); if(i.parcial)parciais.push(Math.round(x*(.452+(rnd()-.5)*.008)));
+          }
+          (t.registros[aid]=t.registros[aid]||{})[i.id]={tempos,parciais,em:Date.now()};
+        }
+      }
+    }
+    await DB.set(kTr(eqs,t.id),t);
+    idx.push({id:t.id,data,titulo:tr.tit,nivel:tr.niv,vol:volTreino(t),para:tr.para,nAtletas:tr.para.length});
+  }
+  idx.sort((a,b)=>b.data.localeCompare(a.data));
+  await DB.set(kTrIdx(eqs),idx);
+
+  /* competição */
+  const dc=new Date(); dc.setDate(dc.getDate()-11);
+  const comp={id:uid(),nome:'Copa A3 de Inverno',data:dc.toISOString().slice(0,10),local:'Campo Grande — MS',
+    piscina:'SC25',criadoEm:Date.now(),provas:[
+    {id:uid(),tipo:'ind',codigo:'12',dist:50,estilo:'peito',categoria:'Masculino 40-44',inscritos:[
+      {id:uid(),atletaId:ids['Diego Matos'],nome:'Diego Matos',equipe:DEMO.eq,serie:3,raia:3,inscricao:31800,parciais:[14520,31620]},
+      {id:uid(),atletaId:ids['Bruno Barbato'],nome:'Bruno Barbato',equipe:DEMO.eq,serie:3,raia:4,inscricao:30210,parciais:[13720,30340]},
+      {id:uid(),atletaId:ids['Rafael Nunes'],nome:'Rafael Nunes',equipe:DEMO.eq,serie:3,raia:5,inscricao:32100,parciais:[14810,32040]},
+      {id:uid(),atletaId:null,nome:'Anderson Vieira',equipe:'Náutico CG',serie:3,raia:6,inscricao:31200,parciais:[14350,31480]}
+    ]},
+    {id:uid(),tipo:'ind',codigo:'18',dist:100,estilo:'peito',categoria:'Masculino 40-44',inscritos:[
+      {id:uid(),atletaId:ids['Diego Matos'],nome:'Diego Matos',equipe:DEMO.eq,serie:2,raia:3,inscricao:70200,parciais:[15100,32900,51600,70880]},
+      {id:uid(),atletaId:ids['Bruno Barbato'],nome:'Bruno Barbato',equipe:DEMO.eq,serie:2,raia:4,inscricao:67100,parciais:[14180,31240,49610,67420]},
+      {id:uid(),atletaId:ids['Rafael Nunes'],nome:'Rafael Nunes',equipe:DEMO.eq,serie:2,raia:5,inscricao:71800,parciais:[15420,33600,52800,72150]}
+    ]},
+    {id:uid(),tipo:'ind',codigo:'22',dist:50,estilo:'livre',categoria:'Feminino 35-39',inscritos:[
+      {id:uid(),atletaId:ids['Camila Ferraz'],nome:'Camila Ferraz',equipe:DEMO.eq,serie:1,raia:4,inscricao:29800,parciais:[14180,29640]},
+      {id:uid(),atletaId:ids['Letícia Prado'],nome:'Letícia Prado',equipe:DEMO.eq,serie:1,raia:3,inscricao:30600,parciais:[14620,30480]}
+    ]},
+    {id:uid(),tipo:'ind',codigo:'31',dist:50,estilo:'livre',categoria:'Masculino 40-44',inscritos:[
+      {id:uid(),atletaId:ids['Rafael Nunes'],nome:'Rafael Nunes',equipe:DEMO.eq,serie:4,raia:4,inscricao:26400,parciais:[]},
+      {id:uid(),atletaId:ids['Bruno Barbato'],nome:'Bruno Barbato',equipe:DEMO.eq,serie:4,raia:5,inscricao:27900,parciais:[]},
+      {id:uid(),atletaId:ids['Diego Matos'],nome:'Diego Matos',equipe:DEMO.eq,serie:4,raia:3,inscricao:28100,parciais:[]}
+    ]},
+    {id:uid(),tipo:'rev',codigo:'40',r:4,d:50,estilo:'medley',genero:'masculino',categoria:'160+',inscritos:[
+      {id:uid(),atletaId:ids['Diego Matos'],nome:'Diego Matos (costas)',equipe:DEMO.eq,serie:1,raia:4,inscricao:null,parciais:[31200]},
+      {id:uid(),atletaId:ids['Bruno Barbato'],nome:'Bruno Barbato (peito)',equipe:DEMO.eq,serie:1,raia:4,inscricao:null,parciais:[]},
+      {id:uid(),atletaId:ids['Rafael Nunes'],nome:'Rafael Nunes (livre)',equipe:DEMO.eq,serie:1,raia:4,inscricao:null,parciais:[]}
+    ]}
+  ]};
+  await DB.set(kCmp(eqs,comp.id),comp);
+  await DB.set(kCIdx(eqs),[{id:comp.id,nome:comp.nome,data:comp.data,local:comp.local,piscina:comp.piscina}]);
+
+  /* dados PRO do Bruno */
+  const g=[],fc=[49,48,50,52,51,48,47,49,53,51,48,47,49,48],hrv=[64,66,61,55,52,60,68,65,49,54,62,67,63,66];
+  for(let i=13;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);
+    g.push({data:d.toISOString().slice(0,10),fc:fc[13-i],hrv:hrv[13-i],sono:+(6.4+((13-i)%5)*.35).toFixed(1)})}
+  await DB.set(kPro(ids['Bruno Barbato']),{
+    pbs:{'50 peito SC25':30210,'100 peito SC25':67100,'50 peito LC50':31350,'50 livre SC25':27900,'200 peito SC25':151200},
+    garmin:g,seco:[{id:uid(),data:new Date(Date.now()-86400000*2).toISOString().slice(0,10),tipo:'Musculação',
+      obs:'Puxada alta 4x10 · supino 4x8 · core 3x40s',img:null}],
+    resultados:[
+      {chave:'h1',comp:'Campeonato Brasileiro Master',data:'2026-05-16',piscina:'LC50',prova:'50m peito',dist:50,estilo:'peito',tempo:31350,parciais:[14100,31350],inscricao:30800},
+      {chave:'h2',comp:'Copa A3 de Inverno',data:comp.data,piscina:'SC25',prova:'50m peito',dist:50,estilo:'peito',tempo:30340,parciais:[13720,30340],inscricao:30210},
+      {chave:'h3',comp:'Copa A3 de Inverno',data:comp.data,piscina:'SC25',prova:'100m peito',dist:100,estilo:'peito',tempo:67420,parciais:[14180,31240,49610,67420],inscricao:67100}
+    ]});
+}
+
+/* =====================================================================
+   INÍCIO
+   ===================================================================== */
+(async()=>{
+  const m=(location.hash||'').match(/recuperar=([\w]+)/);
+  if(m&&!FB){S.tok=m[1];S.vista='reset';render();return}   /* no Firebase o link de reset é a página do próprio Firebase */
+  if(FB){
+    /* espera o Firebase restaurar a sessão antes de ler dados protegidos */
+    fauth.onAuthStateChanged(async user=>{
+      if(user){
+        const s=await DB.get('sessao',false);
+        const em=(s&&s.email)?s.email:(user.email||'').toLowerCase();
+        const u=await DB.get(kUser(em));
+        if(u&&u.ativo!==false){await entrarSessao(u);return}
+      }
+      if(!S.u){S.vista='entrada';render()}
+    });
+    return;
+  }
+  const s=await DB.get('sessao',false);
+  if(s&&s.email){const u=await DB.get(kUser(s.email)); if(u&&u.ativo!==false){await entrarSessao(u);return}}
+  render();
+})();
+</script>
