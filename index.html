@@ -1907,10 +1907,13 @@ function telaMarcas(){
           <div class="xs muted">${esc(r.comp)} · ${brData(r.data)} · ${r.piscina}</div></div>
           <div class="grow"></div>
           <div class="kpi" style="text-align:right"><div class="v" style="font-size:20px">${fmt(r.tempo,true)}</div>
-            ${pb&&r.tempo<=pb?'<div class="l" style="color:var(--rope)">melhor marca</div>':''}</div></div>
+            ${pb&&r.tempo<=pb?'<div class="l" style="color:var(--rope)">melhor marca</div>':''}</div>
+          <button class="sm ghost" style="margin-left:6px" onclick="apagarResultado('${r.chave}')">✕</button></div>
         ${tr.length>1?`<div class="chips">${tr.map((t,k)=>`<span class="chip">${k+1}º trecho · ${fmt(t,true)}</span>`).join('')}</div>`:''}
-      </div>`}).join(''):'<div class="small muted" style="margin-top:6px">Os tempos lançados pelo técnico nas competições caem aqui sozinhos.</div>'}
-  </div><div style="height:20px"></div>`;
+      </div>`}).join(''):'<div class="small muted" style="margin-top:6px">Registre pelo botão + Tempo (preenchendo a competição) ou o técnico lança nas competições.</div>'}
+  </div>
+  ${cardEvolucao(pro,'evolução por prova')}
+  <div style="height:20px"></div>`;
 }
 function abrirNovaMarca(){
   sheet(`<h2>Registrar tempo</h2>
@@ -1927,8 +1930,11 @@ function abrirNovaMarca(){
       <div class="xs muted" style="margin-top:4px">horas : minutos : segundos : centésimos</div></div>
     <div class="grid2">
       <div class="field"><label>Data</label><input type="date" id="mkData" value="${hoje()}"></div>
-      <div class="field"><label>Competição</label><input id="mkComp" autocapitalize="words" placeholder="opcional"></div>
+      <div class="field"><label>Competição</label><input id="mkComp" autocapitalize="words" placeholder="nome da prova"></div>
     </div>
+    <div class="field"><label>Parciais acumuladas <span class="xs muted">(competição, opcional)</span></label>
+      <input id="mkParc" placeholder="ex.: 14.10 / 31.35"></div>
+    <div class="xs muted" style="margin:-4px 0 8px">Preencha a <b>competição</b> para o tempo entrar no histórico e no quadro de evolução. Sem competição, entra só como melhor tempo.</div>
     <button class="primary full" onclick="salvarMarca()">Salvar</button>`);
 }
 async function salvarMarca(){
@@ -1938,11 +1944,61 @@ async function salvarMarca(){
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   const key=pbKey(b.d,b.e,pis);
   if(!S.pro.pbs[key]||ms<S.pro.pbs[key])S.pro.pbs[key]=ms;
-  if(val('mkComp'))S.pro.resultados.push({chave:uid(),comp:val('mkComp'),data:val('mkData')||hoje(),piscina:pis,
-    prova:`${b.d}m ${b.e}`,dist:b.d,estilo:b.e,tempo:ms,parciais:[ms],inscricao:null});
-  await salvarPro(); fecharSheet(); toast('Registrado'); render();
+  if(val('mkComp')){
+    const parc=val('mkParc')?val('mkParc').split(/[\/,;]+/).map(s=>parseTempo(s.trim())).filter(x=>x!=null):[];
+    S.pro.resultados=S.pro.resultados||[];
+    S.pro.resultados.push({chave:uid(),comp:val('mkComp'),data:val('mkData')||hoje(),piscina:pis,
+      prova:`${b.d}m ${b.e}`,dist:b.d,estilo:b.e,tempo:ms,parciais:parc.length?parc:[ms],inscricao:null});
+  }
+  await salvarPro(); fecharSheet(); toast(val('mkComp')?'Competição registrada':'Melhor tempo registrado'); render();
 }
 async function apagarPB(k){delete S.pro.pbs[k];await salvarPro();render()}
+async function apagarResultado(chave){ S.pro.resultados=(S.pro.resultados||[]).filter(r=>r.chave!==chave); await salvarPro(); render(); }
+
+/* agrupa os resultados de competição por prova+piscina para a linha do tempo */
+function evolucaoProvas(pro){
+  const g={};
+  for(const r of (pro.resultados||[])){
+    if(r.tempo==null||!r.data)continue;
+    const k=pbKey(r.dist,r.estilo,r.piscina);
+    (g[k]=g[k]||[]).push(r);
+  }
+  const out=[];
+  for(const k of Object.keys(g)){
+    const arr=g[k].slice().sort((a,b)=>a.data.localeCompare(b.data));
+    if(arr.length<2)continue;
+    const first=arr[0].tempo,last=arr[arr.length-1].tempo;
+    out.push({key:k,prova:`${arr[0].dist}m ${arr[0].estilo}`,piscina:arr[0].piscina,
+      pts:arr.map(r=>({rot:brCurta(r.data),v:r.tempo})),delta:last-first,melhora:last<first});
+  }
+  return out.sort((a,b)=>a.key.localeCompare(b.key));
+}
+/* mini gráfico de linha: menor tempo (melhor) fica em cima; verde melhora, vermelho piora */
+function graficoLinha(pts){
+  if(!pts||pts.length<2)return'';
+  const W=600,H=150,P=30,n=pts.length;
+  const vs=pts.map(p=>p.v),mx=Math.max(...vs),mn=Math.min(...vs),rg=(mx-mn)||1;
+  const x=i=>P+(i*(W-2*P)/(n-1));
+  const y=v=>P+((v-mn)/rg)*(H-2*P);
+  const cor=pts[n-1].v<pts[0].v?'#1B7F5A':'#E0342A';
+  const linha=pts.map((p,i)=>`${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  return`<svg class="chart" viewBox="0 0 ${W} ${H}" style="overflow:visible">
+    <polyline points="${linha}" fill="none" stroke="${cor}" stroke-width="2.5"/>
+    ${pts.map((p,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.5" fill="${cor}"/>
+      <text x="${x(i).toFixed(1)}" y="${(y(p.v)-8).toFixed(1)}" font-size="10" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${fmt(p.v,true)}</text>
+      <text x="${x(i).toFixed(1)}" y="${H-P+14}" font-size="9" fill="#5A6670" text-anchor="middle" font-family="Barlow,sans-serif">${p.rot}</text>`).join('')}
+  </svg>`;
+}
+function cardEvolucao(pro,eyebrow){
+  const ev=evolucaoProvas(pro); if(!ev.length)return'';
+  return`<div class="card"><div class="eyebrow">${eyebrow}</div>
+    ${ev.map(e=>`<div style="margin-top:14px">
+      <div class="row"><b>${e.prova} <span class="xs muted">${e.piscina}</span></b><div class="grow"></div>
+        <span class="small" style="font-weight:700;color:${e.melhora?'var(--ok)':'var(--clock)'}">${e.melhora?'▼ evoluiu':'▲ regrediu'} ${fmt(Math.abs(e.delta),true)}</span></div>
+      ${graficoLinha(e.pts)}</div>`).join('')}
+    <div class="xs muted" style="margin-top:8px">Cada ponto é uma competição, na ordem do tempo. Linha subindo = melhorando; menor tempo é melhor.</div>
+  </div>`;
+}
 
 /* =====================================================================
    STORE — loja de equipamentos de natação (atleta e PRO)
@@ -2279,6 +2335,7 @@ function telaRelatorio(){
   ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
     <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
     ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
+  ${cardEvolucao(pro,'evolução em competições')}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
   <div style="height:20px"></div>`;
@@ -2321,6 +2378,10 @@ function diagnostico(comPct,brk,sem,pro){
   if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Trabalho de tolerância ao lactato agora tende a render pouco e cobrar caro.'});
   if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Segure a progressão por uma semana antes de somar carga.'});
   exFlags.forEach(f=>foco.push({t:f.t,txt:f.txt}));
+  const evP=evolucaoProvas(pro);
+  const evoluiu=evP.filter(e=>e.melhora),regrediu=evP.filter(e=>!e.melhora);
+  if(evoluiu.length)foco.push({t:'ok',txt:`Em competição, evolução em <b>${evoluiu.map(e=>e.prova).join(', ')}</b>. Mantenha o que está funcionando nessas provas.`});
+  if(regrediu.length)foco.push({t:'warn',txt:`Queda de rendimento em <b>${regrediu.map(e=>e.prova).join(', ')}</b> ao longo das competições. Vale revisar a preparação específica dessas provas.`});
   if(!foco.length)foco.push({t:'',txt:'Ainda não há tiros suficientes registrados para um diagnóstico firme. Lance os tempos de mais algumas sessões.'});
 
   let sessao,descanso,descansoTipo;
