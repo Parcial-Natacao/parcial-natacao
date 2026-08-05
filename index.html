@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -178,6 +179,14 @@ const VER='v08';
    o acesso ou liberar para outra pessoa. Independe do técnico.
    ───────────────────────────────────────────────────────────── */
 const CODIGO_PRO='BARBATO-PRO-2026';
+
+/* ─────────────────────────────────────────────────────────────
+   DESENVOLVEDOR — quem aprova e gere os TÉCNICOS do app.
+   Use o MESMO e-mail da sua conta no app (pode listar mais de um).
+   Cadastro de técnico entra pendente até um desenvolvedor liberar.
+   ───────────────────────────────────────────────────────────── */
+const DEV_EMAILS=['barbato.bruno@gmail.com'];
+function ehDev(){ return !!(S.u&&DEV_EMAILS.includes((S.u.email||'').toLowerCase())); }
 
 /* ---------- armazenamento (nuvem do app, com reserva em memória) ---------- */
 const MEM={};
@@ -472,26 +481,30 @@ async function cadastrarFB(dados){
     if(!eq)eq=await criarEquipe(null);
     nivelFinal='Master';
   }else{
+    /* cadastro livre: não precisa de liberação prévia. Entra pendente e o
+       técnico (ou PRO em gestão) aprova depois. CPF é opcional. */
     if(!eq)return abortar('Equipe não encontrada. Confira o nome com seu técnico.');
-    if(!cpfValido(cpf))return abortar('CPF inválido');
-    const libs=await DB.get(kLib(eqSlug))||[];
-    const lib=libs.find(l=>l.cpf===cpfLimpo(cpf));
-    if(!lib)return abortar('CPF não liberado pelo técnico');
-    if(lib.usado)return abortar('Este CPF já tem conta ativa');
-    nivelFinal=lib.nivel||'Master';
-    lib.usado=true; lib.email=em; await DB.set(kLib(eqSlug),libs);
+    if(cpf&&!cpfValido(cpf))return abortar('CPF inválido');
+    nivelFinal=nivel||'Master';
   }
 
   /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
      dos dados PRO (só o dono lê pro_<uid>). */
+  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?DEV_EMAILS.includes(em):false);
   const u={id:cred.user.uid,perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
-    nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,criadoEm:Date.now()};
+    nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
   await DB.set(kUser(u.email),u);
   const us=await DB.get(kEqUsers(eqSlug))||[]; if(!us.includes(u.email)){us.push(u.email);await DB.set(kEqUsers(eqSlug),us)}
+  if(perfil==='tecnico')await registrarTecnicoDev(u);
   await entrarSessao(u);
-  toast('Conta criada. Bem-vindo!');
+  toast(u.aprovado?'Conta criada. Bem-vindo!':(perfil==='tecnico'?'Cadastro de técnico enviado. Aguarde a liberação do desenvolvedor.':'Cadastro enviado! Aguarde a liberação do técnico.'));
+}
+/* fila global de técnicos, para o desenvolvedor enxergar e liberar */
+async function registrarTecnicoDev(u){
+  const lst=await DB.get('dev_tecnicos')||[];
+  if(!lst.some(x=>x.email===u.email)){ lst.push({email:u.email,nome:u.nome,equipeNome:u.equipeNome,em:Date.now()}); await DB.set('dev_tecnicos',lst); }
 }
 
 async function autenticarFB(email,senha){
@@ -540,24 +553,22 @@ async function cadastrar(dados){
     nivelFinal='Master';
   }else{
     if(!eq)return toast('Equipe não encontrada. Confira o nome com seu técnico.');
-    if(!cpfValido(cpf))return toast('CPF inválido');
-    const libs=await DB.get(kLib(eqSlug))||[];
-    const lib=libs.find(l=>l.cpf===cpfLimpo(cpf));
-    if(!lib)return toast('CPF não liberado pelo técnico');
-    if(lib.usado)return toast('Este CPF já tem conta ativa');
-    nivelFinal=lib.nivel||'Master';
-    lib.usado=true; lib.email=email.toLowerCase(); await DB.set(kLib(eqSlug),libs);
+    if(cpf&&!cpfValido(cpf))return toast('CPF inválido');
+    nivelFinal=nivel||'Master';
   }
 
   const sal=novoSal();
+  const em=email.toLowerCase();
+  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?DEV_EMAILS.includes(em):false);
   const u={id:uid(),perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
-    email:email.toLowerCase(),nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
+    email:em,nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
-    ativo:true,criadoEm:Date.now()};
+    ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
   await DB.set(kUser(u.email),u);
   const us=await DB.get(kEqUsers(eqSlug))||[]; us.push(u.email); await DB.set(kEqUsers(eqSlug),us);
+  if(perfil==='tecnico')await registrarTecnicoDev(u);
   await entrarSessao(u);
-  toast('Conta criada. Bem-vindo!');
+  toast(u.aprovado?'Conta criada. Bem-vindo!':(perfil==='tecnico'?'Cadastro de técnico enviado. Aguarde a liberação do desenvolvedor.':'Cadastro enviado! Aguarde a liberação do técnico.'));
 }
 
 async function autenticar(email,senha){
@@ -639,7 +650,7 @@ async function carregarDados(){
   const meus=ehGestor()?S.tridx:S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
   if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
   if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
-  if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[]};
+  if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
 async function sincronizar(sil){
@@ -733,8 +744,8 @@ function telaCadastro(){
     </div>
     <div class="xs muted" style="margin:-4px 0 8px">Com o número cadastrado, os treinos e tempos vão direto para a sua conversa.</div>
     ${p==='atleta'?`
-    <div class="field"><label>CPF</label><input id="cdCpf" inputmode="numeric" placeholder="000.000.000-00">
-      <div class="xs muted" style="margin-top:5px">O técnico precisa ter liberado este CPF.</div></div>`:''}
+    <div class="field"><label>CPF <span class="muted">(opcional)</span></label><input id="cdCpf" inputmode="numeric" placeholder="000.000.000-00">
+      <div class="xs muted" style="margin-top:5px">Ajuda o técnico a te identificar. Seu cadastro passa por aprovação dele antes de liberar o acesso.</div></div>`:''}
     ${p!=='tecnico'?`
     <div class="field"><label>Onde você compete</label>
       <div class="opt"><button id="tpA" class="on" onclick="selTipo('piscina')">Piscina</button>
@@ -789,6 +800,10 @@ function abrirConta(){
         <div class="grow"><b>Gestão da equipe</b>
           <div class="xs muted">Ative para ajudar o técnico: liberar CPFs, montar treinos e lançar tempos de todos.</div></div>
         <button class="sm ${S.gestao?'primary':''}" onclick="alternarGestao()">${S.gestao?'Ativada':'Ativar'}</button></div>`:''}
+    ${ehDev()?`<div class="sep"></div>
+      <div class="row" style="align-items:center;gap:10px">
+        <div class="grow"><b>Desenvolvedor</b><div class="xs muted">Aprovar e gerir os técnicos do app.</div></div>
+        <button class="sm" onclick="abrirDevTecnicos()">Técnicos</button></div>`:''}
     <div class="sep"></div>
     <button class="full ghost" onclick="abrirModo()">Dados e backup</button>
     <button class="full danger" style="margin-top:9px" onclick="sair()">Sair da conta</button>
@@ -844,6 +859,14 @@ function render(){
     app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset}[S.vista]();
     return;
   }
+  if(S.u.aprovado===false&&(S.u.perfil==='atleta'||S.u.perfil==='tecnico')){
+    hdr.classList.remove('hide'); nav.classList.add('hide');
+    document.getElementById('btnVoltar').classList.add('hide');
+    const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
+    const b=document.getElementById('pRole'); if(b){b.textContent=prim(S.u.nome);b.className='pill'}
+    app.innerHTML=telaAguardando();
+    return;
+  }
   hdr.classList.remove('hide');
   document.getElementById('btnVoltar').classList.toggle('hide',!S.pilha.length);
   const pm=document.getElementById('pModo');
@@ -854,7 +877,9 @@ function render(){
   navBar();
   const mapa=ehGestor()
     ?{treinos:telaTreinosTec,elenco:telaElenco,competicao:telaCompeticao}
-    :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio};
+    :S.u.perfil==='pro'
+      ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio,store:telaStore}
+      :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,store:telaStore};
   app.innerHTML=(mapa[S.aba]||Object.values(mapa)[0])();
 }
 /* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
@@ -863,8 +888,8 @@ function navBar(){
   const abas=ehGestor()
     ?[['treinos','≡','Treinos'],['elenco','◎','Elenco'],['competicao','▲','Competição']]
     :S.u.perfil==='pro'
-      ?[['treinos','≡','Treinos'],['competicao','▲','Provas'],['marcas','★','Marcas'],['garmin','⌁','Garmin'],['relatorio','◈','Relatório']]
-      :[['treinos','≡','Treinos'],['competicao','▲','Provas']];
+      ?[['treinos','≡','Treinos'],['competicao','▲','Provas'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório'],['store','▣','Store']]
+      :[['treinos','≡','Treinos'],['competicao','▲','Provas'],['store','▣','Store']];
   document.getElementById('nav').classList.remove('hide');
   document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
     `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
@@ -883,18 +908,35 @@ const CABECA=/^(aquecimen|aquec|warm|técnic|tecnic|educativ|principal|série|se
 
 function interpretar(txt){
   const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]};
+  const notaPref=/^(obs|observ|nota|aten|import|lembr|foco|dica)\b/i;
   for(const raw of (txt||'').split(/\r?\n/)){
     const l=raw.trim(); if(!l)continue;
-    if(CABECA.test(l)||(!/\d/.test(l)&&l.length<=36)){
+    const ehHeader=!notaPref.test(l)&&(CABECA.test(l)||(!/\d/.test(l)&&l.length<=36));
+    if(ehHeader){
       if(atual.itens.length)blocos.push(atual);
       atual={id:uid(),titulo:l.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]};
       if(!/\d/.test(l.replace(CABECA,'')))continue;
     }
-    const it=linhaParaItem(l); if(it)atual.itens.push(it);
+    /* linha que é só descanso/observação vira NOTA (não se perde) */
+    const soRest=/^(descanso|pausa|rest|intervalo|recupera)/i.test(l)&&!/\d\s*[x×]\s*\d/.test(l);
+    const it=soRest?null:linhaParaItem(l);
+    if(it)atual.itens.push(it);
+    else if(!ehHeader)atual.itens.push({id:uid(),nota:true,texto:l,vol:0});
   }
   if(atual.itens.length)blocos.push(atual);
   return blocos.length?blocos:[{id:uid(),titulo:'TREINO',itens:[]}];
 }
+/* descanso em vários formatos → milissegundos */
+function parsePausa(l){
+  let m=l.match(/(?:pausa|rest|descanso|recup\w*)\s*(?:de\s*)?(\d{1,3})\s*(?:'|min|m\b)/i);
+  if(m)return +m[1]*60000;
+  m=l.match(/(?:pausa|rest|descanso|recup\w*)\s*(?:de\s*)?(\d{1,3})\s*(?:["″]|s\b|seg\w*)?/i);
+  if(m)return +m[1]*1000;
+  m=l.match(/(\d{1,3})\s*["″]\s*(?:de\s*)?(?:pausa|descanso)/i);
+  if(m)return +m[1]*1000;
+  return null;
+}
+function fmtPausa(ms){ const s=Math.round(ms/1000); if(s>=60){const m=Math.floor(s/60),r=s%60;return r?`${m}min${r}`:`${m}min`;} return s+'s'; }
 function linhaParaItem(l){
   let reps=1,dist=null;
   const mx=l.match(/(\d{1,3})\s*[x×]\s*(\d{2,5})/i);
@@ -906,12 +948,28 @@ function linhaParaItem(l){
   let intervalo=null;
   const mi=l.match(/(?:sa[íi]da|int\.?|s\/|@|c\/)\s*(\d{1,2})\s*[:'′h]\s*(\d{2})/i)||l.match(/(\d{1,2})\s*[:'′h]\s*(\d{2})(?!\d)/);
   if(mi)intervalo=(+mi[1]*60+ +mi[2])*1000;
-  const mp=l.match(/(?:pausa|rest|descanso)\s*(?:de\s*)?(\d{1,3})\s*["″s]?/i)||l.match(/(\d{1,3})\s*["″]\s*(?:de\s*)?(?:pausa|descanso)/i);
   const forte=/máxim|maxim|all\s*out|tiro|forte|sprint|ritmo de prova|\brp\b|9[0-9]\s*%|100\s*%/i.test(l);
   const parcial=/parcia|broken|quebrad|25\s*a\s*25|split/i.test(l)||(forte&&dist>=50&&dist<=100);
-  return{id:uid(),reps,dist,estilo,tags,intervalo,pausa:mp?+mp[1]*1000:null,parcial,forte,texto:l,vol:reps*dist};
+  const mo=l.match(/\(([^)]+)\)/); const obs=mo?mo[1].trim():'';
+  return{id:uid(),reps,dist,estilo,tags,intervalo,pausa:parsePausa(l),parcial,forte,obs,texto:l,vol:reps*dist};
 }
 const volTreino=t=>(t.blocos||[]).reduce((a,b)=>a+b.itens.reduce((x,i)=>x+i.vol,0),0);
+const piscinaLabel=p=>p==='AA'?'águas abertas':p==='LC50'?'piscina 50m':'piscina 25m';
+/* aplica as regras de parcial de 25m conforme o tipo de treino:
+   - águas abertas: sem parcial (usa ritmo /100m);
+   - piscina 25m: mantém a parcial detectada nos tiros, se o técnico quiser;
+   - piscina 50m: só nos tiros da SÉRIE PRINCIPAL, e só se o técnico quiser. */
+function aplicarParciais(blocos,piscina,parcial25){
+  const principalRe=/principal|série|serie|main|conjunto/i;
+  for(const b of blocos){
+    const ehPrincipal=principalRe.test(b.titulo||'');
+    for(const it of b.itens){
+      if(piscina==='AA')it.parcial=false;
+      else if(piscina==='LC50')it.parcial=!!(it.parcial&&parcial25&&ehPrincipal);
+      else it.parcial=!!(it.parcial&&parcial25);
+    }
+  }
+}
 
 /* =====================================================================
    MARCAS E ZONAS
@@ -964,6 +1022,20 @@ function telaNovoTreino(){
       <div class="field"><label>Data</label><input type="date" id="ntData" value="${ed?S.treino.data:hoje()}"></div>
       <div class="field"><label>Nível</label><select id="ntNivel">${NIVEIS.map(n=>`<option ${ed&&S.treino.nivel===n?'selected':''}>${n}</option>`).join('')}</select></div>
     </div>
+    <div class="grid2">
+      <div class="field"><label>Tipo de treino</label>
+        <select id="ntPiscina">
+          <option value="SC25" ${ed&&S.treino.piscina==='SC25'?'selected':''}>Piscina 25m</option>
+          <option value="LC50" ${ed&&S.treino.piscina==='LC50'?'selected':''}>Piscina 50m</option>
+          <option value="AA" ${ed&&S.treino.piscina==='AA'?'selected':''}>Águas abertas</option>
+        </select></div>
+      <div class="field"><label>Parciais de 25m</label>
+        <select id="ntParcial25">
+          <option value="1" ${!ed||S.treino.parcial25!==false?'selected':''}>Pegar nos tiros</option>
+          <option value="0" ${ed&&S.treino.parcial25===false?'selected':''}>Não pegar</option>
+        </select></div>
+    </div>
+    <div class="xs muted" style="margin:-4px 0 8px">Na piscina de 50m, a parcial de 25m é pega só nos tiros da série principal. Em águas abertas, o atleta lança o ritmo médio por 100m.</div>
     <div class="field"><label>Título</label><input id="ntTitulo" autocapitalize="sentences" value="${ed?esc(S.treino.titulo):''}" placeholder="ex.: Velocidade e filipina"></div>
     <div class="field"><label>Cole o treino</label>
       <textarea id="ntTexto" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" placeholder="Aquecimento&#10;400 livre solto&#10;&#10;Principal&#10;8x50 peito saída 1'20 forte&#10;16x25 tiro máximo pausa 45&quot;">${ed?esc(S.treino.textoBruto):''}</textarea></div>
@@ -993,11 +1065,15 @@ function marcarTodosNivel(){
 async function salvarTreino(){
   const data=val('ntData')||hoje(),titulo=val('ntTitulo')||'Treino',
     nivel=document.getElementById('ntNivel').value,texto=document.getElementById('ntTexto').value;
+  const piscina=document.getElementById('ntPiscina').value;
+  const parcial25=document.getElementById('ntParcial25').value==='1';
   if(!texto.trim())return toast('Cole o treino');
   if(!S.selMulti.length)return toast('Escolha ao menos um atleta');
   const editando=S.editando&&S.treino;
   const id=editando?S.treino.id:uid();
-  const t={id,data,titulo,nivel,textoBruto:texto,blocos:interpretar(texto),para:[...S.selMulti],
+  const blocos=interpretar(texto);
+  aplicarParciais(blocos,piscina,parcial25);
+  const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,para:[...S.selMulti],
     registros:editando?(S.treino.registros||{}):{},autor:S.u.nome,atualizado:Date.now()};
   await DB.set(kTr(S.u.equipe,id),t);
   const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==id);
@@ -1022,7 +1098,7 @@ function telaTreinoDetalhe(){
     ${tec?`<button class="sm ghost" onclick="editarTreino()">Editar</button>
     <button class="sm ghost" onclick="excluirTreino()">✕</button>`:''}</div>
   <div class="row" style="align-items:flex-start">
-    <div><div class="eyebrow">${brData(t.data)} · ${esc(t.nivel||'')}</div><h2>${esc(t.titulo)}</h2></div>
+    <div><div class="eyebrow">${brData(t.data)} · ${esc(t.nivel||'')}${t.piscina?' · '+piscinaLabel(t.piscina):''}</div><h2>${esc(t.titulo)}</h2></div>
     <div class="grow"></div>
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
@@ -1037,30 +1113,46 @@ function telaTreinoDetalhe(){
   </div>`;
 }
 function linhaSerie(t,i,at){
+  if(i.nota)return`<div style="margin:2px 0 9px;padding:9px 12px;border-left:3px solid var(--rope);background:var(--deck);border-radius:0 9px 9px 0">
+    <span class="small">${esc(i.texto)}</span></div>`;
   const r=(t.registros?.[at.id]?.[i.id])||{tempos:[],parciais:[]};
+  const aa=t.piscina==='AA';
   const ts=r.tempos.filter(x=>x!=null);
+  const logged=aa?(r.ritmo100!=null):ts.length;
   const dadosPB=at.id===S.u.id?S.pro:null;
   const mel=ts.length?Math.min(...ts):null;
-  const pct=(dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
+  const pct=(!aa&&dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
   const z=zona(pct);
-  return`<div class="item ${ts.length?'sel':''}">
+  return`<div class="item ${logged?'sel':''}">
     <div class="row" style="align-items:baseline;flex-wrap:wrap">
       <span class="d">${i.reps>1?i.reps+'×':''}${i.dist}</span>
       <span class="small muted">${i.estilo}${i.tags.length?' · '+i.tags.join(' · '):''}</span>
-      ${i.intervalo?`<span class="i">${fmtInt(i.intervalo)}</span>`:''}
-      ${i.pausa?`<span class="i">p${Math.round(i.pausa/1000)}"</span>`:''}
+      ${i.intervalo?`<span class="i">saída ${fmtInt(i.intervalo)}</span>`:''}
+      ${i.pausa?`<span class="i">desc ${fmtPausa(i.pausa)}</span>`:''}
       <div class="grow"></div>
       ${z?`<span class="z ${z.c}">${pct.toFixed(0)}%</span>`:''}
-      <button class="sm ghost" onclick="abrirLancamento('${i.id}','${at.id}')">${ts.length?'Editar':'Lançar'}</button>
+      <button class="sm ghost" onclick="abrirLancamento('${i.id}','${at.id}')">${logged?'Editar':'Lançar'}</button>
     </div>
-    ${ts.length?`<div class="chips">${r.tempos.map((x,ix)=>x==null?'':
-      `<span class="chip ${x===mel?'best':''}">${ix+1}· ${fmt(x,true)}${i.parcial&&r.parciais[ix]!=null?` <span style="color:var(--water)">(${fmt(r.parciais[ix],true)}+${fmt(x-r.parciais[ix],true)})</span>`:''}</span>`).join('')}</div>`:''}
+    ${i.obs?`<div class="xs muted" style="margin-top:3px">↳ ${esc(i.obs)}</div>`:''}
+    ${aa
+      ? (r.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(r.ritmo100,true)}</span></div>`:'')
+      : (ts.length?`<div class="chips">${r.tempos.map((x,ix)=>x==null?'':
+        `<span class="chip ${x===mel?'best':''}">${ix+1}· ${fmt(x,true)}${i.parcial&&r.parciais[ix]!=null?` <span style="color:var(--water)">(${fmt(r.parciais[ix],true)}+${fmt(x-r.parciais[ix],true)})</span>`:''}</span>`).join('')}</div>`:'')}
   </div>`;
 }
 function abrirLancamento(itemId,atletaId){
   const t=S.treino,item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId);
   const at=(ehGestor()?S.elenco:[S.u]).find(a=>a.id===atletaId)||S.u;
   const r=(t.registros?.[atletaId]?.[itemId])||{tempos:[],parciais:[]};
+  if(t.piscina==='AA'){
+    sheet(`<h2>${item.reps>1?item.reps+'×':''}${item.dist} ${item.estilo}</h2>
+      <div class="small muted">${esc(at.nome)} · águas abertas</div>
+      <div class="field" style="margin-top:12px"><label>Ritmo médio por 100m</label>
+        <input inputmode="decimal" id="aaRitmo" placeholder="1:45" value="${r.ritmo100!=null?fmt(r.ritmo100,true):''}"></div>
+      <div class="xs muted">Formato mm:ss — ex.: 1:45</div>
+      <button class="primary full" style="margin-top:12px" onclick="salvarRitmoAA('${itemId}','${atletaId}')">Salvar</button>`);
+    return;
+  }
   sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
     <div class="small muted">${esc(at.nome)}${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
     <div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>#</th>
@@ -1085,6 +1177,15 @@ async function salvarLancamento(itemId,atletaId,reps,temParcial){
   t.atualizado=Date.now();
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
   fecharSheet(); toast('Tempos salvos'); render();
+}
+async function salvarRitmoAA(itemId,atletaId){
+  const ms=parseTempo(document.getElementById('aaRitmo').value);
+  const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
+  t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
+  t.registros[atletaId][itemId]={ritmo100:ms,tempos:[],parciais:[],em:Date.now(),por:S.u.nome};
+  t.atualizado=Date.now();
+  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  fecharSheet(); toast(ms!=null?'Ritmo salvo':'Ritmo removido'); render();
 }
 function editarTreino(){S.editando=true;S.selMulti=[...(S.treino.para||[])];S.sub='novo';render()}
 async function excluirTreino(){
@@ -1118,13 +1219,32 @@ function telaTreinosAtleta(){
 /* =====================================================================
    ELENCO — técnico
    ===================================================================== */
+function telaAguardando(){
+  const tec=S.u.perfil==='tecnico';
+  return`<div style="height:20px"></div>
+  <div class="empty" style="margin-top:26px">
+    <div class="big">Cadastro enviado ✓</div>
+    <p class="small" style="margin-top:10px">Olá, ${esc(prim(S.u.nome))}! ${tec
+      ? `Seu cadastro de <b>técnico</b> da equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação do desenvolvedor</b> do app.`
+      : `Seu cadastro na equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação</b> do técnico.`}</p>
+    <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
+  </div>
+  <button class="ghost full" style="margin-top:18px" onclick="sincronizar(false)">Já fui liberado? Atualizar</button>
+  <button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="sair()">Sair</button>`;
+}
 function telaElenco(){
   if(S.atletaSel)return telaAtletaDetalhe();
+  const pend=S.elenco.filter(a=>a.aprovado===false);
   return`
-  <div class="row" style="margin:16px 0 6px"><h2>Elenco</h2><div class="grow"></div>
-    <button class="sm primary" onclick="abrirLiberacao()">+ Liberar CPF</button></div>
+  <div class="row" style="margin:16px 0 6px"><h2>Elenco</h2><div class="grow"></div></div>
+  ${pend.length?`<div class="blk"><h3>Aguardando aprovação</h3><div class="ln"></div><span class="xs muted">${pend.length}</span></div>
+    <div class="card tight">${pend.map(a=>`<div class="lst">
+      <span class="av">⏳</span>
+      <span class="grow"><b>${esc(a.nome)}</b><span class="xs muted" style="display:block">${anos(a)} anos · ${esc(a.email)}${a.cpf?' · '+cpfMasc(a.cpf):''}</span></span>
+      <button class="sm primary" onclick="aprovarAtleta('${a.id}')">Aprovar</button>
+      <button class="sm ghost" style="color:var(--clock)" onclick="apagarAtleta('${a.id}')">✕</button></div>`).join('')}</div>`:''}
   ${NIVEIS.map(n=>{
-    const g=S.elenco.filter(a=>a.nivel===n&&a.ativo!==false);
+    const g=S.elenco.filter(a=>a.nivel===n&&a.ativo!==false&&a.aprovado!==false);
     if(!g.length)return'';
     return`<div class="blk"><h3>${n}</h3><div class="ln"></div><span class="xs muted">${g.length}</span></div>
       <div class="card tight">${g.map(a=>`<button class="lst" onclick="push();S.atletaSel='${a.id}';render()">
@@ -1134,13 +1254,56 @@ function telaElenco(){
   ${S.elenco.filter(a=>a.ativo===false).length?`<div class="blk"><h3>Desativados</h3><div class="ln"></div></div>
     <div class="card tight">${S.elenco.filter(a=>a.ativo===false).map(a=>`<button class="lst" onclick="push();S.atletaSel='${a.id}';render()">
       <span class="av" style="opacity:.5">${iniciais(a.nome)}</span><span class="grow muted">${esc(a.nome)}</span><span class="tag o">›</span></button>`).join('')}</div>`:''}
-  ${S.libs.filter(l=>!l.usado).length?`<div class="blk"><h3>Aguardando cadastro</h3><div class="ln"></div></div>
-    <div class="card tight">${S.libs.filter(l=>!l.usado).map(l=>`<div class="lst">
-      <span class="av">⏳</span><span class="grow"><b>${esc(l.nome||'—')}</b>
-        <span class="xs muted" style="display:block">${cpfMasc(l.cpf)} · ${esc(l.nivel)}</span></span>
-      <button class="sm ghost" onclick="removerLib('${l.cpf}')">✕</button></div>`).join('')}</div>`:''}
-  ${!S.elenco.length&&!S.libs.length?`<div class="empty"><div class="big">Elenco vazio</div>
-    <p class="small">Libere o CPF do atleta para que ele possa criar a conta dele.</p></div>`:''}`;
+  ${!S.elenco.length?`<div class="empty"><div class="big">Elenco vazio</div>
+    <p class="small">Compartilhe o link e o nome exato da equipe. Quando alguém se cadastrar, o pedido aparece aqui para você aprovar.</p></div>`:''}`;
+}
+async function aprovarAtleta(id){
+  const a=S.elenco.find(x=>x.id===id); if(!a)return;
+  a.aprovado=true; await DB.set(kUser(a.email),a);
+  await carregarDados(); toast(prim(a.nome)+' liberado'); render();
+}
+
+/* ---------- painel do desenvolvedor: técnicos ---------- */
+async function abrirDevTecnicos(){
+  if(!ehDev())return;
+  const lst=await DB.get('dev_tecnicos')||[];
+  const linhas=[];
+  for(const t of lst){
+    const u=await DB.get(kUser(t.email)); if(!u)continue;
+    const pend=u.aprovado===false;
+    linhas.push(`<div class="lst">
+      <span class="av">${pend?'⏳':'✓'}</span>
+      <span class="grow"><b>${esc(u.nome)}</b><span class="xs muted" style="display:block">${esc(u.equipeNome||'')} · ${esc(u.email)}</span></span>
+      ${pend
+        ? `<button class="sm primary" onclick="aprovarTecnico('${u.email}')">Aprovar</button>
+           <button class="sm ghost" style="color:var(--clock)" onclick="recusarTecnico('${u.email}')">✕</button>`
+        : `<button class="sm ghost" style="color:var(--clock)" onclick="recusarTecnico('${u.email}')">Remover</button>`}
+    </div>`);
+  }
+  sheet(`<h2>Técnicos</h2>
+    <p class="small muted" style="margin:6px 0 10px">Cadastros de técnico entram aqui e só passam a gerir a equipe depois que você aprovar.</p>
+    ${linhas.length?linhas.join(''):'<div class="small muted">Nenhum técnico cadastrado ainda.</div>'}
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
+async function aprovarTecnico(email){
+  if(!ehDev())return;
+  const u=await DB.get(kUser(email)); if(!u)return;
+  u.aprovado=true; await DB.set(kUser(email),u);
+  toast(prim(u.nome)+' liberado como técnico'); abrirDevTecnicos();
+}
+async function recusarTecnico(email){
+  if(!ehDev())return;
+  const u=await DB.get(kUser(email));
+  if(u&&u.equipe){
+    const eq=await DB.get(kEq(u.equipe));
+    if(eq&&eq.tecnicoEmail===email){ eq.tecnicoEmail=null; await DB.set(kEq(u.equipe),eq); }
+    const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==email);
+    await DB.set(kEqUsers(u.equipe),us);
+  }
+  await apagarChave(kUser(email));
+  const lst=(await DB.get('dev_tecnicos')||[]).filter(x=>x.email!==email);
+  await DB.set('dev_tecnicos',lst);
+  toast('Técnico removido'); abrirDevTecnicos();
 }
 function abrirLiberacao(){
   sheet(`<h2>Liberar atleta</h2>
@@ -1631,10 +1794,11 @@ function compartilharTreino(){
   for(const b of t.blocos||[]){
     const ls=[];
     for(const i of b.itens){
+      if(i.nota){ ls.push(`• ${i.texto}`); continue; }
       const partes=alvo.map(a=>{
         const r=t.registros?.[a.id]?.[i.id]; const ts=(r?.tempos||[]).filter(y=>y!=null);
         return ts.length?`${alvo.length>1?prim(a.nome)+': ':''}${ts.map(y=>fmt(y,true)).join(' / ')}`:null}).filter(Boolean);
-      ls.push(`${i.reps>1?i.reps+'x':''}${i.dist} ${i.estilo}${i.intervalo?` s/${fmtInt(i.intervalo)}`:''}${i.pausa?` p${Math.round(i.pausa/1000)}"`:''}${partes.length?'\n  '+partes.join('\n  '):''}`);
+      ls.push(`${i.reps>1?i.reps+'x':''}${i.dist} ${i.estilo}${i.intervalo?` saída ${fmtInt(i.intervalo)}`:''}${i.pausa?` desc ${fmtPausa(i.pausa)}`:''}${i.obs?` (${i.obs})`:''}${partes.length?'\n  '+partes.join('\n  '):''}`);
     }
     if(ls.length)x+=`\n_${b.titulo}_\n${ls.join('\n')}\n`;
   }
@@ -1694,7 +1858,7 @@ async function gravarResultadoPro(ix){
   if(!at||at.perfil!=='pro')return;
   const np=nPassagens(p,c.piscina),ps=(i.parciais||[]).filter(x=>x!=null);
   if(ps.length<np)return;
-  const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   const chave=c.id+'_'+p.id;
   const r={chave,comp:c.nome,data:c.data,piscina:c.piscina,prova:nomeProva(p),dist:p.dist,estilo:p.estilo,
     tempo:ps[np-1],parciais:[...ps],inscricao:i.inscricao||null};
@@ -1709,6 +1873,17 @@ async function gravarResultadoPro(ix){
 /* =====================================================================
    PRO — MARCAS
    ===================================================================== */
+/* tempo a partir dos campos horas:min:seg:centésimo → milissegundos */
+function msHMSC(h,m,s,cc){ h=+h||0;m=+m||0;s=+s||0;cc=+cc||0; return ((h*3600+m*60+s)*1000)+cc*10; }
+/* tabela de melhores tempos de uma piscina (SC25 curta / LC50 longa) */
+function pbsTabela(pbs,pis){
+  const ent=Object.entries(pbs||{}).filter(([k])=>k.endsWith(' '+pis)).sort((a,b)=>a[0].localeCompare(b[0]));
+  if(!ent.length)return'<div class="small muted" style="margin:6px 0 2px">Nenhuma marca nesta piscina.</div>';
+  return`<table style="margin-top:6px"><tbody>${ent.map(([k,v])=>{const[d,e]=k.split(' ');
+    return`<tr><td><b>${d}m ${e}</b></td>
+      <td class="n" style="text-align:right;font-weight:700">${fmt(v,true)}</td>
+      <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}</tbody></table>`;
+}
 function telaMarcas(){
   const pro=S.pro||{pbs:{},resultados:[]};
   const res=[...(pro.resultados||[])].sort((a,b)=>b.data.localeCompare(a.data));
@@ -1717,13 +1892,10 @@ function telaMarcas(){
     <button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button></div>
   <div class="card">
     <div class="eyebrow">melhores tempos</div>
-    ${Object.keys(pro.pbs||{}).length?`<table style="margin-top:6px"><tbody>
-      ${Object.entries(pro.pbs).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>{
-        const[d,e,pis]=k.split(' ');
-        return`<tr><td><b>${d}m ${e}</b> <span class="xs muted">${pis}</span></td>
-          <td class="n" style="text-align:right;font-weight:700">${fmt(v,true)}</td>
-          <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}
-    </tbody></table>`:'<div class="small muted" style="margin-top:6px">Nenhuma marca registrada. Toque em + Tempo.</div>'}
+    ${Object.keys(pro.pbs||{}).length?`
+      <div class="blk" style="margin-top:8px"><h3>Piscina curta · 25m</h3><div class="ln"></div></div>${pbsTabela(pro.pbs,'SC25')}
+      <div class="blk" style="margin-top:16px"><h3>Piscina longa · 50m</h3><div class="ln"></div></div>${pbsTabela(pro.pbs,'LC50')}
+    `:'<div class="small muted" style="margin-top:6px">Nenhuma marca registrada. Toque em + Tempo.</div>'}
   </div>
   <div class="card">
     <div class="eyebrow">histórico de competições</div>
@@ -1744,10 +1916,15 @@ function abrirNovaMarca(){
   sheet(`<h2>Registrar tempo</h2>
     <div class="field"><label>Prova</label><select id="mkProva">
       ${PROVAS_CAT.map((p,i)=>`<option value="${i}">${p.d}m ${p.e}</option>`).join('')}</select></div>
-    <div class="grid2">
-      <div class="field"><label>Piscina</label><select id="mkPis"><option>SC25</option><option>LC50</option></select></div>
-      <div class="field"><label>Tempo</label><input id="mkTempo" inputmode="decimal" placeholder="30.21"></div>
-    </div>
+    <div class="field"><label>Piscina</label><select id="mkPis"><option value="SC25">Curta · 25m</option><option value="LC50">Longa · 50m</option></select></div>
+    <div class="field"><label>Tempo</label>
+      <div class="row" style="gap:6px">
+        <input id="mkH" inputmode="numeric" placeholder="h" style="text-align:center">
+        <input id="mkM" inputmode="numeric" placeholder="min" style="text-align:center">
+        <input id="mkS" inputmode="numeric" placeholder="seg" style="text-align:center">
+        <input id="mkC" inputmode="numeric" placeholder="cent" style="text-align:center">
+      </div>
+      <div class="xs muted" style="margin-top:4px">horas : minutos : segundos : centésimos</div></div>
     <div class="grid2">
       <div class="field"><label>Data</label><input type="date" id="mkData" value="${hoje()}"></div>
       <div class="field"><label>Competição</label><input id="mkComp" autocapitalize="words" placeholder="opcional"></div>
@@ -1756,9 +1933,9 @@ function abrirNovaMarca(){
 }
 async function salvarMarca(){
   const b=PROVAS_CAT[+document.getElementById('mkProva').value];
-  const pis=document.getElementById('mkPis').value,ms=parseTempo(val('mkTempo'));
-  if(!ms)return toast('Tempo inválido');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const pis=document.getElementById('mkPis').value,ms=msHMSC(val('mkH'),val('mkM'),val('mkS'),val('mkC'));
+  if(!ms)return toast('Informe o tempo (ao menos os segundos)');
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   const key=pbKey(b.d,b.e,pis);
   if(!S.pro.pbs[key]||ms<S.pro.pbs[key])S.pro.pbs[key]=ms;
   if(val('mkComp'))S.pro.resultados.push({chave:uid(),comp:val('mkComp'),data:val('mkData')||hoje(),piscina:pis,
@@ -1768,13 +1945,81 @@ async function salvarMarca(){
 async function apagarPB(k){delete S.pro.pbs[k];await salvarPro();render()}
 
 /* =====================================================================
+   STORE — loja de equipamentos de natação (atleta e PRO)
+   ===================================================================== */
+const STORES=[
+  {n:'Arena', dom:'arenawaterinstinct.com.br', url:'https://www.arenawaterinstinct.com.br/', nota:'Marca especializada em natação'},
+  {n:'TF', dom:'tf.com.br', url:'https://www.tf.com.br/', nota:'Moda esportiva e natação'},
+  {n:'Olympikus', dom:'olympikus.com.br', url:'https://www.olympikus.com.br/busca?q=natação'},
+  {n:'Nike', dom:'nike.com.br', url:'https://www.nike.com.br/busca?q=natação'},
+  {n:'Netshoes', dom:'netshoes.com.br', url:'https://www.netshoes.com.br/busca?q=natação'},
+  {n:'Puma', dom:'br.puma.com', url:'https://br.puma.com/search?q=natação'}
+];
+let STSEXO=null;
+function formMedidas(){
+  const s=S.u.store||{};
+  return`
+    <div class="field"><label>Sexo</label>
+      <div class="opt"><button id="stSexoM" class="${s.sexo==='M'?'on':''}" onclick="stSexo('M')">Masculino</button>
+        <button id="stSexoF" class="${s.sexo==='F'?'on':''}" onclick="stSexo('F')">Feminino</button></div></div>
+    <div class="grid2">
+      <div class="field"><label>Calçado</label><input id="stCalc" inputmode="numeric" value="${s.calcado||''}" placeholder="ex.: 42"></div>
+      <div class="field"><label>Camiseta</label><input id="stCam" value="${s.camiseta||''}" placeholder="P / M / G / GG"></div>
+      <div class="field"><label>Bermuda</label><input id="stBer" value="${s.bermuda||''}" placeholder="ex.: 40 ou M"></div>
+      <div class="field"><label>Underwear</label><input id="stUnd" value="${s.underwear||''}" placeholder="P / M / G / GG"></div>
+    </div>
+    <button class="primary full" style="margin-top:10px" onclick="salvarMedidas()">Salvar medidas</button>`;
+}
+function stSexo(x){STSEXO=x;
+  const m=document.getElementById('stSexoM'),f=document.getElementById('stSexoF');
+  if(m)m.classList.toggle('on',x==='M'); if(f)f.classList.toggle('on',x==='F');}
+async function salvarMedidas(){
+  const sexo=STSEXO||(S.u.store&&S.u.store.sexo)||null;
+  if(!sexo)return toast('Escolha o sexo');
+  S.u.store={sexo,calcado:val('stCalc'),camiseta:val('stCam'),bermuda:val('stBer'),underwear:val('stUnd')};
+  await DB.set(kUser(S.u.email),S.u); fecharSheet(); toast('Medidas salvas'); render();
+}
+function abrirMedidas(){ STSEXO=S.u.store?S.u.store.sexo:null; sheet(`<h2>Suas medidas</h2>${formMedidas()}`); }
+function telaStore(){
+  const s=S.u.store;
+  if(!s){STSEXO=null;return`
+    <div class="row" style="margin:16px 0 6px"><h2>Store</h2></div>
+    <div class="card">
+      <div class="eyebrow">bem-vindo à loja</div>
+      <p class="small" style="margin:6px 0 10px">Preencha suas medidas uma vez. A loja usa elas como referência para você acertar o tamanho na hora da compra. Você edita quando quiser.</p>
+      ${formMedidas()}
+    </div><div style="height:20px"></div>`;}
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Store</h2><div class="grow"></div>
+    <button class="sm ghost" onclick="abrirMedidas()">Medidas</button></div>
+  <div class="card"><div class="eyebrow">suas medidas</div>
+    <div class="chips" style="margin-top:8px">
+      <span class="tag o">${s.sexo==='F'?'Feminino':s.sexo==='M'?'Masculino':'—'}</span>
+      ${s.calcado?`<span class="tag o">Calçado ${esc(s.calcado)}</span>`:''}
+      ${s.camiseta?`<span class="tag o">Camiseta ${esc(s.camiseta)}</span>`:''}
+      ${s.bermuda?`<span class="tag o">Bermuda ${esc(s.bermuda)}</span>`:''}
+      ${s.underwear?`<span class="tag o">Underwear ${esc(s.underwear)}</span>`:''}
+    </div>
+    <div class="xs muted" style="margin-top:8px">Confira estes tamanhos ao escolher o produto na loja.</div>
+  </div>
+  <div class="card"><div class="eyebrow">lojas de natação</div>
+    <p class="small muted" style="margin:4px 0 8px">Toque para abrir a loja já buscando natação. As lojas abrem em nova aba.</p>
+    ${STORES.map(st=>`<a class="lst" href="${st.url}" target="_blank" rel="noopener" style="text-decoration:none">
+      <span class="av">${st.n[0]}</span>
+      <span class="grow"><b>${st.n}</b><span class="xs muted" style="display:block">${st.dom}${st.nota?' · '+st.nota:''}</span></span>
+      <span class="tag o">abrir ↗</span></a>`).join('')}
+    <div class="xs muted" style="margin-top:10px">Sugestões de equipamento: óculos, touca, maiô/sunga, palmar, pull buoy, nadadeira, snorkel frontal.</div>
+  </div><div style="height:20px"></div>`;
+}
+
+/* =====================================================================
    PRO — GARMIN E TREINO EM SECO
    ===================================================================== */
 function telaGarmin(){
   const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
   const seco=[...(S.pro?.seco||[])].sort((a,b)=>b.data.localeCompare(a.data));
   return`
-  <div class="row" style="margin:16px 0 6px"><h2>Garmin</h2></div>
+  <div class="row" style="margin:16px 0 6px"><h2>Saúde</h2></div>
   ${g.length?`<div class="card"><div class="eyebrow">prontidão</div>
     ${prontidao()}
     <table style="margin-top:10px"><thead><tr><th>Data</th><th>FC rep</th><th>VFC</th><th>Sono</th><th>Nado</th></tr></thead><tbody>
@@ -1801,6 +2046,15 @@ function telaGarmin(){
       <div><label>Sensação</label><input id="gP" inputmode="numeric" placeholder="1-10"></div>
     </div>
     <button class="primary full" style="margin-top:10px" onclick="lancarDia()">Gravar dia</button>
+  </div>
+  <div class="card">
+    <div class="row"><div class="eyebrow">exames laboratoriais</div><div class="grow"></div>
+      <button class="sm primary" onclick="abrirNovoExame()">+ Exame</button></div>
+    <p class="small muted" style="margin-top:4px">Ferritina, hemoglobina, vitamina D, CK e outros. Entram no relatório junto com o relógio e os treinos.</p>
+    ${(S.pro?.exames||[]).length?[...(S.pro.exames)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
+      <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
+        <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoExameCurto(e)}</div></div>
+        <button class="sm ghost" onclick="apagarExame('${e.id}')">✕</button></div>`).join(''):''}
   </div>
   <div class="card">
     <div class="eyebrow">treino fora d'água</div>
@@ -1853,7 +2107,7 @@ async function arquivoGarmin(inp){
 async function importarGarmin(raw,silencioso){
   if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return 0}
   let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return 0}
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   const arr=Array.isArray(j)?j.flat():[j],mapa={};
   (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
   let n=0;
@@ -1879,7 +2133,7 @@ async function importarGarmin(raw,silencioso){
 }
 async function lancarDia(){
   const d=val('gD'); if(!d)return;
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   let g=(S.pro.garmin||[]).find(x=>x.data===d); if(!g){g={data:d};S.pro.garmin.push(g)}
   const nm=id=>{const v=val(id);return v?parseFloat(v):undefined};
   if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
@@ -1906,7 +2160,7 @@ function fotoSeco(inp){
   r.readAsDataURL(f);
 }
 async function salvarSeco(){
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   S.pro.seco=S.pro.seco||[];
   S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
     obs:val('skObs'),img:FOTO});
@@ -1932,9 +2186,60 @@ async function coletarEsforcos(){
   return out.sort((a,b)=>a.data.localeCompare(b.data));
 }
 let ESF=null;
+/* ---------- exames laboratoriais ---------- */
+function abrirNovoExame(){
+  sheet(`<h2>Exame laboratorial</h2>
+    <div class="field"><label>Data da coleta</label><input type="date" id="exData" value="${hoje()}"></div>
+    <div class="grid2">
+      <div class="field"><label>Ferritina <span class="xs muted">ng/mL</span></label><input id="exFer" inputmode="decimal"></div>
+      <div class="field"><label>Hemoglobina <span class="xs muted">g/dL</span></label><input id="exHb" inputmode="decimal"></div>
+      <div class="field"><label>Vitamina D <span class="xs muted">ng/mL</span></label><input id="exVd" inputmode="decimal"></div>
+      <div class="field"><label>CK <span class="xs muted">U/L</span></label><input id="exCk" inputmode="decimal"></div>
+      <div class="field"><label>Testosterona <span class="xs muted">ng/dL</span></label><input id="exTs" inputmode="decimal"></div>
+      <div class="field"><label>TSH <span class="xs muted">mUI/L</span></label><input id="exTsh" inputmode="decimal"></div>
+    </div>
+    <div class="field"><label>Glicose de jejum <span class="xs muted">mg/dL</span></label><input id="exGli" inputmode="decimal"></div>
+    <div class="field"><label>Observações</label><input id="exObs" autocapitalize="sentences" placeholder="outros marcadores, contexto"></div>
+    <button class="primary full" onclick="salvarExame()">Salvar exame</button>`);
+}
+function numCampo(id){ const v=String(val(id)||'').replace(',','.').trim(); if(v==='')return null; const n=parseFloat(v); return isNaN(n)?null:n; }
+async function salvarExame(){
+  const ex={id:uid(),data:val('exData')||hoje(),ferritina:numCampo('exFer'),hemoglobina:numCampo('exHb'),
+    vitD:numCampo('exVd'),ck:numCampo('exCk'),testo:numCampo('exTs'),tsh:numCampo('exTsh'),glicose:numCampo('exGli'),obs:val('exObs')||''};
+  const temValor=[ex.ferritina,ex.hemoglobina,ex.vitD,ex.ck,ex.testo,ex.tsh,ex.glicose].some(v=>v!=null);
+  if(!temValor&&!ex.obs)return toast('Preencha ao menos um valor');
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro.exames=S.pro.exames||[]; S.pro.exames.push(ex);
+  await salvarPro(); fecharSheet(); toast('Exame salvo'); render();
+}
+async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarPro(); render(); }
+function resumoExameCurto(ex){
+  const m=[['Ferritina',ex.ferritina],['Hb',ex.hemoglobina],['Vit.D',ex.vitD],['CK',ex.ck],['Testo',ex.testo],['TSH',ex.tsh],['Glic',ex.glicose]].filter(x=>x[1]!=null);
+  return m.length?m.map(x=>x[0]+' '+x[1]).join(' · '):(ex.obs?esc(ex.obs):'sem valores');
+}
+/* regras simples orientadas ao atleta de resistência */
+function flagsExame(ex){
+  const f=[],n=v=>v!=null;
+  if(n(ex.ferritina)){ if(ex.ferritina<15)f.push({t:'warn',forte:true,txt:`Ferritina baixa (<b>${ex.ferritina}</b> ng/mL): reserva de ferro insuficiente — cursa com fadiga e menor adaptação aeróbia. Avalie reposição com seu médico antes de subir carga.`});
+    else if(ex.ferritina<30)f.push({t:'warn',txt:`Ferritina no limite (<b>${ex.ferritina}</b> ng/mL): para atleta de resistência, abaixo de 30 já pesa no rendimento. Acompanhe.`}); }
+  if(n(ex.hemoglobina)&&ex.hemoglobina<13)f.push({t:'warn',forte:ex.hemoglobina<12,txt:`Hemoglobina baixa (<b>${ex.hemoglobina}</b> g/dL): possível anemia, com transporte de oxigênio reduzido.`});
+  if(n(ex.vitD)){ if(ex.vitD<20)f.push({t:'warn',txt:`Vitamina D deficiente (<b>${ex.vitD}</b> ng/mL): afeta recuperação muscular e óssea.`});
+    else if(ex.vitD<30)f.push({t:'',txt:`Vitamina D insuficiente (<b>${ex.vitD}</b> ng/mL): considere sol e/ou reposição.`}); }
+  if(n(ex.ck)&&ex.ck>300)f.push({t:'warn',forte:ex.ck>500,txt:`CK elevada (<b>${ex.ck}</b> U/L): dano muscular e recuperação incompleta. Priorize regeneração antes de nova sessão forte.`});
+  if(n(ex.tsh)&&(ex.tsh<0.4||ex.tsh>4))f.push({t:'',txt:`TSH fora da faixa usual (<b>${ex.tsh}</b> mUI/L): vale avaliar a tireoide com seu médico.`});
+  if(n(ex.glicose)&&ex.glicose>99)f.push({t:'',txt:`Glicose de jejum <b>${ex.glicose}</b> mg/dL acima do ideal.`});
+  return f;
+}
+function resumoExame(ex){
+  const marc=[['Ferritina',ex.ferritina,'ng/mL'],['Hemoglobina',ex.hemoglobina,'g/dL'],['Vitamina D',ex.vitD,'ng/mL'],['CK',ex.ck,'U/L'],['Testosterona',ex.testo,'ng/dL'],['TSH',ex.tsh,'mUI/L'],['Glicose',ex.glicose,'mg/dL']].filter(m=>m[1]!=null);
+  const flags=flagsExame(ex);
+  return`${marc.length?`<table style="margin-top:6px"><tbody>${marc.map(m=>`<tr><td>${m[0]}</td><td class="n" style="text-align:right;font-weight:700">${m[1]} <span class="xs muted">${m[2]}</span></td></tr>`).join('')}</tbody></table>`:''}
+    ${ex.obs?`<div class="xs muted" style="margin-top:6px">${esc(ex.obs)}</div>`:''}
+    ${flags.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
+}
 function telaRelatorio(){
   if(!ESF){coletarEsforcos().then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
-  const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[]};
+  const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
   const int=ESF.filter(e=>!tec.includes(e));
   const comPct=int.map(e=>{const pb=pbDe(pro,e.dist,e.estilo);return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
@@ -1971,6 +2276,9 @@ function telaRelatorio(){
     <div class="xs muted" style="margin-top:9px">Sugestão automática a partir dos seus dados. Combine com seu técnico antes de mudar o planejamento.</div>
   </div>
   ${pro.garmin?.length?`<div class="card"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}
+  ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
+    <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
+    ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
   <div style="height:20px"></div>`;
@@ -1997,6 +2305,9 @@ function diagnostico(comPct,brk,sem,pro){
     hrvBaixa=((rec-base)/base)<-0.08;
   }
   const subindo=sem.length>=2&&sem[sem.length-1].m>sem[sem.length-2].m*1.25;
+  const exUlt=[...(pro.exames||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
+  const exFlags=exUlt?flagsExame(exUlt):[];
+  const exameForte=exFlags.some(f=>f.forte);
 
   if(deltaMd!=null){
     if(deltaMd>2600)foco.push({t:'warn',txt:`O segundo 25 está custando em média <b>+${fmt(deltaMd,true)}</b> a mais que o primeiro. Esse é o seu maior ponto de perda: o limitador é manutenção de velocidade, não velocidade de largada.`});
@@ -2009,10 +2320,11 @@ function diagnostico(comPct,brk,sem,pro){
   }
   if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Trabalho de tolerância ao lactato agora tende a render pouco e cobrar caro.'});
   if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Segure a progressão por uma semana antes de somar carga.'});
+  exFlags.forEach(f=>foco.push({t:f.t,txt:f.txt}));
   if(!foco.length)foco.push({t:'',txt:'Ainda não há tiros suficientes registrados para um diagnóstico firme. Lance os tempos de mais algumas sessões.'});
 
   let sessao,descanso,descansoTipo;
-  if(hrvBaixa){
+  if(hrvBaixa||exameForte){
     sessao=`Aquecimento\n400 livre solto\n4x50 pernada 1'10\n\nPrincipal (leve)\n8x50 técnica 1'15\n4x25 progressivo pausa 40"\n\nSoltura\n300 livre`;
     descanso='Priorize 48 horas de carga reduzida e sono acima de sete horas antes da próxima sessão forte.';
     descansoTipo='warn';
