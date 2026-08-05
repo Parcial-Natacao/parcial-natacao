@@ -648,13 +648,19 @@ async function carregarDados(){
   for(const em of emails){const u=await DB.get(kUser(em)); if(u&&u.perfil!=='tecnico')elenco.push(u)}
   S.elenco=elenco.sort((a,b)=>a.nome.localeCompare(b.nome));
   const meus=ehGestor()?S.tridx:S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
-  if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
-  if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
+  /* atualiza o treino/competição ABERTO (mostra edições remotas) sem jogar
+     de volta pro primeiro da lista — era o que causava o "volta sozinho". */
+  if(S.treino){const t2=await DB.get(kTr(eq,S.treino.id)); if(t2)S.treino=t2;}
+  else if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
+  if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
+  else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
 async function sincronizar(sil){
   if(!S.u)return;
+  /* não interrompe quem está escrevendo treino ou com uma folha aberta */
+  if(sil&&(S.sub==='novo'||S.escrevendo||document.getElementById('sheet')?.classList.contains('on')))return;
   const u=await DB.get(kUser(S.u.email)); if(u)S.u=u;
   await carregarDados(); if(!sil)toast('Atualizado'); render();
 }
@@ -894,7 +900,7 @@ function navBar(){
   document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
     `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
 }
-function irPara(a){if(a!==S.aba)push();S.aba=a;S.sub=null;S.provaSel=null;S.atletaSel=null;S.comp=null;render();window.scrollTo(0,0)}
+function irPara(a){if(a!==S.aba)push();S.aba=a;S.sub=null;S.provaSel=null;S.atletaSel=null;S.comp=null;S.minhaComp=null;render();window.scrollTo(0,0)}
 
 /* =====================================================================
    INTERPRETADOR DE TREINO
@@ -998,7 +1004,7 @@ function telaTreinosTec(){
   if(S.treino&&S.sub==='detalhe')return telaTreinoDetalhe();
   return`
   <div class="row" style="margin:16px 0 6px"><h2>Treinos</h2><div class="grow"></div>
-    <button class="sm primary" onclick="push();S.sub='novo';S.selMulti=[];render()">+ Novo</button></div>
+    <button class="sm primary" onclick="push();S.sub='novo';S.editando=false;S.treino=null;S.selMulti=[];S.rascunho=null;TREINOPDF=null;render()">+ Novo</button></div>
   <div class="opt" style="margin-bottom:6px">
     ${['todos',...NIVEIS].map(n=>`<button class="${S.filtroNivel===n?'on':''}" onclick="S.filtroNivel='${n}';render()">${n==='todos'?'Todos':n}</button>`).join('')}
   </div>
@@ -1014,31 +1020,38 @@ function telaTreinosTec(){
 
 function telaNovoTreino(){
   const ed=S.treino&&S.sub==='novo'&&S.editando;
+  if(!S.rascunho)S.rascunho=ed
+    ?{data:S.treino.data,nivel:S.treino.nivel||'',piscina:S.treino.piscina||'SC25',parcial25:S.treino.parcial25===false?'0':'1',titulo:S.treino.titulo||'',texto:S.treino.textoBruto||''}
+    :{data:hoje(),nivel:'',piscina:'SC25',parcial25:'1',titulo:'',texto:''};
+  const R=S.rascunho;
   return`
   <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
   <h2>${ed?'Editar treino':'Novo treino'}</h2>
   <div class="card">
     <div class="grid2">
-      <div class="field"><label>Data</label><input type="date" id="ntData" value="${ed?S.treino.data:hoje()}"></div>
-      <div class="field"><label>Nível</label><select id="ntNivel">${NIVEIS.map(n=>`<option ${ed&&S.treino.nivel===n?'selected':''}>${n}</option>`).join('')}</select></div>
+      <div class="field"><label>Data</label><input type="date" id="ntData" value="${R.data||hoje()}"></div>
+      <div class="field"><label>Nível</label><select id="ntNivel">${NIVEIS.map(n=>`<option ${R.nivel===n?'selected':''}>${n}</option>`).join('')}</select></div>
     </div>
     <div class="grid2">
       <div class="field"><label>Tipo de treino</label>
         <select id="ntPiscina">
-          <option value="SC25" ${ed&&S.treino.piscina==='SC25'?'selected':''}>Piscina 25m</option>
-          <option value="LC50" ${ed&&S.treino.piscina==='LC50'?'selected':''}>Piscina 50m</option>
-          <option value="AA" ${ed&&S.treino.piscina==='AA'?'selected':''}>Águas abertas</option>
+          <option value="SC25" ${R.piscina==='SC25'?'selected':''}>Piscina 25m</option>
+          <option value="LC50" ${R.piscina==='LC50'?'selected':''}>Piscina 50m</option>
+          <option value="AA" ${R.piscina==='AA'?'selected':''}>Águas abertas</option>
         </select></div>
       <div class="field"><label>Parciais de 25m</label>
         <select id="ntParcial25">
-          <option value="1" ${!ed||S.treino.parcial25!==false?'selected':''}>Pegar nos tiros</option>
-          <option value="0" ${ed&&S.treino.parcial25===false?'selected':''}>Não pegar</option>
+          <option value="1" ${R.parcial25!=='0'?'selected':''}>Pegar nos tiros</option>
+          <option value="0" ${R.parcial25==='0'?'selected':''}>Não pegar</option>
         </select></div>
     </div>
     <div class="xs muted" style="margin:-4px 0 8px">Na piscina de 50m, a parcial de 25m é pega só nos tiros da série principal. Em águas abertas, o atleta lança o ritmo médio por 100m.</div>
-    <div class="field"><label>Título</label><input id="ntTitulo" autocapitalize="sentences" value="${ed?esc(S.treino.titulo):''}" placeholder="ex.: Velocidade e filipina"></div>
-    <div class="field"><label>Cole o treino</label>
-      <textarea id="ntTexto" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" placeholder="Aquecimento&#10;400 livre solto&#10;&#10;Principal&#10;8x50 peito saída 1'20 forte&#10;16x25 tiro máximo pausa 45&quot;">${ed?esc(S.treino.textoBruto):''}</textarea></div>
+    <div class="field"><label>Título</label><input id="ntTitulo" autocapitalize="sentences" value="${esc(R.titulo||'')}" placeholder="ex.: Velocidade e filipina"></div>
+    <div class="field"><label>Cole o treino <span class="xs muted">(ou anexe um PDF abaixo)</span></label>
+      <textarea id="ntTexto" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" oninput="if(S.rascunho)S.rascunho.texto=this.value" placeholder="Aquecimento&#10;400 livre solto&#10;&#10;Principal&#10;8x50 peito saída 1'20 forte&#10;16x25 tiro máximo pausa 45&quot;">${esc(R.texto||'')}</textarea></div>
+    <div class="field"><label>Treino em PDF <span class="xs muted">(opcional)</span></label>
+      <input type="file" accept="application/pdf,.pdf" onchange="fileTreinoPDF(this)">
+      <div id="ntPdfPrev" class="xs muted" style="margin-top:4px">${TREINOPDF?'PDF anexado ✓':(ed&&S.treino.pdf?'PDF já anexado a este treino':'')}</div></div>
   </div>
   <div class="card">
     <div class="row"><div class="eyebrow">quem recebe</div><div class="grow"></div>
@@ -1053,34 +1066,52 @@ function telaNovoTreino(){
   <button class="primary full" onclick="salvarTreino()">${ed?'Salvar alterações':'Publicar treino'}</button>
   <div style="height:14px"></div>`;
 }
+/* guarda o que já foi digitado no formulário antes de um re-render */
+function salvarRascunho(){
+  const tx=document.getElementById('ntTexto'); if(!tx)return;
+  S.rascunho={data:val('ntData'),nivel:document.getElementById('ntNivel').value,
+    piscina:document.getElementById('ntPiscina').value,parcial25:document.getElementById('ntParcial25').value,
+    titulo:val('ntTitulo'),texto:tx.value};
+}
 function alternaAtleta(id){
+  salvarRascunho();
   S.selMulti=S.selMulti.includes(id)?S.selMulti.filter(x=>x!==id):[...S.selMulti,id];render();
 }
 function marcarTodosNivel(){
-  const n=document.getElementById('ntNivel').value;
+  salvarRascunho();
+  const n=(S.rascunho&&S.rascunho.nivel)||'';
   const ids=S.elenco.filter(a=>a.nivel===n).map(a=>a.id);
   S.selMulti=ids.length&&ids.every(i=>S.selMulti.includes(i))?[]:ids;
   render();
+}
+let TREINOPDF=null;
+function fileTreinoPDF(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return;
+  const p=document.getElementById('ntPdfPrev');
+  if(f.type!=='application/pdf'){ if(p)p.textContent='Escolha um arquivo PDF.'; return; }
+  if(f.size>600000){ TREINOPDF=null; if(p)p.textContent='PDF muito grande (máx 600KB).'; return; }
+  const r=new FileReader(); r.onload=()=>{ TREINOPDF=r.result; if(p)p.textContent='PDF anexado ✓'; }; r.readAsDataURL(f);
 }
 async function salvarTreino(){
   const data=val('ntData')||hoje(),titulo=val('ntTitulo')||'Treino',
     nivel=document.getElementById('ntNivel').value,texto=document.getElementById('ntTexto').value;
   const piscina=document.getElementById('ntPiscina').value;
   const parcial25=document.getElementById('ntParcial25').value==='1';
-  if(!texto.trim())return toast('Cole o treino');
-  if(!S.selMulti.length)return toast('Escolha ao menos um atleta');
   const editando=S.editando&&S.treino;
+  const pdf=TREINOPDF||(editando&&S.treino.pdf)||null;
+  if(!texto.trim()&&!pdf)return toast('Cole o treino ou anexe um PDF');
+  if(!S.selMulti.length)return toast('Escolha ao menos um atleta');
   const id=editando?S.treino.id:uid();
   const blocos=interpretar(texto);
   aplicarParciais(blocos,piscina,parcial25);
-  const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,para:[...S.selMulti],
+  const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,pdf,para:[...S.selMulti],
     registros:editando?(S.treino.registros||{}):{},autor:S.u.nome,atualizado:Date.now()};
   await DB.set(kTr(S.u.equipe,id),t);
   const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==id);
   idx.unshift({id,data,titulo,nivel,vol:volTreino(t),para:t.para,nAtletas:t.para.length});
   idx.sort((a,b)=>b.data.localeCompare(a.data));
   await DB.set(kTrIdx(S.u.equipe),idx);
-  S.tridx=idx; S.treino=t; S.sub='detalhe'; S.editando=false; S.pilha.pop();
+  S.tridx=idx; S.treino=t; S.sub='detalhe'; S.editando=false; S.rascunho=null; TREINOPDF=null; S.pilha.pop();
   toast(`${t.blocos.reduce((n,b)=>n+b.itens.length,0)} séries · ${t.para.length} atleta(s)`);
   render();
 }
@@ -1102,6 +1133,7 @@ function telaTreinoDetalhe(){
     <div class="grow"></div>
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
+  ${t.pdf?`<a class="btnlink" href="${t.pdf}" target="_blank" rel="noopener" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`:''}
   ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
   </div></div>`:''}
@@ -1187,7 +1219,7 @@ async function salvarRitmoAA(itemId,atletaId){
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
   fecharSheet(); toast(ms!=null?'Ritmo salvo':'Ritmo removido'); render();
 }
-function editarTreino(){S.editando=true;S.selMulti=[...(S.treino.para||[])];S.sub='novo';render()}
+function editarTreino(){S.rascunho=null;TREINOPDF=null;S.editando=true;S.selMulti=[...(S.treino.para||[])];S.sub='novo';render()}
 async function excluirTreino(){
   sheet(`<h2>Excluir treino</h2><p class="small muted">"${esc(S.treino.titulo)}" e todos os tempos lançados serão apagados. Não dá para desfazer.</p>
     <button class="danger full" style="margin-top:14px" onclick="confirmarExclusao()">Excluir</button>
@@ -1807,11 +1839,21 @@ function compartilharTreino(){
 
 /* ---------- competição na visão do atleta ---------- */
 function telaCompAtleta(){
-  if(!S.comp)return`<div class="row" style="margin:16px 0 6px"><h2>Provas</h2></div>
-    ${S.cidx.map(c=>`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirComp('${c.id}')">
-      <div class="av">▲</div><div class="grow"><b>${esc(c.nome)}</b>
-      <div class="xs muted">${brData(c.data)} · ${c.piscina}</div></div><span class="tag o">›</span></button>`).join('')
-      ||`<div class="empty"><div class="big">Nenhuma competição</div><p class="small">O técnico ainda não cadastrou provas.</p></div>`}`;
+  if(!S.comp){
+    if(S.minhaComp)return telaMinhaComp();
+    const minhas=S.u.competicoes||[];
+    return`
+    <div class="row" style="margin:16px 0 6px"><h2>Provas</h2><div class="grow"></div>
+      <button class="sm primary" onclick="abrirNovaCompeticaoAtleta()">+ Competição</button></div>
+    ${minhas.length?`<div class="card"><div class="eyebrow">minhas competições</div>
+      ${[...minhas].sort((a,b)=>b.data.localeCompare(a.data)).map(mc=>`<button class="lst" onclick="S.minhaComp='${mc.id}';render()">
+        <span class="av">★</span><span class="grow"><b>${esc(mc.nome)}</b><span class="xs muted" style="display:block">${brData(mc.data)} · ${mc.piscina} · ${(mc.provas||[]).length} prova(s)</span></span><span class="tag o">›</span></button>`).join('')}
+      </div>`:''}
+    ${S.cidx.length?`<div class="card"><div class="eyebrow">competições da equipe</div>
+      ${S.cidx.map(c=>`<button class="lst" onclick="abrirComp('${c.id}')"><span class="av">▲</span><span class="grow"><b>${esc(c.nome)}</b><span class="xs muted" style="display:block">${brData(c.data)} · ${c.piscina}</span></span><span class="tag o">›</span></button>`).join('')}
+      </div>`:''}
+    ${!minhas.length&&!S.cidx.length?`<div class="empty"><div class="big">Nenhuma competição</div><p class="small">Toque em <b>+ Competição</b> para registrar a sua — ou aguarde o técnico.</p></div>`:''}`;
+  }
   const c=S.comp;
   const minhas=[];
   c.provas.forEach(p=>p.inscritos.forEach(i=>{if(i.atletaId===S.u.id)minhas.push({p,i})}));
@@ -1846,6 +1888,111 @@ function compartilharMinhasProvas(){
     t+=`\n${nomeProva(p)} — ${fmt(ps[ps.length-1],true)}\n  ${tr.map((x,k)=>`${p.tipo==='rev'?(k+1)+'º':((k+1)*passo)+'m'} ${fmt(x,true)}`).join(' · ')}`;
   }));
   enviar(t+`\n\nPARCIAL ${VER}`,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
+}
+
+/* ---------- competições lançadas pelo próprio atleta ---------- */
+async function salvarUsuario(){ await DB.set(kUser(S.u.email),S.u); }
+function telaMinhaComp(){
+  const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp);
+  if(!mc){S.minhaComp=null;return telaCompAtleta();}
+  return`
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Provas</button></div>
+  <div><div class="eyebrow">${brData(mc.data)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
+  <div class="card"><div class="eyebrow">balizamento em PDF</div>
+    <p class="small muted" style="margin:4px 0 6px">Suba o balizamento (start list) e eu tento preencher as <b>suas</b> provas, séries e raias pelo seu nome. Melhor esforço — confira depois.</p>
+    <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarBalizamento(this)"></div>
+  </div>
+  <div class="row" style="margin:8px 0"><div class="eyebrow">minhas provas</div><div class="grow"></div>
+    <button class="sm primary" onclick="abrirNovaProvaAtleta()">+ Prova</button></div>
+  ${(mc.provas||[]).length?mc.provas.map(pr=>`<div class="card tight" style="margin:8px 0">
+    <div class="row"><div><b>${pr.dist}m ${pr.estilo}</b>
+      <div class="xs muted">${pr.serie?'série '+pr.serie:''}${pr.raia?' · raia '+pr.raia:''}${pr.inscricao?' · insc. '+fmt(pr.inscricao,true):''}</div></div>
+      <div class="grow"></div>
+      <button class="sm ghost" style="color:var(--clock)" onclick="apagarProvaAtleta('${pr.id}')">✕</button></div>
+  </div>`).join(''):'<div class="small muted">Nenhuma prova ainda. Toque em + Prova ou suba o balizamento.</div>'}
+  <button class="ghost full" style="margin-top:14px;color:var(--clock)" onclick="apagarCompeticaoAtleta('${mc.id}')">Apagar competição</button>
+  <div style="height:20px"></div>`;
+}
+function abrirNovaCompeticaoAtleta(){
+  sheet(`<h2>Nova competição</h2>
+    <div class="field"><label>Nome</label><input id="mcNome" autocapitalize="words" placeholder="ex.: Copa Estadual"></div>
+    <div class="grid2">
+      <div class="field"><label>Data</label><input type="date" id="mcData" value="${hoje()}"></div>
+      <div class="field"><label>Piscina</label><select id="mcPis"><option value="SC25">Curta · 25m</option><option value="LC50">Longa · 50m</option></select></div>
+    </div>
+    <button class="primary full" onclick="salvarCompeticaoAtleta()">Criar</button>`);
+}
+async function salvarCompeticaoAtleta(){
+  const nome=val('mcNome'); if(!nome)return toast('Informe o nome');
+  S.u.competicoes=S.u.competicoes||[];
+  const mc={id:uid(),nome,data:val('mcData')||hoje(),piscina:document.getElementById('mcPis').value,provas:[]};
+  S.u.competicoes.push(mc); await salvarUsuario();
+  S.minhaComp=mc.id; fecharSheet(); toast('Competição criada'); render();
+}
+async function apagarCompeticaoAtleta(id){
+  S.u.competicoes=(S.u.competicoes||[]).filter(x=>x.id!==id); await salvarUsuario();
+  S.minhaComp=null; toast('Competição apagada'); render();
+}
+function abrirNovaProvaAtleta(){
+  sheet(`<h2>Adicionar prova</h2>
+    <div class="field"><label>Prova</label><select id="mpProva">${PROVAS_CAT.map((p,i)=>`<option value="${i}">${p.d}m ${p.e}</option>`).join('')}</select></div>
+    <div class="grid2">
+      <div class="field"><label>Série</label><input id="mpSerie" inputmode="numeric" placeholder="ex.: 3"></div>
+      <div class="field"><label>Raia</label><input id="mpRaia" inputmode="numeric" placeholder="ex.: 4"></div>
+    </div>
+    <div class="field"><label>Tempo de inscrição <span class="xs muted">(opcional)</span></label><input id="mpInsc" placeholder="ex.: 31.35"></div>
+    <button class="primary full" onclick="salvarProvaAtleta()">Adicionar</button>`);
+}
+async function salvarProvaAtleta(){
+  const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
+  const b=PROVAS_CAT[+document.getElementById('mpProva').value];
+  mc.provas=mc.provas||[];
+  mc.provas.push({id:uid(),dist:b.d,estilo:b.e,serie:val('mpSerie')?+val('mpSerie'):null,raia:val('mpRaia')?+val('mpRaia'):null,inscricao:val('mpInsc')?parseTempo(val('mpInsc')):null});
+  await salvarUsuario(); fecharSheet(); toast('Prova adicionada'); render();
+}
+async function apagarProvaAtleta(id){
+  const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
+  mc.provas=(mc.provas||[]).filter(p=>p.id!==id); await salvarUsuario(); render();
+}
+/* balizamento (start list) em PDF — extrai as provas do próprio atleta pelo nome */
+/* Formato ABMN Competição: cabeçalho "Nº PROVA - <dist> METROS <estilo> <gênero>",
+   séries "Nª SÉRIE ...", e linhas "raia matrícula faixa + NOME  EQUIPE  TEMPO".
+   Casa a linha do atleta exigindo todos os nomes dele (>=3 letras) na linha. */
+function parseBalizamento(txt,nome){
+  const toks=(nome||'').toLowerCase().split(/\s+/).filter(t=>t.length>=3);
+  const ESTIL=[[/livre|crawl/i,'livre'],[/costas?/i,'costas'],[/peito/i,'peito'],[/borbol/i,'borboleta'],[/medley/i,'medley']];
+  let dist=null,estilo=null,serie=null; const out=[];
+  for(const raw of txt.split(/\r?\n/)){
+    const l=raw.trim(); if(!l)continue;
+    if(/\bprova\b/i.test(l)&&/metros/i.test(l)){
+      if(/revez|\d\s*x\s*\d/i.test(l)){ dist=null;estilo=null; continue; }   // pula revezamento
+      const md=l.match(/prova\s*[-–:]?\s*(\d{2,4})\s*metros/i);
+      if(md){ dist=+md[1]; estilo='livre'; for(const[re,v]of ESTIL){if(re.test(l)){estilo=v;break;}} serie=null; }
+      continue;
+    }
+    const ms=l.match(/(\d+)\D{0,3}s[ée]rie/i); if(ms&&/s[ée]rie/i.test(l)){ serie=+ms[1]; continue; }
+    if(!dist||!estilo||!toks.length)continue;
+    const low=l.toLowerCase();
+    if(toks.every(t=>low.includes(t))){
+      const raia=parseInt(l,10);
+      const times=l.match(/\d{1,2}:\d{2}[.,]\d{2}|\b\d{1,2}[.,]\d{2}\b/g);
+      out.push({id:uid(),dist,estilo,serie,raia:isNaN(raia)?null:raia,inscricao:times?parseTempo(times[times.length-1]):null});
+    }
+  }
+  return out;
+}
+async function importarBalizamento(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
+  toast('Lendo o balizamento…');
+  let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
+  const provas=parseBalizamento(txt,S.u.nome);
+  if(!provas.length)return toast('Não achei suas provas. Confira se seu nome está no PDF, ou lance à mão.');
+  mc.provas=mc.provas||[];
+  const ex=new Set(mc.provas.map(p=>`${p.dist}|${p.estilo}|${p.serie}|${p.raia}`));
+  let add=0;
+  for(const p of provas){ const k=`${p.dist}|${p.estilo}|${p.serie}|${p.raia}`; if(ex.has(k))continue; ex.add(k); mc.provas.push(p); add++; }
+  await salvarUsuario(); toast(add?`${add} prova(s) importada(s)`:'Tudo já estava lançado'); render();
 }
 
 /* =====================================================================
@@ -1890,6 +2037,11 @@ function telaMarcas(){
   return`
   <div class="row" style="margin:16px 0 6px"><h2>Marcas</h2><div class="grow"></div>
     <button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button></div>
+  <div class="card">
+    <div class="eyebrow">importar da ABMN</div>
+    <p class="small muted" style="margin:4px 0 8px">Tem o <b>Currículo On-Line</b> da ABMN em PDF? Importe seus melhores tempos e o histórico de competições de uma vez — cada resultado entra no quadro de evolução.</p>
+    <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarABMN(this)"></div>
+  </div>
   <div class="card">
     <div class="eyebrow">melhores tempos</div>
     ${Object.keys(pro.pbs||{}).length?`
@@ -1954,6 +2106,74 @@ async function salvarMarca(){
 }
 async function apagarPB(k){delete S.pro.pbs[k];await salvarPro();render()}
 async function apagarResultado(chave){ S.pro.resultados=(S.pro.resultados||[]).filter(r=>r.chave!==chave); await salvarPro(); render(); }
+
+/* ---------- leitura de PDF no navegador (pdf.js sob demanda) ---------- */
+let _pdfjs=null;
+function carregarPdfJs(){
+  if(_pdfjs)return _pdfjs;
+  _pdfjs=new Promise((res,rej)=>{
+    if(window.pdfjsLib){res(window.pdfjsLib);return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';res(window.pdfjsLib)}catch(e){rej(e)}};
+    s.onerror=()=>rej(new Error('sem conexão para o leitor de PDF'));
+    document.head.appendChild(s);
+  });
+  return _pdfjs;
+}
+async function pdfTexto(file){
+  const lib=await carregarPdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await lib.getDocument({data:buf}).promise;
+  let out='';
+  for(let p=1;p<=pdf.numPages;p++){
+    const tc=await (await pdf.getPage(p)).getTextContent();
+    const linhas={};
+    for(const it of tc.items){ const y=Math.round(it.transform[5]); (linhas[y]=linhas[y]||[]).push({x:it.transform[4],s:it.str}); }
+    for(const y of Object.keys(linhas).map(Number).sort((a,b)=>b-a))
+      out+=linhas[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ')+'\n';
+  }
+  return out;
+}
+/* extrai resultados do currículo On-Line da ABMN (histórico por competição) */
+function parseABMN(txt){
+  const ESTIL={LIVRE:'livre',PEITO:'peito',COSTAS:'costas',BORBOLETA:'borboleta',MEDLEY:'medley'};
+  let comp='',pool='SC25'; const out=[];
+  for(const raw of txt.split(/\r?\n/)){
+    const l=raw.trim(); if(!l)continue;
+    const mh=l.match(/^(.*?[A-Za-zÀ-ÿ].*?)\s*[-–]\s*(25|50)\s*METROS\s*$/i);
+    if(mh&&!/melhores tempos|resultados por prova/i.test(mh[1])){ comp=mh[1].trim(); pool=mh[2]==='50'?'LC50':'SC25'; continue; }
+    if(/melhores tempos/i.test(l)&&/(25|50)\s*metros/i.test(l)){ pool=/50\s*metros/i.test(l)?'LC50':'SC25'; continue; }
+    if(/\d\s*[xX]\s*\d/.test(l))continue;                    // pula revezamentos
+    const mp=l.match(/(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+MASC/i);
+    const mt=l.match(/\b(\d{1,2}:\d{2}\.\d{2})\b/);
+    const md=l.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
+    if(mp&&mt&&md){
+      const dist=+mp[1],estilo=ESTIL[mp[2].toUpperCase()]||'livre',tempo=parseTempo(mt[1]);
+      if(tempo)out.push({comp,data:`${md[3]}-${md[2]}-${md[1]}`,piscina:pool,prova:`${dist}m ${estilo}`,dist,estilo,tempo,parciais:[],inscricao:null});
+    }
+  }
+  return out;
+}
+async function importarABMN(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  toast('Lendo o PDF…');
+  let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
+  const novos=parseABMN(txt);
+  if(!novos.length)return toast('Nenhum resultado ABMN encontrado neste PDF.');
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro.resultados=S.pro.resultados||[];
+  const existe=new Set(S.pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
+  let add=0;
+  for(const r of novos){
+    const k=`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`;
+    if(existe.has(k))continue; existe.add(k);
+    r.chave='abmn_'+k.replace(/\|/g,'_'); S.pro.resultados.push(r); add++;
+    const pk=pbKey(r.dist,r.estilo,r.piscina);
+    if(!S.pro.pbs[pk]||r.tempo<S.pro.pbs[pk])S.pro.pbs[pk]=r.tempo;
+  }
+  await salvarPro(); toast(add?`${add} resultado(s) importado(s) da ABMN`:'Tudo já estava importado'); render();
+}
 
 /* agrupa os resultados de competição por prova+piscina para a linha do tempo */
 function evolucaoProvas(pro){
@@ -2107,15 +2327,18 @@ function telaGarmin(){
     <div class="row"><div class="eyebrow">exames laboratoriais</div><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovoExame()">+ Exame</button></div>
     <p class="small muted" style="margin-top:4px">Ferritina, hemoglobina, vitamina D, CK e outros. Entram no relatório junto com o relógio e os treinos.</p>
+    <div class="field" style="margin-top:6px"><label>Importar exame em PDF <span class="xs muted">(melhor esforço — confira os valores)</span></label>
+      <input type="file" accept="application/pdf,.pdf" onchange="importarExamePDF(this)"></div>
     ${(S.pro?.exames||[]).length?[...(S.pro.exames)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
       <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
         <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoExameCurto(e)}</div></div>
         <button class="sm ghost" onclick="apagarExame('${e.id}')">✕</button></div>`).join(''):''}
   </div>
+  ${cardHistoricoSaude(S.pro||{})}
   <div class="card">
     <div class="eyebrow">treino fora d'água</div>
-    <p class="small muted">Fotografe a ficha da musculação ou do trabalho de core. Fica no histórico e entra no relatório.</p>
-    <div class="field"><input type="file" id="fSeco" accept="image/*" capture="environment" onchange="fotoSeco(this)"></div>
+    <p class="small muted">Lance <b>manualmente</b> (tipo + observação) ou anexe uma <b>foto</b> ou <b>PDF</b> da ficha. Entra no histórico e no relatório.</p>
+    <div class="field"><label>Foto ou PDF <span class="xs muted">(opcional)</span></label><input type="file" id="fSeco" accept="image/*,application/pdf" onchange="fotoSeco(this)"></div>
     <div class="grid2">
       <div class="field"><label>Tipo</label><select id="skTipo"><option>Musculação</option><option>Core</option><option>Mobilidade</option><option>Elástico</option><option>Outro</option></select></div>
       <div class="field"><label>Data</label><input type="date" id="skData" value="${hoje()}"></div>
@@ -2124,7 +2347,7 @@ function telaGarmin(){
     <div id="skPrev" class="small muted">Nenhuma foto escolhida.</div>
     <button class="primary full" style="margin-top:10px" onclick="salvarSeco()">Salvar registro</button>
     ${seco.length?`<div class="sep"></div>${seco.slice(0,8).map(s=>`<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)">
-      ${s.img?`<img src="${s.img}" style="width:52px;height:52px;object-fit:cover;border-radius:9px;border:1px solid var(--line)">`:'<div class="av">◻</div>'}
+      ${s.arquivo?`<a href="${s.arquivo}" target="_blank" rel="noopener" class="av" style="text-decoration:none">📄</a>`:(s.img?`<img src="${s.img}" style="width:52px;height:52px;object-fit:cover;border-radius:9px;border:1px solid var(--line)">`:'<div class="av">◻</div>')}
       <div class="grow"><b>${esc(s.tipo)}</b><div class="xs muted">${brData(s.data)}${s.obs?' · '+esc(s.obs):''}</div></div>
       <button class="sm ghost" onclick="apagarSeco('${s.id}')">✕</button></div>`).join('')}`:''}
   </div><div style="height:20px"></div>`;
@@ -2196,11 +2419,17 @@ async function lancarDia(){
   if(nm('gS')!==undefined)g.sono=nm('gS'); if(nm('gP')!==undefined)g.pse=nm('gP');
   await salvarPro(); toast('Gravado'); render();
 }
-let FOTO=null;
+let FOTO=null,SECOPDF=null;
 function fotoSeco(inp){
   const f=inp.files[0]; if(!f)return;
+  if(f.type==='application/pdf'){
+    const p=document.getElementById('skPrev');
+    if(f.size>500000){ SECOPDF=null; if(p)p.textContent='PDF grande demais (máx 500KB). Prefira uma foto.'; return; }
+    const rp=new FileReader(); rp.onload=()=>{ SECOPDF=rp.result; FOTO=null; if(p)p.textContent='PDF anexado ✓'; }; rp.readAsDataURL(f); return;
+  }
   const r=new FileReader();
   r.onload=()=>{
+    SECOPDF=null;
     const img=new Image();
     img.onload=()=>{
       const max=760,esc2=Math.min(1,max/Math.max(img.width,img.height));
@@ -2219,9 +2448,9 @@ async function salvarSeco(){
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
   S.pro.seco=S.pro.seco||[];
   S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
-    obs:val('skObs'),img:FOTO});
+    obs:val('skObs'),img:FOTO,arquivo:SECOPDF});
   if(S.pro.seco.length>24)S.pro.seco=S.pro.seco.slice(0,24);
-  FOTO=null; await salvarPro(); toast('Registro salvo'); render();
+  FOTO=null; SECOPDF=null; await salvarPro(); toast('Registro salvo'); render();
 }
 async function apagarSeco(id){S.pro.seco=S.pro.seco.filter(x=>x.id!==id);await salvarPro();render()}
 
@@ -2269,6 +2498,57 @@ async function salvarExame(){
   await salvarPro(); fecharSheet(); toast('Exame salvo'); render();
 }
 async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarPro(); render(); }
+
+/* leitura best-effort de exame em PDF: capta o 1º número após o nome do marcador */
+function parseExame(txt){
+  const t=txt.replace(/\s+/g,' ');
+  const cap=(nomes)=>{ for(const nome of nomes){ const m=t.match(new RegExp(nome+'[^0-9]{0,40}?(\\d{1,4}(?:[.,]\\d{1,2})?)','i')); if(m){const n=parseFloat(m[1].replace(',','.')); if(!isNaN(n))return n;} } return null; };
+  return {
+    ferritina:cap(['ferritina']),
+    hemoglobina:cap(['hemoglobina']),
+    vitD:cap(['25\\s*-?\\s*hidroxi','vitamina\\s*d','25\\s*oh']),
+    ck:cap(['creatino\\s*quinase','creatina\\s*quinase','\\bcpk\\b','\\bck\\b']),
+    testo:cap(['testosterona\\s*total','testosterona']),
+    tsh:cap(['\\btsh\\b','tireoestimulante']),
+    glicose:cap(['glicose\\s*de\\s*jejum','glicose','glicemia'])
+  };
+}
+async function importarExamePDF(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  toast('Lendo o PDF do exame…');
+  let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
+  const ex=parseExame(txt);
+  const md=txt.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const data=md?`${md[3]}-${md[2]}-${md[1]}`:hoje();
+  const achou=Object.values(ex).filter(v=>v!=null).length;
+  abrirNovoExame();
+  const set=(id,v)=>{const el=document.getElementById(id); if(el&&v!=null)el.value=v;};
+  document.getElementById('exData').value=data;
+  set('exFer',ex.ferritina);set('exHb',ex.hemoglobina);set('exVd',ex.vitD);set('exCk',ex.ck);set('exTs',ex.testo);set('exTsh',ex.tsh);set('exGli',ex.glicose);
+  document.getElementById('exObs').value='importado de PDF — confira os valores';
+  toast(achou?`${achou} marcador(es) lido(s). Confira e salve.`:'Não reconheci valores — preencha à mão.');
+}
+/* histórico dos marcadores para análise antes do relatório */
+function cardHistoricoSaude(pro){
+  const ex=[...(pro.exames||[])].sort((a,b)=>a.data.localeCompare(b.data));
+  if(!ex.length)return'';
+  const marcs=[['ferritina','Ferritina','ng/mL'],['hemoglobina','Hemoglobina','g/dL'],['vitD','Vitamina D','ng/mL'],['ck','CK','U/L'],['testo','Testosterona','ng/dL'],['tsh','TSH','mUI/L'],['glicose','Glicose','mg/dL']];
+  const linhas=marcs.map(([k,nome,un])=>{
+    const serie=ex.filter(e=>e[k]!=null).map(e=>({v:e[k],d:brCurta(e.data)}));
+    if(!serie.length)return'';
+    const tr=serie.length>1?(serie[serie.length-1].v>serie[0].v?'▲':(serie[serie.length-1].v<serie[0].v?'▼':'→')):'';
+    return`<div style="padding:8px 0;border-top:1px solid var(--line)">
+      <div class="row"><b>${nome}</b> <span class="xs muted" style="margin-left:4px">${un}</span><div class="grow"></div><span class="small">${tr}</span></div>
+      <div class="small t" style="color:var(--ink-2)">${serie.map(s=>`${s.v}<span class="xs muted"> ${s.d}</span>`).join('  →  ')}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+  const fl=flagsExame(ex[ex.length-1]);
+  return`<div class="card"><div class="eyebrow">histórico e análise</div>
+    <p class="small muted" style="margin:4px 0">Acompanhe a evolução dos marcadores antes de gerar o relatório.</p>
+    ${linhas||'<div class="small muted">Sem valores numéricos ainda.</div>'}
+    ${fl.length?`<div class="sep"></div><div class="eyebrow">pontos de atenção (último exame)</div>${fl.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`:''}
+  </div>`;
+}
 function resumoExameCurto(ex){
   const m=[['Ferritina',ex.ferritina],['Hb',ex.hemoglobina],['Vit.D',ex.vitD],['CK',ex.ck],['Testo',ex.testo],['TSH',ex.tsh],['Glic',ex.glicose]].filter(x=>x[1]!=null);
   return m.length?m.map(x=>x[0]+' '+x[1]).join(' · '):(ex.obs?esc(ex.obs):'sem valores');
