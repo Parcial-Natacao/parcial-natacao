@@ -2710,7 +2710,15 @@ function cardHistoricoSaude(pro){
 }
 
 /* ---------- bioimpedância ---------- */
-const BIO_M=[['peso','Peso','kg'],['gordura','Gordura','%'],['musculo','Massa muscular','kg'],['agua','Água','%'],['visceral','Gordura visceral',''],['ossea','Massa óssea','kg'],['tmb','TMB','kcal'],['idadeMetab','Idade metab.','']];
+const BIO_M=[['peso','Peso','kg'],['gordura','Gordura','%'],['musculo','Massa muscular','kg'],['agua','Água','%'],['visceral','Gordura visceral',''],['ossea','Massa óssea','kg'],['tmb','TMB','kcal']];
+/* TMB estimada (Katch-McArdle, usa massa magra) quando o aparelho não traz */
+function tmbKatch(b){ if(!b||b.peso==null||b.gordura==null)return null; const lbm=b.peso*(1-b.gordura/100); return Math.round(370+21.6*lbm); }
+/* idade metabólica estimada: idade cuja % de gordura média corresponde à sua
+   (homem ~12,5+0,23·idade; mulher ~20+0,22·idade). É estimativa, não substitui o aparelho. */
+function idadeMetabEst(b){ if(!b||b.gordura==null)return null; const F=(b.sexo||'M')==='F'; const a=F?20:12.5,k=F?0.22:0.23;
+  const im=Math.round((b.gordura-a)/k); return isFinite(im)?Math.max(18,Math.min(im,80)):null; }
+function tmbDe(b){ return (b&&b.tmb!=null)?b.tmb:tmbKatch(b); }
+function idadeMetabDe(b){ return (b&&b.idadeMetab!=null)?b.idadeMetab:idadeMetabEst(b); }
 function abrirNovaBio(){
   sheet(`<h2>Bioimpedância</h2>
     <div class="field"><label>Data</label><input type="date" id="biData" value="${hoje()}"></div>
@@ -2721,15 +2729,17 @@ function abrirNovaBio(){
       <div class="field"><label>Água <span class="xs muted">%</span></label><input id="biAgua" inputmode="decimal"></div>
       <div class="field"><label>Gord. visceral <span class="xs muted">nível</span></label><input id="biVisc" inputmode="decimal"></div>
       <div class="field"><label>Massa óssea <span class="xs muted">kg</span></label><input id="biOssea" inputmode="decimal"></div>
-      <div class="field"><label>TMB <span class="xs muted">kcal</span></label><input id="biTmb" inputmode="decimal"></div>
-      <div class="field"><label>Idade metab.</label><input id="biIdade" inputmode="decimal"></div>
+      <div class="field"><label>TMB <span class="xs muted">kcal (opcional)</span></label><input id="biTmb" inputmode="decimal"></div>
+      <div class="field"><label>Sexo</label><select id="biSexo"><option value="M">Masculino</option><option value="F">Feminino</option></select></div>
     </div>
+    <div class="xs muted" style="margin:-4px 0 8px">A <b>idade metabólica</b> e a <b>TMB</b> o app estima a partir do peso e da % de gordura — não precisa digitar.</div>
     <div class="field"><label>Observações</label><input id="biObs" autocapitalize="sentences"></div>
     <button class="primary full" onclick="salvarBio()">Salvar</button>`);
 }
 async function salvarBio(){
   const b={id:uid(),data:val('biData')||hoje(),peso:numCampo('biPeso'),gordura:numCampo('biGord'),musculo:numCampo('biMusc'),
-    agua:numCampo('biAgua'),visceral:numCampo('biVisc'),ossea:numCampo('biOssea'),tmb:numCampo('biTmb'),idadeMetab:numCampo('biIdade'),obs:val('biObs')||''};
+    agua:numCampo('biAgua'),visceral:numCampo('biVisc'),ossea:numCampo('biOssea'),tmb:numCampo('biTmb'),
+    sexo:(document.getElementById('biSexo')||{}).value||'M',obs:val('biObs')||''};
   if(BIO_M.every(([k])=>b[k]==null)&&!b.obs)return toast('Preencha ao menos um valor');
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.bioimp=S.pro.bioimp||[]; S.pro.bioimp.push(b);
@@ -2766,7 +2776,7 @@ async function importarBioPDF(inp){
   abrirNovaBio();
   const set=(id,v)=>{const el=document.getElementById(id); if(el&&v!=null)el.value=v;};
   document.getElementById('biData').value=dataDoExame(txt);
-  set('biPeso',b.peso);set('biGord',b.gordura);set('biMusc',b.musculo);set('biAgua',b.agua);set('biVisc',b.visceral);set('biOssea',b.ossea);set('biTmb',b.tmb);set('biIdade',b.idadeMetab);
+  set('biPeso',b.peso);set('biGord',b.gordura);set('biMusc',b.musculo);set('biAgua',b.agua);set('biVisc',b.visceral);set('biOssea',b.ossea);set('biTmb',b.tmb);
   document.getElementById('biObs').value=achou?'importado de PDF — confira':'';
   toast(achou?`${achou} valor(es) lido(s). Confira e salve.`:'Não reconheci valores — preencha à mão.');
 }
@@ -2814,6 +2824,36 @@ function resumoExame(ex){
     ${ex.obs?`<div class="xs muted" style="margin-top:6px">${esc(ex.obs)}</div>`:''}
     ${flags.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
 }
+/* laudo consolidado: liga saúde + composição + treino/desempenho e prioriza ações */
+function laudoConsolidado(pro,diag,comPct,brk,sem){
+  const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
+  const ev=evolucaoProvas(pro),evoluiu=ev.filter(e=>e.melhora),regr=ev.filter(e=>!e.melhora);
+  const exUlt=[...(pro.exames||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
+  const bioUlt=[...(pro.bioimp||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
+  const alertas=[...(exUlt?flagsExame(exUlt):[]),...(bioUlt?flagsBio(bioUlt):[])];
+  const saude=(exUlt||bioUlt)
+    ? (alertas.length?`${alertas.length} ponto(s) de atenção nos exames/composição (detalhados abaixo).`:'Exames e composição sem alertas — base saudável para treinar forte.')
+    : 'Sem exames de sangue ou bioimpedância lançados ainda.';
+  const im=bioUlt?idadeMetabDe(bioUlt):null, tm=bioUlt?tmbDe(bioUlt):null;
+  const comp=bioUlt&&bioUlt.gordura!=null
+    ? `Gordura ${bioUlt.gordura}%${bioUlt.musculo!=null?`, massa muscular ${bioUlt.musculo}kg`:''}${im!=null?`, idade metabólica estimada <b>${im}</b> (real ${anos(S.u)})`:''}${tm!=null?`, TMB ~${tm} kcal`:''}.` : '';
+  const treino=(comPct.length||ev.length)
+    ? `${md!=null?`Tiros a <b>${md.toFixed(0)}%</b> do melhor tempo`:'Sem tiros suficientes'}${ev.length?` · ${evoluiu.length} prova(s) em evolução${regr.length?`, ${regr.length} em queda`:''} nas competições`:''}.`
+    : 'Poucos tempos lançados para avaliar o desempenho.';
+  const temTreino=(pro.resultados||[]).length||comPct.length, temSaude=exUlt||bioUlt;
+  const correl=(temTreino&&temSaude)
+    ? 'Você já tem dados dos dois lados (treino e saúde) — acompanhe se quedas de rendimento coincidem com alterações nos exames.'
+    : 'Ainda faltam dados de um dos lados (treino ou saúde) para cruzar a evolução no tempo; quanto mais você lançar, mais forte fica a análise.';
+  return`<div class="card"><div class="eyebrow">laudo consolidado</div>
+    <h3 style="margin:3px 0 10px">Situação atual</h3>
+    <div class="small"><b>Saúde:</b> ${saude}</div>
+    ${comp?`<div class="small" style="margin-top:6px"><b>Composição:</b> ${comp}</div>`:''}
+    <div class="small" style="margin-top:6px"><b>Treino & desempenho:</b> ${treino}</div>
+    <div class="sep"></div><div class="eyebrow">o que priorizar</div>
+    ${diag.foco.slice(0,4).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')||'<div class="small muted" style="margin-top:6px">Lance mais dados para recomendações específicas.</div>'}
+    <div class="xs muted" style="margin-top:10px">${correl} Análise automática a partir dos seus dados e de faixas de referência da literatura esportiva — não substitui avaliação médica.</div>
+  </div>`;
+}
 function telaRelatorio(){
   if(!ESF){coletarEsforcos().then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
@@ -2827,6 +2867,7 @@ function telaRelatorio(){
   <div class="row noprint" style="margin:16px 0 6px"><h2>Relatório</h2><div class="grow"></div>
     <button class="sm ghost" onclick="window.print()">PDF</button>
     <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button></div>
+  ${laudoConsolidado(pro,diag,comPct,brk,sem)}
   <div class="card"><div class="eyebrow">panorama</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
@@ -2858,8 +2899,9 @@ function telaRelatorio(){
     ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${pro.bioimp?.length?`<div class="card"><div class="eyebrow">bioimpedância</div>
     <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
-    ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);
+    ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);const im=idadeMetabDe(b),tm=tmbDe(b);
       return`${marc.length?`<table style="margin-top:6px"><tbody>${marc.map(([k,nome,un])=>`<tr><td>${nome}</td><td class="n" style="text-align:right;font-weight:700">${b[k]} <span class="xs muted">${un}</span></td></tr>`).join('')}</tbody></table>`:''}
+      ${(im!=null||tm!=null)?`<div class="note ok" style="margin-top:8px">${im!=null?`Idade metabólica estimada: <b>${im} anos</b> (real ${anos(S.u)}). `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
       ${flagsBio(b).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
     })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${cardEvolucao(pro,'evolução em competições')}
