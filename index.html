@@ -304,7 +304,7 @@ const S={
   provaSel:null, atletaSel:null, pro:null, elenco:[], libs:[],
   escrevendo:false, selMulti:[], filtroNivel:'todos'
 };
-const NIVEIS=['Master','Aperfeiçoamento','Águas Abertas'];
+const NIVEIS=['Master','Águas Abertas','Condicionamento'];
 S.pilha=[];
 
 /* ---------- histórico de navegação ----------
@@ -654,7 +654,7 @@ async function carregarDados(){
   else if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
-  if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
 async function sincronizar(sil){
@@ -894,8 +894,8 @@ function navBar(){
   const abas=ehGestor()
     ?[['treinos','≡','Treinos'],['elenco','◎','Elenco'],['competicao','▲','Competição']]
     :S.u.perfil==='pro'
-      ?[['treinos','≡','Treinos'],['competicao','▲','Provas'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório'],['store','▣','Store']]
-      :[['treinos','≡','Treinos'],['competicao','▲','Provas'],['store','▣','Store']];
+      ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório'],['store','▣','Store']]
+      :[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['store','▣','Store']];
   document.getElementById('nav').classList.remove('hide');
   document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
     `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
@@ -910,14 +910,14 @@ const ESTILOS=[[/borbol|golfin|\bfly\b|\bbf\b/i,'borboleta'],[/costas?|\bcs\b/i,
 const RECURSOS=[[/pernad|perna|kick/i,'pernada'],[/braçad|braço|pull/i,'braçada'],[/educativ|técnic|drill/i,'técnica'],
  [/palmar|paddle/i,'palmar'],[/saíd|partida|start/i,'saída'],[/vira|turn/i,'virada'],[/filipin|pullout|submers/i,'filipina'],
  [/progressiv/i,'progressivo'],[/boia|pull\s*buoy/i,'boia']];
-const CABECA=/^(aquecimen|aquec|warm|técnic|tecnic|educativ|principal|série|serie|conjunto|main|soltura|volta[\s-]*à?\s*calma|volta calma|desaquec|pré[\s-]*principal|pre[\s-]*principal|complemento|core|seco|dryland|travessia)/i;
+const CABECA=/^(aquecimen|aquec|warm|ativa|técnic|tecnic|educativ|principal|série|serie|conjunto|main|tiros?\b|velocidad|aeróbi|aerobi|limiar|soltura|volta[\s-]*à?\s*calma|volta calma|desaquec|pré[\s-]*principal|pre[\s-]*principal|complemento|final|regenerat|poliment|core|seco|dryland|travessia)/i;
 
 function interpretar(txt){
   const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]};
   const notaPref=/^(obs|observ|nota|aten|import|lembr|foco|dica)\b/i;
   for(const raw of (txt||'').split(/\r?\n/)){
     const l=raw.trim(); if(!l)continue;
-    const ehHeader=!notaPref.test(l)&&(CABECA.test(l)||(!/\d/.test(l)&&l.length<=36));
+    const ehHeader=!notaPref.test(l)&&CABECA.test(l);
     if(ehHeader){
       if(atual.itens.length)blocos.push(atual);
       atual={id:uid(),titulo:l.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]};
@@ -1137,14 +1137,15 @@ function telaTreinoDetalhe(){
   ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
   </div></div>`:''}
-  ${at?(t.blocos||[]).map(b=>`
-    <div class="blk"><h3>${esc(b.titulo)}</h3><div class="ln"></div><span class="xs muted t">${b.itens.reduce((x,i)=>x+i.vol,0)}m</span></div>
-    ${b.itens.map(i=>linhaSerie(t,i,at)).join('')}`).join(''):'<div class="empty"><div class="big">Sem atletas neste treino</div></div>'}
+  ${at?(t.blocos||[]).map(b=>{
+    const semCrono=/aquec|soltur|volta[\s-]*[àa]?\s*calma|desaquec|calma|solto/i.test(b.titulo||'');
+    return`<div class="blk"><h3>${esc(b.titulo)}</h3><div class="ln"></div><span class="xs muted t">${b.itens.reduce((x,i)=>x+i.vol,0)}m</span></div>
+    ${b.itens.map(i=>linhaSerie(t,i,at,semCrono)).join('')}`;}).join(''):'<div class="empty"><div class="big">Sem atletas neste treino</div></div>'}
   <div class="row" style="margin:16px 0 30px">
     <button class="ghost full" onclick="compartilharTreino()">Compartilhar treino e tempos</button>
   </div>`;
 }
-function linhaSerie(t,i,at){
+function linhaSerie(t,i,at,semCrono){
   if(i.nota)return`<div style="margin:2px 0 9px;padding:9px 12px;border-left:3px solid var(--rope);background:var(--deck);border-radius:0 9px 9px 0">
     <span class="small">${esc(i.texto)}</span></div>`;
   const r=(t.registros?.[at.id]?.[i.id])||{tempos:[],parciais:[]};
@@ -1155,17 +1156,18 @@ function linhaSerie(t,i,at){
   const mel=ts.length?Math.min(...ts):null;
   const pct=(!aa&&dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
   const z=zona(pct);
+  /* tiro de verdade → cronometrar; ativação/rodagem → opcional; aquec/soltura → nenhum */
+  const eTiro=/\btiro\b|máxim|maxim|all\s*out|sprint|ritmo de prova|\brp\b|\ba[3-6]\b|9[0-9]\s*%|100\s*%/i.test(i.texto||'');
+  const botao=semCrono?''
+    :((eTiro||logged)
+      ?`<button class="sm ghost" onclick="abrirLancamento('${i.id}','${at.id}')">${logged?'Editar':'Lançar'}</button>`
+      :`<button class="sm ghost" style="opacity:.55;font-size:12px" onclick="abrirLancamento('${i.id}','${at.id}')">anotar tempo</button>`);
   return`<div class="item ${logged?'sel':''}">
-    <div class="row" style="align-items:baseline;flex-wrap:wrap">
-      <span class="d">${i.reps>1?i.reps+'×':''}${i.dist}</span>
-      <span class="small muted">${i.estilo}${i.tags.length?' · '+i.tags.join(' · '):''}</span>
-      ${i.intervalo?`<span class="i">saída ${fmtInt(i.intervalo)}</span>`:''}
-      ${i.pausa?`<span class="i">desc ${fmtPausa(i.pausa)}</span>`:''}
-      <div class="grow"></div>
+    <div class="row" style="align-items:baseline;flex-wrap:wrap;gap:6px">
+      <span class="grow" style="min-width:58%"><b>${esc(i.texto||((i.reps>1?i.reps+'×':'')+i.dist+' '+i.estilo))}</b></span>
       ${z?`<span class="z ${z.c}">${pct.toFixed(0)}%</span>`:''}
-      <button class="sm ghost" onclick="abrirLancamento('${i.id}','${at.id}')">${logged?'Editar':'Lançar'}</button>
+      ${botao}
     </div>
-    ${i.obs?`<div class="xs muted" style="margin-top:3px">↳ ${esc(i.obs)}</div>`:''}
     ${aa
       ? (r.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(r.ritmo100,true)}</span></div>`:'')
       : (ts.length?`<div class="chips">${r.tempos.map((x,ix)=>x==null?'':
@@ -1843,7 +1845,7 @@ function telaCompAtleta(){
     if(S.minhaComp)return telaMinhaComp();
     const minhas=S.u.competicoes||[];
     return`
-    <div class="row" style="margin:16px 0 6px"><h2>Provas</h2><div class="grow"></div>
+    <div class="row" style="margin:16px 0 6px"><h2>Competições</h2><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovaCompeticaoAtleta()">+ Competição</button></div>
     ${minhas.length?`<div class="card"><div class="eyebrow">minhas competições</div>
       ${[...minhas].sort((a,b)=>b.data.localeCompare(a.data)).map(mc=>`<button class="lst" onclick="S.minhaComp='${mc.id}';render()">
@@ -1896,7 +1898,7 @@ function telaMinhaComp(){
   const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp);
   if(!mc){S.minhaComp=null;return telaCompAtleta();}
   return`
-  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Provas</button></div>
+  <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Competições</button></div>
   <div><div class="eyebrow">${brData(mc.data)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
   <div class="card"><div class="eyebrow">balizamento em PDF</div>
     <p class="small muted" style="margin:4px 0 6px">Suba o balizamento (start list) e eu tento preencher as <b>suas</b> provas, séries e raias pelo seu nome. Melhor esforço — confira depois.</p>
@@ -2005,7 +2007,7 @@ async function gravarResultadoPro(ix){
   if(!at||at.perfil!=='pro')return;
   const np=nPassagens(p,c.piscina),ps=(i.parciais||[]).filter(x=>x!=null);
   if(ps.length<np)return;
-  const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const chave=c.id+'_'+p.id;
   const r={chave,comp:c.nome,data:c.data,piscina:c.piscina,prova:nomeProva(p),dist:p.dist,estilo:p.estilo,
     tempo:ps[np-1],parciais:[...ps],inscricao:i.inscricao||null};
@@ -2093,7 +2095,7 @@ async function salvarMarca(){
   const b=PROVAS_CAT[+document.getElementById('mkProva').value];
   const pis=document.getElementById('mkPis').value,ms=msHMSC(val('mkH'),val('mkM'),val('mkS'),val('mkC'));
   if(!ms)return toast('Informe o tempo (ao menos os segundos)');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const key=pbKey(b.d,b.e,pis);
   if(!S.pro.pbs[key]||ms<S.pro.pbs[key])S.pro.pbs[key]=ms;
   if(val('mkComp')){
@@ -2161,7 +2163,7 @@ async function importarABMN(inp){
   let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
   const novos=parseABMN(txt);
   if(!novos.length)return toast('Nenhum resultado ABMN encontrado neste PDF.');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.resultados=S.pro.resultados||[];
   const existe=new Set(S.pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
   let add=0;
@@ -2257,29 +2259,10 @@ async function salvarMedidas(){
 }
 function abrirMedidas(){ STSEXO=S.u.store?S.u.store.sexo:null; sheet(`<h2>Suas medidas</h2>${formMedidas()}`); }
 function telaStore(){
-  const s=S.u.store;
-  if(!s){STSEXO=null;return`
-    <div class="row" style="margin:16px 0 6px"><h2>Store</h2></div>
-    <div class="card">
-      <div class="eyebrow">bem-vindo à loja</div>
-      <p class="small" style="margin:6px 0 10px">Preencha suas medidas uma vez. A loja usa elas como referência para você acertar o tamanho na hora da compra. Você edita quando quiser.</p>
-      ${formMedidas()}
-    </div><div style="height:20px"></div>`;}
   return`
-  <div class="row" style="margin:16px 0 6px"><h2>Store</h2><div class="grow"></div>
-    <button class="sm ghost" onclick="abrirMedidas()">Medidas</button></div>
-  <div class="card"><div class="eyebrow">suas medidas</div>
-    <div class="chips" style="margin-top:8px">
-      <span class="tag o">${s.sexo==='F'?'Feminino':s.sexo==='M'?'Masculino':'—'}</span>
-      ${s.calcado?`<span class="tag o">Calçado ${esc(s.calcado)}</span>`:''}
-      ${s.camiseta?`<span class="tag o">Camiseta ${esc(s.camiseta)}</span>`:''}
-      ${s.bermuda?`<span class="tag o">Bermuda ${esc(s.bermuda)}</span>`:''}
-      ${s.underwear?`<span class="tag o">Underwear ${esc(s.underwear)}</span>`:''}
-    </div>
-    <div class="xs muted" style="margin-top:8px">Confira estes tamanhos ao escolher o produto na loja.</div>
-  </div>
+  <div class="row" style="margin:16px 0 6px"><h2>Store</h2></div>
   <div class="card"><div class="eyebrow">lojas de natação</div>
-    <p class="small muted" style="margin:4px 0 8px">Toque para abrir a loja já buscando natação. As lojas abrem em nova aba.</p>
+    <p class="small muted" style="margin:4px 0 8px">Toque para abrir a loja já buscando natação. Abrem em nova aba.</p>
     ${STORES.map(st=>`<a class="lst" href="${st.url}" target="_blank" rel="noopener" style="text-decoration:none">
       <span class="av">${st.n[0]}</span>
       <span class="grow"><b>${st.n}</b><span class="xs muted" style="display:block">${st.dom}${st.nota?' · '+st.nota:''}</span></span>
@@ -2334,7 +2317,19 @@ function telaGarmin(){
         <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoExameCurto(e)}</div></div>
         <button class="sm ghost" onclick="apagarExame('${e.id}')">✕</button></div>`).join(''):''}
   </div>
+  <div class="card">
+    <div class="row"><div class="eyebrow">bioimpedância</div><div class="grow"></div>
+      <button class="sm primary" onclick="abrirNovaBio()">+ Bioimpedância</button></div>
+    <p class="small muted" style="margin-top:4px">Peso, % gordura, massa muscular, água, visceral. Entra no relatório junto com exames, relógio e treinos.</p>
+    <div class="field" style="margin-top:6px"><label>Importar em PDF <span class="xs muted">(melhor esforço — confira)</span></label>
+      <input type="file" accept="application/pdf,.pdf" onchange="importarBioPDF(this)"></div>
+    ${(S.pro?.bioimp||[]).length?[...(S.pro.bioimp)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
+      <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
+        <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoBioCurto(e)}</div></div>
+        <button class="sm ghost" onclick="apagarBio('${e.id}')">✕</button></div>`).join(''):''}
+  </div>
   ${cardHistoricoSaude(S.pro||{})}
+  ${cardHistoricoBio(S.pro||{})}
   <div class="card">
     <div class="eyebrow">treino fora d'água</div>
     <p class="small muted">Lance <b>manualmente</b> (tipo + observação) ou anexe uma <b>foto</b> ou <b>PDF</b> da ficha. Entra no histórico e no relatório.</p>
@@ -2386,7 +2381,7 @@ async function arquivoGarmin(inp){
 async function importarGarmin(raw,silencioso){
   if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return 0}
   let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return 0}
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const arr=Array.isArray(j)?j.flat():[j],mapa={};
   (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
   let n=0;
@@ -2412,7 +2407,7 @@ async function importarGarmin(raw,silencioso){
 }
 async function lancarDia(){
   const d=val('gD'); if(!d)return;
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   let g=(S.pro.garmin||[]).find(x=>x.data===d); if(!g){g={data:d};S.pro.garmin.push(g)}
   const nm=id=>{const v=val(id);return v?parseFloat(v):undefined};
   if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
@@ -2445,7 +2440,7 @@ function fotoSeco(inp){
   r.readAsDataURL(f);
 }
 async function salvarSeco(){
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.seco=S.pro.seco||[];
   S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
     obs:val('skObs'),img:FOTO,arquivo:SECOPDF});
@@ -2493,7 +2488,7 @@ async function salvarExame(){
     vitD:numCampo('exVd'),ck:numCampo('exCk'),testo:numCampo('exTs'),tsh:numCampo('exTsh'),glicose:numCampo('exGli'),obs:val('exObs')||''};
   const temValor=[ex.ferritina,ex.hemoglobina,ex.vitD,ex.ck,ex.testo,ex.tsh,ex.glicose].some(v=>v!=null);
   if(!temValor&&!ex.obs)return toast('Preencha ao menos um valor');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.exames=S.pro.exames||[]; S.pro.exames.push(ex);
   await salvarPro(); fecharSheet(); toast('Exame salvo'); render();
 }
@@ -2549,6 +2544,82 @@ function cardHistoricoSaude(pro){
     ${fl.length?`<div class="sep"></div><div class="eyebrow">pontos de atenção (último exame)</div>${fl.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`:''}
   </div>`;
 }
+
+/* ---------- bioimpedância ---------- */
+const BIO_M=[['peso','Peso','kg'],['gordura','Gordura','%'],['musculo','Massa muscular','kg'],['agua','Água','%'],['visceral','Gordura visceral',''],['ossea','Massa óssea','kg'],['tmb','TMB','kcal'],['idadeMetab','Idade metab.','']];
+function abrirNovaBio(){
+  sheet(`<h2>Bioimpedância</h2>
+    <div class="field"><label>Data</label><input type="date" id="biData" value="${hoje()}"></div>
+    <div class="grid2">
+      <div class="field"><label>Peso <span class="xs muted">kg</span></label><input id="biPeso" inputmode="decimal"></div>
+      <div class="field"><label>Gordura <span class="xs muted">%</span></label><input id="biGord" inputmode="decimal"></div>
+      <div class="field"><label>Massa muscular <span class="xs muted">kg</span></label><input id="biMusc" inputmode="decimal"></div>
+      <div class="field"><label>Água <span class="xs muted">%</span></label><input id="biAgua" inputmode="decimal"></div>
+      <div class="field"><label>Gord. visceral <span class="xs muted">nível</span></label><input id="biVisc" inputmode="decimal"></div>
+      <div class="field"><label>Massa óssea <span class="xs muted">kg</span></label><input id="biOssea" inputmode="decimal"></div>
+      <div class="field"><label>TMB <span class="xs muted">kcal</span></label><input id="biTmb" inputmode="decimal"></div>
+      <div class="field"><label>Idade metab.</label><input id="biIdade" inputmode="decimal"></div>
+    </div>
+    <div class="field"><label>Observações</label><input id="biObs" autocapitalize="sentences"></div>
+    <button class="primary full" onclick="salvarBio()">Salvar</button>`);
+}
+async function salvarBio(){
+  const b={id:uid(),data:val('biData')||hoje(),peso:numCampo('biPeso'),gordura:numCampo('biGord'),musculo:numCampo('biMusc'),
+    agua:numCampo('biAgua'),visceral:numCampo('biVisc'),ossea:numCampo('biOssea'),tmb:numCampo('biTmb'),idadeMetab:numCampo('biIdade'),obs:val('biObs')||''};
+  if(BIO_M.every(([k])=>b[k]==null)&&!b.obs)return toast('Preencha ao menos um valor');
+  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro.bioimp=S.pro.bioimp||[]; S.pro.bioimp.push(b);
+  await salvarPro(); fecharSheet(); toast('Bioimpedância salva'); render();
+}
+async function apagarBio(id){ S.pro.bioimp=(S.pro.bioimp||[]).filter(x=>x.id!==id); await salvarPro(); render(); }
+function resumoBioCurto(b){
+  const m=[['Peso',b.peso,'kg'],['Gord',b.gordura,'%'],['Músc',b.musculo,'kg'],['Água',b.agua,'%'],['Visc',b.visceral,'']].filter(x=>x[1]!=null);
+  return m.length?m.map(x=>x[0]+' '+x[1]+x[2]).join(' · '):(b.obs?esc(b.obs):'sem valores');
+}
+function flagsBio(b){
+  const f=[],n=v=>v!=null;
+  if(n(b.gordura)&&b.gordura>25)f.push({t:'warn',forte:b.gordura>30,txt:`Gordura corporal <b>${b.gordura}%</b> — elevada para atleta de resistência. Trabalhe composição corporal com apoio nutricional.`});
+  if(n(b.visceral)&&b.visceral>12)f.push({t:'warn',forte:b.visceral>14,txt:`Gordura visceral nível <b>${b.visceral}</b> — acima do saudável.`});
+  if(n(b.agua)&&b.agua<50)f.push({t:'',txt:`Água corporal <b>${b.agua}%</b> — abaixo do usual; atenção à hidratação e à massa magra.`});
+  return f;
+}
+function parseBio(txt){
+  const t=txt.replace(/\s+/g,' ');
+  const cap=(nomes)=>{ for(const nome of nomes){ const m=t.match(new RegExp(nome+'[^0-9]{0,30}?(\\d{1,4}(?:[.,]\\d{1,2})?)','i')); if(m){const v=parseFloat(m[1].replace(',','.')); if(!isNaN(v))return v;} } return null; };
+  return {peso:cap(['peso']),gordura:cap(['gordura\\s*corporal','percentual\\s*de\\s*gordura','%\\s*gordura','gordura']),
+    musculo:cap(['massa\\s*muscular','massa\\s*magra','m[uú]sculo']),agua:cap(['[aá]gua\\s*corporal','[aá]gua']),
+    visceral:cap(['gordura\\s*visceral','visceral']),ossea:cap(['massa\\s*[oó]ssea']),
+    tmb:cap(['metab[oó]lica\\s*basal','taxa\\s*metab','\\btmb\\b','metabolismo\\s*basal']),idadeMetab:cap(['idade\\s*metab'])};
+}
+async function importarBioPDF(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  toast('Lendo o PDF…');
+  let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
+  const b=parseBio(txt);
+  const md=txt.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const achou=Object.values(b).filter(v=>v!=null).length;
+  abrirNovaBio();
+  const set=(id,v)=>{const el=document.getElementById(id); if(el&&v!=null)el.value=v;};
+  document.getElementById('biData').value=md?`${md[3]}-${md[2]}-${md[1]}`:hoje();
+  set('biPeso',b.peso);set('biGord',b.gordura);set('biMusc',b.musculo);set('biAgua',b.agua);set('biVisc',b.visceral);set('biOssea',b.ossea);set('biTmb',b.tmb);set('biIdade',b.idadeMetab);
+  document.getElementById('biObs').value='importado de PDF — confira';
+  toast(achou?`${achou} valor(es) lido(s). Confira e salve.`:'Não reconheci valores — preencha à mão.');
+}
+function cardHistoricoBio(pro){
+  const bio=[...(pro.bioimp||[])].sort((a,b)=>a.data.localeCompare(b.data));
+  if(!bio.length)return'';
+  const linhas=BIO_M.map(([k,nome,un])=>{
+    const serie=bio.filter(e=>e[k]!=null).map(e=>({v:e[k],d:brCurta(e.data)}));
+    if(!serie.length)return'';
+    const tr=serie.length>1?(serie[serie.length-1].v>serie[0].v?'▲':(serie[serie.length-1].v<serie[0].v?'▼':'→')):'';
+    return`<div style="padding:8px 0;border-top:1px solid var(--line)"><div class="row"><b>${nome}</b> <span class="xs muted" style="margin-left:4px">${un}</span><div class="grow"></div><span class="small">${tr}</span></div>
+      <div class="small t" style="color:var(--ink-2)">${serie.map(s=>`${s.v}<span class="xs muted"> ${s.d}</span>`).join('  →  ')}</div></div>`;
+  }).filter(Boolean).join('');
+  const fl=flagsBio(bio[bio.length-1]);
+  return`<div class="card"><div class="eyebrow">bioimpedância — histórico</div>
+    ${linhas||'<div class="small muted">Sem valores.</div>'}
+    ${fl.length?fl.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join(''):''}</div>`;
+}
 function resumoExameCurto(ex){
   const m=[['Ferritina',ex.ferritina],['Hb',ex.hemoglobina],['Vit.D',ex.vitD],['CK',ex.ck],['Testo',ex.testo],['TSH',ex.tsh],['Glic',ex.glicose]].filter(x=>x[1]!=null);
   return m.length?m.map(x=>x[0]+' '+x[1]).join(' · '):(ex.obs?esc(ex.obs):'sem valores');
@@ -2575,7 +2646,7 @@ function resumoExame(ex){
 }
 function telaRelatorio(){
   if(!ESF){coletarEsforcos().then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
-  const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[]};
+  const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
   const int=ESF.filter(e=>!tec.includes(e));
   const comPct=int.map(e=>{const pb=pbDe(pro,e.dist,e.estilo);return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
@@ -2615,6 +2686,12 @@ function telaRelatorio(){
   ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
     <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
     ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
+  ${pro.bioimp?.length?`<div class="card"><div class="eyebrow">bioimpedância</div>
+    <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
+    ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);
+      return`${marc.length?`<table style="margin-top:6px"><tbody>${marc.map(([k,nome,un])=>`<tr><td>${nome}</td><td class="n" style="text-align:right;font-weight:700">${b[k]} <span class="xs muted">${un}</span></td></tr>`).join('')}</tbody></table>`:''}
+      ${flagsBio(b).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
+    })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${cardEvolucao(pro,'evolução em competições')}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
@@ -2658,6 +2735,8 @@ function diagnostico(comPct,brk,sem,pro){
   if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Trabalho de tolerância ao lactato agora tende a render pouco e cobrar caro.'});
   if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Segure a progressão por uma semana antes de somar carga.'});
   exFlags.forEach(f=>foco.push({t:f.t,txt:f.txt}));
+  const bioUlt=[...(pro.bioimp||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
+  if(bioUlt)flagsBio(bioUlt).forEach(f=>foco.push({t:f.t,txt:f.txt}));
   const evP=evolucaoProvas(pro);
   const evoluiu=evP.filter(e=>e.melhora),regrediu=evP.filter(e=>!e.melhora);
   if(evoluiu.length)foco.push({t:'ok',txt:`Em competição, evolução em <b>${evoluiu.map(e=>e.prova).join(', ')}</b>. Mantenha o que está funcionando nessas provas.`});
