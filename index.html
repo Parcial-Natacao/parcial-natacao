@@ -2941,7 +2941,7 @@ function telaRelatorio(){
   <div class="row noprint" style="margin:16px 0 6px"><h2>Relatório</h2><div class="grow"></div>
     <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
     <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>
-    ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}
+    ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
   ${laudoConsolidado(pro,diag,comPct,brk,sem)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <div class="card"><div class="eyebrow">panorama</div>
@@ -2961,13 +2961,6 @@ function telaRelatorio(){
   <div class="card"><div class="eyebrow">diagnóstico</div>
     <h3 style="margin:3px 0 9px">Onde concentrar</h3>
     ${diag.foco.map(f=>`<div class="note ${f.t}" style="margin-bottom:9px">${f.txt}</div>`).join('')}
-  </div>
-  <div class="card"><div class="eyebrow">sugestão</div>
-    <h3 style="margin:3px 0 9px">Próxima sessão</h3>
-    <div class="card tight" style="background:var(--deck);box-shadow:none">
-      <pre style="margin:0;font-family:var(--mono);font-size:13.5px;white-space:pre-wrap;line-height:1.6">${esc(diag.sessao)}</pre></div>
-    <div class="note ${diag.descansoTipo}" style="margin-top:10px">${diag.descanso}</div>
-    <div class="xs muted" style="margin-top:9px">Sugestão automática a partir dos seus dados. Combine com seu técnico antes de mudar o planejamento.</div>
   </div>
   ${pro.garmin?.length?`<div class="card"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}
   ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
