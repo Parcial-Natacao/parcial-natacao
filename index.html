@@ -179,6 +179,10 @@ const VER='v08';
    o acesso ou liberar para outra pessoa. Independe do técnico.
    ───────────────────────────────────────────────────────────── */
 const CODIGO_PRO='BARBATO-PRO-2026';
+/* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
+   Worker — veja backend/BACKEND-IA.md. Vazio = recurso desligado. */
+const IA_URL='';
+const temIA=()=>!!IA_URL;
 
 /* ─────────────────────────────────────────────────────────────
    DESENVOLVEDOR — quem aprova e gere os TÉCNICOS do app.
@@ -2253,7 +2257,7 @@ function evolucaoProvas(pro){
     if(arr.length<2)continue;
     const first=arr[0].tempo,last=arr[arr.length-1].tempo;
     out.push({key:k,prova:`${arr[0].dist}m ${arr[0].estilo}`,piscina:arr[0].piscina,
-      pts:arr.map(r=>({rot:brCurta(r.data),v:r.tempo})),delta:last-first,melhora:last<first});
+      pts:arr.map(r=>({rot:r.data.slice(8,10)+'/'+r.data.slice(5,7)+'/'+r.data.slice(2,4),v:r.tempo})),delta:last-first,melhora:last<first});
   }
   return out.sort((a,b)=>a.key.localeCompare(b.key));
 }
@@ -2278,9 +2282,9 @@ function cardEvolucao(pro,eyebrow){
   return`<div class="card"><div class="eyebrow">${eyebrow}</div>
     ${ev.map(e=>`<div style="margin-top:14px">
       <div class="row"><b>${e.prova} <span class="xs muted">${e.piscina}</span></b><div class="grow"></div>
-        <span class="small" style="font-weight:700;color:${e.melhora?'var(--ok)':'var(--clock)'}">${e.melhora?'▼ evoluiu':'▲ regrediu'} ${fmt(Math.abs(e.delta),true)}</span></div>
+        <span class="small" style="font-weight:700;color:${e.melhora?'var(--ok)':'var(--clock)'}">${e.melhora?'▼ melhorou':'▲ piorou'} ${fmt(Math.abs(e.delta),true)}</span></div>
       ${graficoLinha(e.pts)}</div>`).join('')}
-    <div class="xs muted" style="margin-top:8px">Cada ponto é uma competição, na ordem do tempo. Linha subindo = melhorando; menor tempo é melhor.</div>
+    <div class="xs muted" style="margin-top:8px">Cada ponto é uma competição, na ordem cronológica (dia/mês/ano). Linha para baixo = tempo menor = melhorando.</div>
   </div>`;
 }
 
@@ -2374,6 +2378,8 @@ function telaGarmin(){
     <p class="small muted" style="margin-top:4px">Ferritina, hemoglobina, vitamina D, CK e outros. Entram no relatório junto com o relógio e os treinos.</p>
     <div class="field" style="margin-top:6px"><label>Importar exame em PDF <span class="xs muted">(melhor esforço — confira os valores)</span></label>
       <input type="file" accept="application/pdf,.pdf" onchange="importarExamePDF(this)"></div>
+    ${temIA()?`<div class="field" style="margin-top:6px"><label>Ler por IA <span class="xs muted">(lê até PDF-imagem/foto — confira)</span></label>
+      <input type="file" accept="application/pdf,.pdf" onchange="lerExamePorIA(this)"></div>`:''}
     ${(S.pro?.exames||[]).length?[...(S.pro.exames)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
       <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
         <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoExameCurto(e)}</div></div>
@@ -2385,6 +2391,8 @@ function telaGarmin(){
     <p class="small muted" style="margin-top:4px">Peso, % gordura, massa muscular, água, visceral. Entra no relatório junto com exames, relógio e treinos.</p>
     <div class="field" style="margin-top:6px"><label>Importar em PDF <span class="xs muted">(melhor esforço — confira)</span></label>
       <input type="file" accept="application/pdf,.pdf" onchange="importarBioPDF(this)"></div>
+    ${temIA()?`<div class="field" style="margin-top:6px"><label>Ler por IA <span class="xs muted">(lê InBody/foto — confira)</span></label>
+      <input type="file" accept="application/pdf,.pdf" onchange="lerBioPorIA(this)"></div>`:''}
     ${(S.pro?.bioimp||[]).length?[...(S.pro.bioimp)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
       <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
         <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoBioCurto(e)}</div></div>
@@ -2623,6 +2631,71 @@ function parseExame(txt){
   }
   return vals;
 }
+/* ── Leitura por IA (via Cloudflare Worker) ──────────────────────────────── */
+function fileB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>rej(new Error('não consegui ler o arquivo'));r.readAsDataURL(file);});}
+async function chamarIA(payload){
+  const r=await fetch(IA_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  let d; try{ d=await r.json(); }catch{ throw new Error('resposta inválida do servidor'); }
+  if(!r.ok||d.erro)throw new Error(d.erro||('erro '+r.status));
+  return d;
+}
+async function lerExamePorIA(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  toast('Enviando à IA… pode levar alguns segundos');
+  try{
+    const pdf=await fileB64(f);
+    const d=await chamarIA({acao:'exame',pdf});
+    const n=Object.keys(d.vals||{}).length;
+    abrirNovoExame({data:d.data||hoje(),vals:d.vals||{},obs:n?'lido por IA — confira os valores':''});
+    toast(n?`${n} marcador(es) lidos pela IA. Confira e salve.`:'A IA não reconheceu valores — confira o arquivo.');
+  }catch(e){ toast('IA: '+e.message); }
+}
+async function lerBioPorIA(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  toast('Enviando à IA…');
+  try{
+    const pdf=await fileB64(f);
+    const d=await chamarIA({acao:'bio',pdf}); const v=d.vals||{};
+    abrirNovaBio();
+    const set=(id,x)=>{const el=document.getElementById(id); if(el&&x!=null)el.value=x;};
+    if(d.data){const el=document.getElementById('biData'); if(el)el.value=d.data;}
+    set('biPeso',v.peso);set('biGord',v.gordura);set('biMusc',v.musculo);set('biAgua',v.agua);set('biVisc',v.visceral);set('biOssea',v.ossea);set('biTmb',v.tmb);
+    const al=document.getElementById('biAltura'); if(al&&v.altura!=null)al.value=v.altura;
+    const ob=document.getElementById('biObs'); if(ob)ob.value='lido por IA — confira';
+    const n=Object.keys(v).length; toast(n?`${n} valor(es) lidos pela IA. Confira e salve.`:'A IA não reconheceu valores.');
+  }catch(e){ toast('IA: '+e.message); }
+}
+function dadosParaLaudo(){
+  const pro=S.pro||{};
+  const idade=(S.u&&S.u.nascimento)?anos(S.u):null;
+  const exames=(pro.exames||[]).map(e=>{const o={data:e.data}; chavesExame(e).forEach(k=>o[k]=vExame(e,k)); return o;});
+  const bio=(pro.bioimp||[]).map(b=>({data:b.data,peso:b.peso,gordura:b.gordura,musculo:b.musculo,agua:b.agua,visceral:b.visceral,imc:imcDe(b),tmb:tmbDe(b),suspeito:!!bioSuspeita(b)}));
+  const ev=(typeof evolucaoProvas==='function')?evolucaoProvas(pro):[];
+  const volume=(typeof volumePorSemana==='function')?volumePorSemana():[];
+  return {idade,sexo:((pro.bioimp||[]).slice(-1)[0]||{}).sexo||'M',exames,bioimpedancia:bio,evolucaoProvas:ev,volumeSemanal:volume};
+}
+async function gerarLaudoIA(){
+  toast('Gerando laudo por IA… aguarde');
+  try{
+    const d=await chamarIA({acao:'laudo',dados:dadosParaLaudo()});
+    S.laudoIA=d.laudo||''; render();
+    setTimeout(()=>{const el=document.getElementById('laudoIA'); if(el)el.scrollIntoView({behavior:'smooth'});},120);
+  }catch(e){ toast('IA: '+e.message); }
+}
+function mdNeg(s){return s.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');}
+function mdSimples(t){
+  const linhas=esc(String(t||'')).split(/\n/); let html='',emLista=false;
+  const fecha=()=>{if(emLista){html+='</ul>';emLista=false;}};
+  for(const raw of linhas){
+    const l=raw.trim();
+    if(!l){fecha();continue;}
+    if(/^##\s+/.test(l)){fecha();html+=`<h3 style="margin:12px 0 4px">${mdNeg(l.replace(/^##\s+/,''))}</h3>`;continue;}
+    if(/^#\s+/.test(l)){fecha();html+=`<h2 style="margin:12px 0 6px">${mdNeg(l.replace(/^#\s+/,''))}</h2>`;continue;}
+    if(/^[-*]\s+/.test(l)){if(!emLista){html+='<ul style="margin:4px 0 4px 18px">';emLista=true;}html+=`<li>${mdNeg(l.replace(/^[-*]\s+/,''))}</li>`;continue;}
+    fecha();html+=`<p style="margin:6px 0">${mdNeg(l)}</p>`;
+  }
+  fecha(); return html;
+}
 async function importarExamePDF(inp){
   const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
   toast('Lendo o PDF do exame…');
@@ -2713,12 +2786,10 @@ function cardHistoricoSaude(pro){
 const BIO_M=[['peso','Peso','kg'],['gordura','Gordura','%'],['musculo','Massa muscular','kg'],['agua','Água','%'],['visceral','Gordura visceral',''],['ossea','Massa óssea','kg'],['tmb','TMB','kcal']];
 /* TMB estimada (Katch-McArdle, usa massa magra) quando o aparelho não traz */
 function tmbKatch(b){ if(!b||b.peso==null||b.gordura==null)return null; const lbm=b.peso*(1-b.gordura/100); return Math.round(370+21.6*lbm); }
-/* idade metabólica estimada: idade cuja % de gordura média corresponde à sua
-   (homem ~12,5+0,23·idade; mulher ~20+0,22·idade). É estimativa, não substitui o aparelho. */
-function idadeMetabEst(b){ if(!b||b.gordura==null)return null; const F=(b.sexo||'M')==='F'; const a=F?20:12.5,k=F?0.22:0.23;
-  const im=Math.round((b.gordura-a)/k); return isFinite(im)?Math.max(18,Math.min(im,80)):null; }
 function tmbDe(b){ return (b&&b.tmb!=null)?b.tmb:tmbKatch(b); }
-function idadeMetabDe(b){ return (b&&b.idadeMetab!=null)?b.idadeMetab:idadeMetabEst(b); }
+function imcDe(b){ if(!b||b.peso==null||!b.altura)return null; const h=b.altura/100; return +(b.peso/(h*h)).toFixed(1); }
+/* valor de bioimpedância fisiologicamente improvável → não deve ser usado em conclusões */
+function bioSuspeita(b){ if(!b)return null; if(b.gordura!=null&&b.gordura<7)return 'gordura corporal muito baixa'; const imc=imcDe(b); if(b.gordura!=null&&b.gordura<10&&imc!=null&&imc>26)return `gordura ${b.gordura}% incompatível com IMC ${imc}`; return null; }
 function abrirNovaBio(){
   sheet(`<h2>Bioimpedância</h2>
     <div class="field"><label>Data</label><input type="date" id="biData" value="${hoje()}"></div>
@@ -2729,17 +2800,17 @@ function abrirNovaBio(){
       <div class="field"><label>Água <span class="xs muted">%</span></label><input id="biAgua" inputmode="decimal"></div>
       <div class="field"><label>Gord. visceral <span class="xs muted">nível</span></label><input id="biVisc" inputmode="decimal"></div>
       <div class="field"><label>Massa óssea <span class="xs muted">kg</span></label><input id="biOssea" inputmode="decimal"></div>
+      <div class="field"><label>Altura <span class="xs muted">cm (opcional)</span></label><input id="biAltura" inputmode="decimal"></div>
       <div class="field"><label>TMB <span class="xs muted">kcal (opcional)</span></label><input id="biTmb" inputmode="decimal"></div>
-      <div class="field"><label>Sexo</label><select id="biSexo"><option value="M">Masculino</option><option value="F">Feminino</option></select></div>
     </div>
-    <div class="xs muted" style="margin:-4px 0 8px">A <b>idade metabólica</b> e a <b>TMB</b> o app estima a partir do peso e da % de gordura — não precisa digitar.</div>
+    <div class="xs muted" style="margin:-4px 0 8px">A <b>TMB</b> o app estima a partir do peso e da % de gordura. A altura serve só para calcular o IMC e checar valores incoerentes.</div>
     <div class="field"><label>Observações</label><input id="biObs" autocapitalize="sentences"></div>
     <button class="primary full" onclick="salvarBio()">Salvar</button>`);
 }
 async function salvarBio(){
   const b={id:uid(),data:val('biData')||hoje(),peso:numCampo('biPeso'),gordura:numCampo('biGord'),musculo:numCampo('biMusc'),
     agua:numCampo('biAgua'),visceral:numCampo('biVisc'),ossea:numCampo('biOssea'),tmb:numCampo('biTmb'),
-    sexo:(document.getElementById('biSexo')||{}).value||'M',obs:val('biObs')||''};
+    altura:numCampo('biAltura'),obs:val('biObs')||''};
   if(BIO_M.every(([k])=>b[k]==null)&&!b.obs)return toast('Preencha ao menos um valor');
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.bioimp=S.pro.bioimp||[]; S.pro.bioimp.push(b);
@@ -2751,6 +2822,8 @@ function resumoBioCurto(b){
   return m.length?m.map(x=>x[0]+' '+x[1]+x[2]).join(' · '):(b.obs?esc(b.obs):'sem valores');
 }
 function flagsBio(b){
+  const susp=bioSuspeita(b);
+  if(susp)return [{t:'warn',txt:`Valor suspeito na bioimpedância (${susp}). Verifique a medição — não estou usando esses números nas conclusões.`}];
   const f=[],n=v=>v!=null;
   if(n(b.gordura)&&b.gordura>25)f.push({t:'warn',forte:b.gordura>30,txt:`Gordura corporal <b>${b.gordura}%</b> — elevada para atleta de resistência. Trabalhe composição corporal com apoio nutricional.`});
   if(n(b.visceral)&&b.visceral>12)f.push({t:'warn',forte:b.visceral>14,txt:`Gordura visceral nível <b>${b.visceral}</b> — acima do saudável.`});
@@ -2763,7 +2836,7 @@ function parseBio(txt){
   return {peso:cap(['peso']),gordura:cap(['gordura\\s*corporal','percentual\\s*de\\s*gordura','%\\s*gordura','gordura']),
     musculo:cap(['massa\\s*muscular','massa\\s*magra','m[uú]sculo']),agua:cap(['[aá]gua\\s*corporal','[aá]gua']),
     visceral:cap(['gordura\\s*visceral','visceral']),ossea:cap(['massa\\s*[oó]ssea']),
-    tmb:cap(['metab[oó]lica\\s*basal','taxa\\s*metab','\\btmb\\b','metabolismo\\s*basal']),idadeMetab:cap(['idade\\s*metab'])};
+    tmb:cap(['metab[oó]lica\\s*basal','taxa\\s*metab','\\btmb\\b','metabolismo\\s*basal'])};
 }
 async function importarBioPDF(inp){
   const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
@@ -2834,9 +2907,10 @@ function laudoConsolidado(pro,diag,comPct,brk,sem){
   const saude=(exUlt||bioUlt)
     ? (alertas.length?`${alertas.length} ponto(s) de atenção nos exames/composição (detalhados abaixo).`:'Exames e composição sem alertas — base saudável para treinar forte.')
     : 'Sem exames de sangue ou bioimpedância lançados ainda.';
-  const im=bioUlt?idadeMetabDe(bioUlt):null, tm=bioUlt?tmbDe(bioUlt):null;
-  const comp=bioUlt&&bioUlt.gordura!=null
-    ? `Gordura ${bioUlt.gordura}%${bioUlt.musculo!=null?`, massa muscular ${bioUlt.musculo}kg`:''}${im!=null?`, idade metabólica estimada <b>${im}</b> (real ${anos(S.u)})`:''}${tm!=null?`, TMB ~${tm} kcal`:''}.` : '';
+  const tm=bioUlt?tmbDe(bioUlt):null, imc=bioUlt?imcDe(bioUlt):null, susp=bioUlt?bioSuspeita(bioUlt):null;
+  const comp=!bioUlt||bioUlt.gordura==null ? ''
+    : susp ? `Bioimpedância com valor suspeito (${susp}) — não considerada. Confira a medição.`
+    : `Gordura ${bioUlt.gordura}%${bioUlt.musculo!=null?`, massa muscular ${bioUlt.musculo}kg`:''}${imc!=null?`, IMC ${imc}`:''}${tm!=null?`, TMB ~${tm} kcal`:''}.`;
   const treino=(comPct.length||ev.length)
     ? `${md!=null?`Tiros a <b>${md.toFixed(0)}%</b> do melhor tempo`:'Sem tiros suficientes'}${ev.length?` · ${evoluiu.length} prova(s) em evolução${regr.length?`, ${regr.length} em queda`:''} nas competições`:''}.`
     : 'Poucos tempos lançados para avaliar o desempenho.';
@@ -2865,9 +2939,11 @@ function telaRelatorio(){
   const diag=diagnostico(comPct,brk,sem,pro);
   return`
   <div class="row noprint" style="margin:16px 0 6px"><h2>Relatório</h2><div class="grow"></div>
-    <button class="sm ghost" onclick="window.print()">PDF</button>
-    <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button></div>
+    <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
+    <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>
+    ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}
   ${laudoConsolidado(pro,diag,comPct,brk,sem)}
+  ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <div class="card"><div class="eyebrow">panorama</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
@@ -2899,9 +2975,9 @@ function telaRelatorio(){
     ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${pro.bioimp?.length?`<div class="card"><div class="eyebrow">bioimpedância</div>
     <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
-    ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);const im=idadeMetabDe(b),tm=tmbDe(b);
+    ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);const tm=tmbDe(b),imc=imcDe(b);
       return`${marc.length?`<table style="margin-top:6px"><tbody>${marc.map(([k,nome,un])=>`<tr><td>${nome}</td><td class="n" style="text-align:right;font-weight:700">${b[k]} <span class="xs muted">${un}</span></td></tr>`).join('')}</tbody></table>`:''}
-      ${(im!=null||tm!=null)?`<div class="note ok" style="margin-top:8px">${im!=null?`Idade metabólica estimada: <b>${im} anos</b> (real ${anos(S.u)}). `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
+      ${(tm!=null||imc!=null)?`<div class="note" style="margin-top:8px">${imc!=null?`IMC <b>${imc}</b>. `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
       ${flagsBio(b).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
     })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${cardEvolucao(pro,'evolução em competições')}
@@ -2951,8 +3027,8 @@ function diagnostico(comPct,brk,sem,pro){
   if(bioUlt)flagsBio(bioUlt).forEach(f=>foco.push({t:f.t,txt:f.txt}));
   const evP=evolucaoProvas(pro);
   const evoluiu=evP.filter(e=>e.melhora),regrediu=evP.filter(e=>!e.melhora);
-  if(evoluiu.length)foco.push({t:'ok',txt:`Em competição, evolução em <b>${evoluiu.map(e=>e.prova).join(', ')}</b>. Mantenha o que está funcionando nessas provas.`});
-  if(regrediu.length)foco.push({t:'warn',txt:`Queda de rendimento em <b>${regrediu.map(e=>e.prova).join(', ')}</b> ao longo das competições. Vale revisar a preparação específica dessas provas.`});
+  if(evoluiu.length)foco.push({t:'ok',txt:`Em competição, evolução em <b>${[...new Set(evoluiu.map(e=>e.prova))].join(', ')}</b>. Mantenha o que está funcionando nessas provas.`});
+  if(regrediu.length)foco.push({t:'warn',txt:`Queda de rendimento em <b>${[...new Set(regrediu.map(e=>e.prova))].join(', ')}</b> ao longo das competições. Vale revisar a preparação específica dessas provas.`});
   if(!foco.length)foco.push({t:'',txt:'Ainda não há tiros suficientes registrados para um diagnóstico firme. Lance os tempos de mais algumas sessões.'});
 
   let sessao,descanso,descansoTipo;
@@ -2984,17 +3060,36 @@ function graficoBarras(arr,crescerBom){
       <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${(H-P-h-5).toFixed(1)}" font-size="11" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${crescerBom?(a.v/1000).toFixed(1)+'k':fmt(a.v,true)}</text>`}).join('')}
     <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#D8D3C9"/></svg>`;
 }
+function imprimirRelatorio(){
+  try{ window.scrollTo(0,0); }catch(e){}
+  if(typeof window.print!=='function')return toast('Seu navegador não abre impressão aqui. Use "Enviar" para mandar o relatório.');
+  try{ window.print(); }catch(e){ toast('Não abriu a impressão. Use "Enviar" ou o Laudo por IA.'); }
+}
 async function compartilharRelatorio(){
   const pro=S.pro||{};
   const e=ESF||await coletarEsforcos();
-  const int=e.filter(x=>!['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
+  const tec=e.filter(x=>['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
+  const int=e.filter(x=>!tec.includes(x));
+  const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
   const brk=int.filter(x=>x.p1!=null&&x.dist===50).map(x=>({...x,delta:x.tempo-2*x.p1}));
-  let t=`*Relatório — ${S.u.nome}*\n${brData(hoje())}\n\n`;
-  t+=`Tiros em intensidade: ${int.length}\n`;
-  if(brk.length)t+=`Custo médio do 2º 25: +${fmt(brk.slice(-10).reduce((a,x)=>a+x.delta,0)/Math.min(brk.length,10),true)}\n`;
-  const pbs=Object.entries(pro.pbs||{}).slice(0,6);
-  if(pbs.length)t+=`\nMelhores marcas\n${pbs.map(([k,v])=>`  ${k}: ${fmt(v,true)}`).join('\n')}\n`;
-  enviar(t+`\nPARCIAL ${VER}`,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
+  const diag=diagnostico(comPct,brk,volumePorSemana(),pro);
+  const semTags=s=>String(s).replace(/<[^>]+>/g,'');
+  let t=`*Relatório de performance — ${S.u.nome}*\n${brData(hoje())}\n`;
+  t+=`\n*Onde concentrar*\n`+diag.foco.slice(0,5).map(f=>'• '+semTags(f.txt)).join('\n')+'\n';
+  const ev=evolucaoProvas(pro);
+  if(ev.length)t+=`\n*Evolução em competições*\n`+ev.map(x=>`• ${x.prova} ${x.piscina}: ${x.melhora?'melhorou':'piorou'} ${fmt(Math.abs(x.delta),true)}`).join('\n')+'\n';
+  const exUlt=[...(pro.exames||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
+  if(exUlt){const fl=flagsExame(exUlt); if(fl.length)t+=`\n*Saúde — exame de ${brData(exUlt.data)}*\n`+fl.map(f=>'• '+semTags(f.txt)).join('\n')+'\n';}
+  const bioUlt=[...(pro.bioimp||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
+  if(bioUlt){const susp=bioSuspeita(bioUlt),tm=tmbDe(bioUlt),imc=imcDe(bioUlt),ps=[];
+    if(bioUlt.peso!=null)ps.push(`peso ${bioUlt.peso}kg`);
+    if(bioUlt.gordura!=null&&!susp)ps.push(`gordura ${bioUlt.gordura}%`);
+    if(imc!=null)ps.push(`IMC ${imc}`); if(tm)ps.push(`TMB ~${tm}kcal`);
+    t+=`\n*Composição — ${brData(bioUlt.data)}*\n${susp?`(bioimpedância com valor suspeito: ${susp} — verificar)\n`:''}${ps.join(' · ')||'—'}\n`;}
+  const pbs=Object.entries(pro.pbs||{}).slice(0,8);
+  if(pbs.length)t+=`\n*Melhores marcas*\n${pbs.map(([k,v])=>`  ${k}: ${fmt(v,true)}`).join('\n')}\n`;
+  t+=`\n_Análise automática de apoio — não substitui avaliação médica._\nPARCIAL ${VER}`;
+  enviar(t,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
 }
 
 /* =====================================================================
