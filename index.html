@@ -181,7 +181,7 @@ const VER='v08';
 const CODIGO_PRO='BARBATO-PRO-2026';
 /* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
    Worker — veja backend/BACKEND-IA.md. Vazio = recurso desligado. */
-const IA_URL='https://parcial-ia.barbato-bruno.workers.dev/';
+const IA_URL='';
 const temIA=()=>!!IA_URL;
 
 /* ─────────────────────────────────────────────────────────────
@@ -948,9 +948,12 @@ function parsePausa(l){
 }
 function fmtPausa(ms){ const s=Math.round(ms/1000); if(s>=60){const m=Math.floor(s/60),r=s%60;return r?`${m}min${r}`:`${m}min`;} return s+'s'; }
 function linhaParaItem(l){
-  let reps=1,dist=null;
+  let rodadas=1,reps=1,dist=null;
+  /* série dupla: "2x 4x50" → 2 rodadas de 4×50 */
+  const m2=l.match(/(\d{1,2})\s*[x×]\s*(\d{1,3})\s*[x×]\s*(\d{2,5})/i);
   const mx=l.match(/(\d{1,3})\s*[x×]\s*(\d{2,5})/i);
-  if(mx){reps=+mx[1];dist=+mx[2]}
+  if(m2){rodadas=Math.min(+m2[1],12)||1;reps=+m2[2];dist=+m2[3]}
+  else if(mx){reps=+mx[1];dist=+mx[2]}
   else{const md=l.match(/(?:^|[^\d.,:'])(\d{2,5})\s*(m\b|mts?\b|metros)?/i); if(md&&+md[1]>=25)dist=+md[1];else return null}
   if(!dist||dist<20)return null;
   let estilo='livre'; for(const[re,v]of ESTILOS){if(re.test(l)){estilo=v;break}}
@@ -961,7 +964,7 @@ function linhaParaItem(l){
   const forte=/máxim|maxim|all\s*out|tiro|forte|sprint|ritmo de prova|\brp\b|9[0-9]\s*%|100\s*%/i.test(l);
   const parcial=/parcia|broken|quebrad|25\s*a\s*25|split/i.test(l)||(forte&&dist>=50&&dist<=100);
   const mo=l.match(/\(([^)]+)\)/); const obs=mo?mo[1].trim():'';
-  return{id:uid(),reps,dist,estilo,tags,intervalo,pausa:parsePausa(l),parcial,forte,obs,texto:l,vol:reps*dist};
+  return{id:uid(),rodadas,reps,dist,estilo,tags,intervalo,pausa:parsePausa(l),parcial,forte,obs,texto:l,vol:rodadas*reps*dist};
 }
 const volTreino=t=>(t.blocos||[]).reduce((a,b)=>a+b.itens.reduce((x,i)=>x+i.vol,0),0);
 const piscinaLabel=p=>p==='AA'?'águas abertas':p==='LC50'?'piscina 50m':'piscina 25m';
@@ -1149,13 +1152,21 @@ function telaTreinoDetalhe(){
     <button class="ghost full" onclick="compartilharTreino()">Compartilhar treino e tempos</button>
   </div>`;
 }
+/* tempos de um item (achata rodadas se for série dupla) */
+function temposItem(rec,item){
+  if(!rec)return [];
+  if((item.rodadas||1)>1)return (rec.rd||[]).flatMap(r=>(r.tempos||[]).filter(x=>x!=null));
+  return (rec.tempos||[]).filter(x=>x!=null);
+}
 function linhaSerie(t,i,at,semCrono){
   if(i.nota)return`<div style="margin:2px 0 9px;padding:9px 12px;border-left:3px solid var(--rope);background:var(--deck);border-radius:0 9px 9px 0">
     <span class="small">${esc(i.texto)}</span></div>`;
-  const r=(t.registros?.[at.id]?.[i.id])||{tempos:[],parciais:[]};
+  const rec=(t.registros?.[at.id]?.[i.id])||{};
   const aa=t.piscina==='AA';
-  const ts=r.tempos.filter(x=>x!=null);
-  const logged=aa?(r.ritmo100!=null):ts.length;
+  const multi=(i.rodadas||1)>1&&!aa;
+  const rds=multi?Array.from({length:i.rodadas},(_,k)=>(rec.rd&&rec.rd[k])||{tempos:[],parciais:[]}):null;
+  const ts=temposItem(rec,i);
+  const logged=aa?(rec.ritmo100!=null):ts.length;
   const dadosPB=at.id===S.u.id?S.pro:null;
   const mel=ts.length?Math.min(...ts):null;
   const pct=(!aa&&dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
@@ -1164,57 +1175,115 @@ function linhaSerie(t,i,at,semCrono){
   const eTiro=/\btiro\b|máxim|maxim|all\s*out|sprint|ritmo de prova|\brp\b|\ba[3-6]\b|9[0-9]\s*%|100\s*%/i.test(i.texto||'');
   const botao=semCrono?''
     :((eTiro||logged)
-      ?`<button class="sm ghost" onclick="abrirLancamento('${i.id}','${at.id}')">${logged?'Editar':'Lançar'}</button>`
-      :`<button class="sm ghost" style="opacity:.55;font-size:12px" onclick="abrirLancamento('${i.id}','${at.id}')">anotar tempo</button>`);
+      ?`<button class="sm ghost" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">${logged?'Editar':'Lançar'}</button>`
+      :`<button class="sm ghost" style="opacity:.55;font-size:12px" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">anotar tempo</button>`);
+  const chips=aa
+    ? (rec.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(rec.ritmo100,true)}</span></div>`:'')
+    : multi
+      ? rds.map((r,ri)=>(r.tempos||[]).some(x=>x!=null)?`<div class="chips" style="margin-top:4px"><span class="chip" style="background:var(--deck);font-weight:800">R${ri+1}</span>${r.tempos.map(x=>x==null?'':`<span class="chip ${x===mel?'best':''}">${fmt(x,true)}</span>`).join('')}</div>`:'').join('')
+      : (ts.length?`<div class="chips">${(rec.tempos||[]).map((x,ix)=>x==null?'':
+        `<span class="chip ${x===mel?'best':''}">${ix+1}· ${fmt(x,true)}${i.parcial&&rec.parciais&&rec.parciais[ix]!=null?` <span style="color:var(--water)">(${fmt(rec.parciais[ix],true)}+${fmt(x-rec.parciais[ix],true)})</span>`:''}</span>`).join('')}</div>`:'');
   return`<div class="item ${logged?'sel':''}">
     <div class="row" style="align-items:baseline;flex-wrap:wrap;gap:6px">
-      <span class="grow" style="min-width:58%"><b>${esc(i.texto||((i.reps>1?i.reps+'×':'')+i.dist+' '+i.estilo))}</b></span>
+      <span class="grow" style="min-width:58%"><b>${esc(i.texto||((i.rodadas>1?i.rodadas+'x ':'')+(i.reps>1?i.reps+'×':'')+i.dist+' '+i.estilo))}</b></span>
       ${z?`<span class="z ${z.c}">${pct.toFixed(0)}%</span>`:''}
       ${botao}
     </div>
-    ${aa
-      ? (r.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(r.ritmo100,true)}</span></div>`:'')
-      : (ts.length?`<div class="chips">${r.tempos.map((x,ix)=>x==null?'':
-        `<span class="chip ${x===mel?'best':''}">${ix+1}· ${fmt(x,true)}${i.parcial&&r.parciais[ix]!=null?` <span style="color:var(--water)">(${fmt(r.parciais[ix],true)}+${fmt(x-r.parciais[ix],true)})</span>`:''}</span>`).join('')}</div>`:'')}
+    ${chips}
   </div>`;
+}
+/* tabela de repetições com ✓/✕ por linha (rd=null série simples; número = rodada) */
+function tabelaReps(item,r,itemId,atletaId,rd){
+  const arg=rd==null?'':(','+rd);
+  return`<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>#</th>
+      ${item.parcial?`<th style="text-align:center">${item.dist/2}m</th>`:''}<th style="text-align:center">Tempo</th><th></th></tr></thead><tbody>
+      ${Array.from({length:item.reps},(_,i)=>`<tr><td class="n">${i+1}</td>
+        ${item.parcial?`<td><input inputmode="decimal" id="lp${i}" placeholder="—" value="${r.parciais&&r.parciais[i]!=null?fmt(r.parciais[i],true):''}"></td>`:''}
+        <td><input inputmode="decimal" id="lt${i}" placeholder="—" value="${r.tempos&&r.tempos[i]!=null?fmt(r.tempos[i],true):''}"></td>
+        <td style="white-space:nowrap;text-align:right">
+          <button class="sm" style="background:var(--ok);color:#fff;padding:6px 11px;font-weight:800" onclick="confTempo('${itemId}','${atletaId}',${i}${arg})">✓</button>
+          ${r.tempos&&r.tempos[i]!=null?`<button class="sm" style="background:var(--clock);color:#fff;padding:6px 11px;margin-left:5px;font-weight:800" onclick="delTempo('${itemId}','${atletaId}',${i}${arg})">✕</button>`:''}
+        </td></tr>`).join('')}
+    </tbody></table></div>`;
 }
 function abrirLancamento(itemId,atletaId){
   const t=S.treino,item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId);
   const at=(ehGestor()?S.elenco:[S.u]).find(a=>a.id===atletaId)||S.u;
-  const r=(t.registros?.[atletaId]?.[itemId])||{tempos:[],parciais:[]};
+  const rec=(t.registros?.[atletaId]?.[itemId])||{};
   if(t.piscina==='AA'){
     sheet(`<h2>${item.reps>1?item.reps+'×':''}${item.dist} ${item.estilo}</h2>
       <div class="small muted">${esc(at.nome)} · águas abertas</div>
       <div class="field" style="margin-top:12px"><label>Ritmo médio por 100m</label>
-        <input inputmode="decimal" id="aaRitmo" placeholder="1:45" value="${r.ritmo100!=null?fmt(r.ritmo100,true):''}"></div>
+        <input inputmode="decimal" id="aaRitmo" placeholder="1:45" value="${rec.ritmo100!=null?fmt(rec.ritmo100,true):''}"></div>
       <div class="xs muted">Formato mm:ss — ex.: 1:45</div>
       <button class="primary full" style="margin-top:12px" onclick="salvarRitmoAA('${itemId}','${atletaId}')">Salvar</button>`);
     return;
   }
+  const nrd=item.rodadas||1;
+  const rodInfo=`<div class="xs muted" style="margin-top:8px">Aceita 34.5 · 34,50 · 1:07.2 · 1'07"20 — cada tempo é salvo ao tocar no ✓.</div>
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet();render()">Fechar</button>`;
+  if(nrd>1){
+    if(S.rd==null||S.rd<0||S.rd>=nrd)S.rd=0;
+    const rd=S.rd, rr=(rec.rd&&rec.rd[rd])||{tempos:[],parciais:[]};
+    sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
+      <div class="small muted">${esc(at.nome)} · ${nrd} rodadas${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
+      <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">
+        ${Array.from({length:nrd},(_,ri)=>{const feito=rec.rd&&rec.rd[ri]&&(rec.rd[ri].tempos||[]).some(x=>x!=null);return`<button class="sm ${ri===rd?'primary':'ghost'}" onclick="S.rd=${ri};abrirLancamento('${itemId}','${atletaId}')">Rodada ${ri+1}${feito?' ✓':''}</button>`}).join('')}
+      </div>
+      <div class="xs muted" style="margin-top:8px">Cada rodada guarda seus próprios tempos. Toque no <b style="color:var(--ok)">✓</b> para salvar — grava na hora; o <b style="color:var(--clock)">✕</b> apaga.</div>
+      ${tabelaReps(item,rr,itemId,atletaId,rd)}
+      ${rodInfo}`);
+    return;
+  }
+  const r=(rec.tempos?rec:{tempos:[],parciais:[]});
   sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
     <div class="small muted">${esc(at.nome)}${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
-    <div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>#</th>
-      ${item.parcial?`<th style="text-align:center">${item.dist/2}m</th>`:''}<th style="text-align:center">Tempo</th></tr></thead><tbody>
-      ${Array.from({length:item.reps},(_,i)=>`<tr><td class="n">${i+1}</td>
-        ${item.parcial?`<td><input inputmode="decimal" id="lp${i}" placeholder="—" value="${r.parciais[i]!=null?fmt(r.parciais[i],true):''}"></td>`:''}
-        <td><input inputmode="decimal" id="lt${i}" placeholder="—" value="${r.tempos[i]!=null?fmt(r.tempos[i],true):''}"></td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="xs muted" style="margin-top:8px">Aceita 34.5 · 34,50 · 1:07.2 · 1'07"20</div>
-    <button class="primary full" style="margin-top:12px" onclick="salvarLancamento('${itemId}','${atletaId}',${item.reps},${item.parcial})">Salvar</button>`);
+    <div class="xs muted" style="margin-top:6px">Toque no <b style="color:var(--ok)">✓</b> para salvar cada tempo — grava na hora. O <b style="color:var(--clock)">✕</b> apaga.</div>
+    ${tabelaReps(item,r,itemId,atletaId,null)}
+    ${rodInfo}`);
 }
-async function salvarLancamento(itemId,atletaId,reps,temParcial){
+/* lê todos os campos digitados na ficha (para não perder nada) */
+function lerCamposLancamento(reps,temParcial){
   const tempos=[],parciais=[];
-  for(let i=0;i<reps;i++){
-    tempos.push(parseTempo(document.getElementById('lt'+i).value));
-    if(temParcial)parciais.push(parseTempo(document.getElementById('lp'+i).value));
+  for(let k=0;k<reps;k++){
+    const el=document.getElementById('lt'+k); tempos.push(el?parseTempo(el.value):null);
+    if(temParcial){const ep=document.getElementById('lp'+k); parciais.push(ep?parseTempo(ep.value):null);}
   }
-  while(tempos.length&&tempos[tempos.length-1]==null)tempos.pop();
+  return {tempos,parciais};
+}
+async function gravarReg(itemId,atletaId,rd,tempos,parciais){
   const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
   t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
-  t.registros[atletaId][itemId]={tempos,parciais,em:Date.now(),por:S.u.nome};
+  const prev=t.registros[atletaId][itemId]||{};
+  if(rd==null){
+    t.registros[atletaId][itemId]={...prev,tempos,parciais,em:Date.now(),por:S.u.nome};
+  }else{
+    const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId);
+    const nrd=(item&&item.rodadas)||1, arr=(prev.rd||[]).slice();
+    while(arr.length<nrd)arr.push({tempos:[],parciais:[]});
+    arr[rd]={tempos,parciais};
+    t.registros[atletaId][itemId]={...prev,rd:arr,em:Date.now(),por:S.u.nome};
+  }
   t.atualizado=Date.now();
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
-  fecharSheet(); toast('Tempos salvos'); render();
+}
+/* ✓ verde: grava o tempo daquela linha (e tudo que estiver digitado) na hora */
+async function confTempo(itemId,atletaId,i,rd){
+  const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId); if(!item)return;
+  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial);
+  if(tempos[i]==null)return toast('Digite o tempo da linha '+(i+1)+' antes do ✓');
+  await gravarReg(itemId,atletaId,rd==null?null:rd,tempos,parciais);
+  toast('Tempo '+(i+1)+' salvo');
+  abrirLancamento(itemId,atletaId);
+}
+/* ✕ vermelho: apaga o tempo daquela linha */
+async function delTempo(itemId,atletaId,i,rd){
+  const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId); if(!item)return;
+  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial);
+  tempos[i]=null; if(item.parcial)parciais[i]=null;
+  await gravarReg(itemId,atletaId,rd==null?null:rd,tempos,parciais);
+  toast('Tempo '+(i+1)+' apagado');
+  abrirLancamento(itemId,atletaId);
 }
 async function salvarRitmoAA(itemId,atletaId){
   const ms=parseTempo(document.getElementById('aaRitmo').value);
@@ -1242,10 +1311,13 @@ async function confirmarExclusao(){
    ===================================================================== */
 function telaTreinosAtleta(){
   if(S.treino&&S.sub==='detalhe')return telaTreinoDetalhe();
-  const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
+  /* liberação dia a dia: o atleta só vê o treino quando chega a data dele */
+  const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&(t.data||'')<=hoje());
+  const futuros=S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&(t.data||'')>hoje()).length;
   return`
   <div class="row" style="margin:16px 0 6px"><h2>Meus treinos</h2><div class="grow"></div>
     <span class="tag o">${esc(S.u.nivel||'')}</span></div>
+  ${futuros?`<div class="xs muted" style="margin:2px 0 8px">Há ${futuros} treino(s) programado(s) para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
   ${meus.length?meus.map(t=>{
     return`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirTreino('${t.id}')">
       <div class="av">${brCurta(t.data).slice(0,2)}</div>
@@ -1857,9 +1929,9 @@ function compartilharTreino(){
     for(const i of b.itens){
       if(i.nota){ ls.push(`• ${i.texto}`); continue; }
       const partes=alvo.map(a=>{
-        const r=t.registros?.[a.id]?.[i.id]; const ts=(r?.tempos||[]).filter(y=>y!=null);
+        const r=t.registros?.[a.id]?.[i.id]; const ts=temposItem(r,i);
         return ts.length?`${alvo.length>1?prim(a.nome)+': ':''}${ts.map(y=>fmt(y,true)).join(' / ')}`:null}).filter(Boolean);
-      ls.push(`${i.reps>1?i.reps+'x':''}${i.dist} ${i.estilo}${i.intervalo?` saída ${fmtInt(i.intervalo)}`:''}${i.pausa?` desc ${fmtPausa(i.pausa)}`:''}${i.obs?` (${i.obs})`:''}${partes.length?'\n  '+partes.join('\n  '):''}`);
+      ls.push(`${i.rodadas>1?i.rodadas+'x ':''}${i.reps>1?i.reps+'x':''}${i.dist} ${i.estilo}${i.intervalo?` saída ${fmtInt(i.intervalo)}`:''}${i.pausa?` desc ${fmtPausa(i.pausa)}`:''}${i.obs?` (${i.obs})`:''}${partes.length?'\n  '+partes.join('\n  '):''}`);
     }
     if(ls.length)x+=`\n_${b.titulo}_\n${ls.join('\n')}\n`;
   }
@@ -2376,10 +2448,13 @@ function telaGarmin(){
     <div class="row"><div class="eyebrow">exames laboratoriais</div><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovoExame()">+ Exame</button></div>
     <p class="small muted" style="margin-top:4px">Ferritina, hemoglobina, vitamina D, CK e outros. Entram no relatório junto com o relógio e os treinos.</p>
-    <div class="field" style="margin-top:6px"><label>Importar exame em PDF <span class="xs muted">(melhor esforço — confira os valores)</span></label>
-      <input type="file" accept="application/pdf,.pdf" onchange="importarExamePDF(this)"></div>
-    ${temIA()?`<div class="field" style="margin-top:6px"><label>Ler por IA <span class="xs muted">(lê até PDF-imagem/foto — confira)</span></label>
-      <input type="file" accept="application/pdf,.pdf" onchange="lerExamePorIA(this)"></div>`:''}
+    <input type="file" id="impExame" accept="application/pdf,.pdf" style="display:none" onchange="importarExamePDF(this)">
+    ${temIA()?`<input type="file" id="iaExame" accept="application/pdf,.pdf,image/*" style="display:none" onchange="lerExamePorIA(this)">`:''}
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="sm ghost" onclick="document.getElementById('impExame').click()">Importar PDF</button>
+      ${temIA()?`<button class="sm primary" onclick="document.getElementById('iaExame').click()">Ler por IA</button>`:''}
+    </div>
+    <div class="xs muted" style="margin-top:6px">Sempre confira os valores antes de salvar.</div>
     ${(S.pro?.exames||[]).length?[...(S.pro.exames)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
       <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
         <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoExameCurto(e)}</div></div>
@@ -2389,10 +2464,12 @@ function telaGarmin(){
     <div class="row"><div class="eyebrow">bioimpedância</div><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovaBio()">+ Bioimpedância</button></div>
     <p class="small muted" style="margin-top:4px">Peso, % gordura, massa muscular, água, visceral. Entra no relatório junto com exames, relógio e treinos.</p>
-    <div class="field" style="margin-top:6px"><label>Importar em PDF <span class="xs muted">(melhor esforço — confira)</span></label>
-      <input type="file" accept="application/pdf,.pdf" onchange="importarBioPDF(this)"></div>
-    ${temIA()?`<div class="field" style="margin-top:6px"><label>Ler por IA <span class="xs muted">(lê InBody/foto — confira)</span></label>
-      <input type="file" accept="application/pdf,.pdf" onchange="lerBioPorIA(this)"></div>`:''}
+    <input type="file" id="impBio" accept="application/pdf,.pdf" style="display:none" onchange="importarBioPDF(this)">
+    ${temIA()?`<input type="file" id="iaBio" accept="application/pdf,.pdf,image/*" style="display:none" onchange="lerBioPorIA(this)">`:''}
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="sm ghost" onclick="document.getElementById('impBio').click()">Importar PDF</button>
+      ${temIA()?`<button class="sm primary" onclick="document.getElementById('iaBio').click()">Ler por IA</button>`:''}
+    </div>
     ${(S.pro?.bioimp||[]).length?[...(S.pro.bioimp)].sort((a,b)=>b.data.localeCompare(a.data)).map(e=>`
       <div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
         <div class="grow"><b>${brData(e.data)}</b><div class="xs muted">${resumoBioCurto(e)}</div></div>
@@ -2403,7 +2480,12 @@ function telaGarmin(){
   <div class="card">
     <div class="eyebrow">treino fora d'água</div>
     <p class="small muted">Lance <b>manualmente</b> (tipo + observação) ou anexe uma <b>foto</b> ou <b>PDF</b> da ficha. Entra no histórico e no relatório.</p>
-    <div class="field"><label>Foto ou PDF <span class="xs muted">(opcional)</span></label><input type="file" id="fSeco" accept="image/*,application/pdf" onchange="fotoSeco(this)"></div>
+    <input type="file" id="fSeco" accept="image/*,application/pdf" style="display:none" onchange="fotoSeco(this)">
+    ${temIA()?`<input type="file" id="iaSeco" accept="image/*,application/pdf" style="display:none" onchange="lerSecoPorIA(this)">`:''}
+    <div class="row" style="gap:8px;margin:4px 0 8px;flex-wrap:wrap">
+      <button class="sm ghost" onclick="document.getElementById('fSeco').click()">Anexar foto/PDF</button>
+      ${temIA()?`<button class="sm primary" onclick="document.getElementById('iaSeco').click()">Ler por IA</button>`:''}
+    </div>
     <div class="grid2">
       <div class="field"><label>Tipo</label><select id="skTipo"><option>Musculação</option><option>Core</option><option>Mobilidade</option><option>Elástico</option><option>Outro</option></select></div>
       <div class="field"><label>Data</label><input type="date" id="skData" value="${hoje()}"></div>
@@ -2531,9 +2613,10 @@ async function coletarEsforcos(){
     const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
     for(const b of t.blocos||[])for(const i of b.itens){
       const r=t.registros?.[S.u.id]?.[i.id]; if(!r)continue;
-      (r.tempos||[]).forEach((x,k)=>{ if(x==null)return;
+      const series=(i.rodadas||1)>1?(r.rd||[]):[r];
+      for(const s of series)(s.tempos||[]).forEach((x,k)=>{ if(x==null)return;
         out.push({data:t.data,dist:i.dist,estilo:i.estilo,tags:i.tags,tempo:x,
-          p1:i.parcial?(r.parciais?.[k]??null):null,forte:i.forte,vol:i.vol})});
+          p1:i.parcial?(s.parciais?.[k]??null):null,forte:i.forte,vol:i.vol})});
     }
   }
   return out.sort((a,b)=>a.data.localeCompare(b.data));
@@ -2644,7 +2727,7 @@ async function lerExamePorIA(inp){
   toast('Enviando à IA… pode levar alguns segundos');
   try{
     const pdf=await fileB64(f);
-    const d=await chamarIA({acao:'exame',pdf});
+    const d=await chamarIA({acao:'exame',pdf,mime:f.type||'application/pdf'});
     const n=Object.keys(d.vals||{}).length;
     abrirNovoExame({data:d.data||hoje(),vals:d.vals||{},obs:n?'lido por IA — confira os valores':''});
     toast(n?`${n} marcador(es) lidos pela IA. Confira e salve.`:'A IA não reconheceu valores — confira o arquivo.');
@@ -2655,7 +2738,7 @@ async function lerBioPorIA(inp){
   toast('Enviando à IA…');
   try{
     const pdf=await fileB64(f);
-    const d=await chamarIA({acao:'bio',pdf}); const v=d.vals||{};
+    const d=await chamarIA({acao:'bio',pdf,mime:f.type||'application/pdf'}); const v=d.vals||{};
     abrirNovaBio();
     const set=(id,x)=>{const el=document.getElementById(id); if(el&&x!=null)el.value=x;};
     if(d.data){const el=document.getElementById('biData'); if(el)el.value=d.data;}
@@ -2663,6 +2746,19 @@ async function lerBioPorIA(inp){
     const al=document.getElementById('biAltura'); if(al&&v.altura!=null)al.value=v.altura;
     const ob=document.getElementById('biObs'); if(ob)ob.value='lido por IA — confira';
     const n=Object.keys(v).length; toast(n?`${n} valor(es) lidos pela IA. Confira e salve.`:'A IA não reconheceu valores.');
+  }catch(e){ toast('IA: '+e.message); }
+}
+async function lerSecoPorIA(inp){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  toast('Enviando à IA…');
+  try{
+    const pdf=await fileB64(f);
+    const d=await chamarIA({acao:'seco',pdf,mime:f.type||'application/pdf'}); const v=d.vals||{};
+    const set=(id,x)=>{const el=document.getElementById(id); if(el&&x!=null&&x!=='')el.value=x;};
+    if(d.data)set('skData',d.data);
+    if(v.tipo){const s=document.getElementById('skTipo'); if(s)[...s.options].forEach(o=>{if(o.value===v.tipo||o.text===v.tipo)s.value=o.value;});}
+    set('skTrans',v.texto);
+    toast(v.texto?'Ficha lida pela IA. Confira e salve.':'A IA não reconheceu a ficha.');
   }catch(e){ toast('IA: '+e.message); }
 }
 function dadosParaLaudo(){
