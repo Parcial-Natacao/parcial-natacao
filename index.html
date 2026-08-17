@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v10</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v08';
+const VER='v10';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -886,7 +886,7 @@ function render(){
   b.className='pill '+(S.u.perfil==='pro'?'pro':S.u.perfil==='tecnico'?'tec':'');
   navBar();
   const mapa=ehGestor()
-    ?{treinos:telaTreinosTec,elenco:telaElenco,competicao:telaCompeticao}
+    ?{treinos:telaTreinosTec,elenco:telaElenco,competicao:(S.u.perfil==='pro'&&S.compAtletaMode)?telaCompAtleta:telaCompeticao}
     :S.u.perfil==='pro'
       ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio,store:telaStore}
       :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,store:telaStore};
@@ -1021,7 +1021,7 @@ function grupoTreinos(lista,cardFn){
     for(const m of Object.keys(anos[y]).sort((a,b)=>b.localeCompare(a))){
       const key=y+'-'+m, arr=anos[y][m], aberto=!!S.mesAberto[key];
       html+=`<button class="card tight lst" style="width:100%;border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--deck)" onclick="S.mesAberto=Object.assign({},S.mesAberto,{'${key}':${!aberto}});render()">
-        <span class="grow" style="text-align:left;text-transform:capitalize"><b>${MESES[+m-1]||m}</b> <span class="xs muted">· ${arr.length} treino(s)</span></span>
+        <span class="grow" style="text-align:left"><b style="text-transform:capitalize">${MESES[+m-1]||m}</b> <span class="xs muted">· ${arr.length} treino${arr.length>1?'s':''}</span></span>
         <span class="tag o">${aberto?'▲ recolher':'▼ ver'}</span></button>`;
       if(aberto)html+=arr.map(cardFn).join('');
     }
@@ -1151,6 +1151,12 @@ async function abrirTreino(id){
   push(); S.treino=await DB.get(kTr(S.u.equipe,id)); S.sub='detalhe'; render(); window.scrollTo(0,0);
 }
 
+async function marcarFeito(treinoId,atId,v){
+  const t=await DB.get(kTr(S.u.equipe,treinoId))||S.treino;
+  t.feito=t.feito||{}; t.feito[atId]=v; t.atualizado=Date.now();
+  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  toast(v?'Marcado como feito':'Fora da consolidação'); render();
+}
 function telaTreinoDetalhe(){
   const t=S.treino,tec=ehGestor();
   const alvo=tec?S.elenco.filter(a=>(t.para||[]).includes(a.id)):[S.u];
@@ -1166,6 +1172,11 @@ function telaTreinoDetalhe(){
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
   ${t.pdf?`<a class="btnlink" href="${t.pdf}" target="_blank" rel="noopener" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`:''}
+  ${at?`<div class="card tight" style="margin-top:8px"><div class="row">
+    <span class="grow"><b>Fiz este treino</b><div class="xs muted">${(t.feito&&t.feito[at.id]===false)?'marcado como NÃO feito — fora da consolidação':'marque "Não fiz" para tirar do relatório'}</div></span>
+    <button class="sm ${!(t.feito&&t.feito[at.id]===false)?'primary':'ghost'}" onclick="marcarFeito('${t.id}','${at.id}',true)">✓ Fiz</button>
+    <button class="sm ${(t.feito&&t.feito[at.id]===false)?'primary':'ghost'}" onclick="marcarFeito('${t.id}','${at.id}',false)">Não fiz</button>
+  </div></div>`:''}
   ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
   </div></div>`:''}
@@ -1620,21 +1631,14 @@ const nomeProva=p=>p.tipo==='rev'
 /* ---------- lista de competições ---------- */
 function telaCompeticao(){
   if(!S.comp)return`
-    <div class="row" style="margin:16px 0 6px"><h2>Competição</h2></div>
+    <div class="row" style="margin:16px 0 6px"><h2>Competição</h2><div class="grow"></div>
+      <button class="sm primary" onclick="abrirNovaCompTec()">+ Nova</button></div>
+    ${S.u.perfil==='pro'?`<button class="ghost full" style="margin-bottom:8px" onclick="S.compAtletaMode=true;render()">★ Minhas competições (como atleta) ›</button>`:''}
+    ${S.cidx.length?`<div class="eyebrow">competições da equipe</div>`:''}
     ${S.cidx.map(c=>`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirComp('${c.id}')">
       <div class="av">▲</div><div class="grow"><b>${esc(c.nome)}</b>
         <div class="xs muted">${brData(c.data)} · ${esc(c.local||'')} · ${c.piscina}</div></div>
-      <span class="tag o">›</span></button>`).join('')}
-    <div class="card">
-      <div class="eyebrow">nova competição</div>
-      <div class="field"><label>Nome</label><input id="ccNome" autocapitalize="words" placeholder="ex.: Campeonato Brasileiro Master"></div>
-      <div class="grid2">
-        <div class="field"><label>Data</label><input type="date" id="ccData" value="${hoje()}"></div>
-        <div class="field"><label>Piscina</label><select id="ccPis"><option>SC25</option><option>LC50</option></select></div>
-      </div>
-      <div class="field"><label>Local</label><input id="ccLocal" autocapitalize="words" placeholder="Cidade / clube"></div>
-      <button class="primary full" onclick="criarComp()">Criar</button>
-    </div>`;
+      <span class="tag o">›</span></button>`).join('')||`<div class="empty"><div class="big">Nenhuma competição da equipe</div><p class="small">Toque em <b>+ Nova</b> para criar.</p></div>`}`;
   if(S.provaSel!=null)return telaProvaDetalhe();
   const c=S.comp;
   return`
@@ -1667,7 +1671,17 @@ async function criarComp(){
     piscina:document.getElementById('ccPis').value,provas:[],criadoEm:Date.now()};
   await DB.set(kCmp(S.u.equipe,c.id),c);
   const idx=[{id:c.id,nome:c.nome,data:c.data,local:c.local,piscina:c.piscina},...(await DB.get(kCIdx(S.u.equipe))||[])];
-  await DB.set(kCIdx(S.u.equipe),idx); S.cidx=idx; S.comp=c; render();
+  await DB.set(kCIdx(S.u.equipe),idx); S.cidx=idx; S.comp=c; fecharSheet(); render();
+}
+function abrirNovaCompTec(){
+  sheet(`<h2>Nova competição</h2>
+    <div class="field"><label>Nome</label><input id="ccNome" autocapitalize="words" placeholder="ex.: Campeonato Brasileiro Master"></div>
+    <div class="grid2">
+      <div class="field"><label>Data</label><input type="date" id="ccData" value="${hoje()}"></div>
+      <div class="field"><label>Piscina</label><select id="ccPis"><option>SC25</option><option>LC50</option></select></div>
+    </div>
+    <div class="field"><label>Local</label><input id="ccLocal" autocapitalize="words" placeholder="Cidade / clube"></div>
+    <button class="primary full" onclick="criarComp()">Criar</button>`);
 }
 async function abrirComp(id){push();S.comp=await DB.get(kCmp(S.u.equipe,id));S.provaSel=null;render();window.scrollTo(0,0)}
 async function mutarComp(fn){
@@ -1965,6 +1979,7 @@ function telaCompAtleta(){
     if(S.minhaComp)return telaMinhaComp();
     const minhas=S.u.competicoes||[];
     return`
+    ${(ehGestor()&&S.compAtletaMode)?`<div class="row" style="margin:12px 0 0"><button class="sm ghost" onclick="S.compAtletaMode=false;render()">‹ Gestão</button></div>`:''}
     <div class="row" style="margin:16px 0 6px"><h2>Competições</h2><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovaCompeticaoAtleta()">+ Competição</button></div>
     ${minhas.length?`<div class="card"><div class="eyebrow">minhas competições</div>
@@ -2632,6 +2647,7 @@ async function coletarEsforcos(){
   const out=[];
   for(const meta of S.tridx.filter(t=>(t.para||[]).includes(S.u.id)).slice(0,25)){
     const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
+    if(t.feito&&t.feito[S.u.id]===false)continue;   /* atleta marcou "Não fiz" → fora da consolidação */
     for(const b of t.blocos||[])for(const i of b.itens){
       const r=t.registros?.[S.u.id]?.[i.id]; if(!r)continue;
       const series=(i.rodadas||1)>1?(r.rd||[]):[r];
@@ -3034,6 +3050,52 @@ function resumoExame(ex){
     ${flags.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
 }
 /* laudo consolidado: liga saúde + composição + treino/desempenho e prioriza ações */
+/* ── ESTADO DE PERFORMANCE (Prontidão · Capacidade · Tendência) ──────────────
+   Modelo transparente a partir dos dados que já existem no app. */
+function estadoPerformance(pro,comPct,sem){
+  const md=(a,k)=>a.reduce((t,x)=>t+x[k],0)/Math.max(1,a.length);
+  const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+  /* Prontidão 0–100 (VFC/FC repouso/sono/carga) */
+  const g=[...(pro.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
+  const h=g.filter(x=>x.hrv!=null),f=g.filter(x=>x.fc!=null);
+  let pr=null;
+  if(h.length>=4||f.length>=4){
+    let s=72; const mot=[];
+    if(h.length>=4){const d=(md(h.slice(0,3),'hrv')-md(h.slice(3,17),'hrv'))/md(h.slice(3,17),'hrv')*100;const c=cl(d*1.2,-22,16);s+=c;mot.push({c,txt:`VFC ${d>=0?'+':''}${d.toFixed(0)}% vs base`});}
+    if(f.length>=4){const d=md(f.slice(0,3),'fc')-md(f.slice(3,17),'fc');const c=cl(-d*2,-14,8);s+=c;mot.push({c,txt:`FC repouso ${d>=0?'+':''}${d.toFixed(0)} bpm`});}
+    const sn=g.filter(x=>x.sono!=null).slice(0,7);
+    if(sn.length>=3){const m=md(sn,'sono');const c=m<6.5?-8:(m>=7.5?4:0);if(c){s+=c;mot.push({c,txt:`sono ${m.toFixed(1)}h`});}}
+    if(sem&&sem.length>=2&&sem[sem.length-1].m>sem[sem.length-2].m*1.25){s-=8;mot.push({c:-8,txt:'volume +25%'});}
+    pr={score:Math.round(cl(s,0,100)),mot};
+  }
+  /* Capacidade: quão perto do melhor tempo os tiros recentes estão saindo */
+  let cap=null;
+  if(comPct.length){const a=comPct.slice(-15);cap={score:Math.round(cl(md(a,'pct'),0,100)),n:a.length};}
+  /* Tendência: evolução em competição + tendência do %PB */
+  let tend=null;
+  const ev=(typeof evolucaoProvas==='function')?evolucaoProvas(pro):[];
+  const net=ev.filter(e=>e.melhora).length-ev.filter(e=>!e.melhora).length;
+  let pc=0;
+  if(comPct.length>=4){const hf=Math.floor(comPct.length/2);pc=md(comPct.slice(hf),'pct')-md(comPct.slice(0,hf),'pct');}
+  const sc=net+(pc>1?1:pc<-1?-1:0);
+  if(ev.length||comPct.length>=4)tend={dir:sc>0?'↑':sc<0?'↓':'→',txt:sc>0?'capacidade melhorando':sc<0?'capacidade em queda — atenção':'capacidade estável',cor:sc>0?'var(--ok)':sc<0?'var(--clock)':'var(--ink-2)'};
+  return {pr,cap,tend};
+}
+function cardEstado(pro,comPct,sem){
+  const e=estadoPerformance(pro,comPct,sem);
+  if(!e.pr&&!e.cap&&!e.tend)return'';
+  const kpi=(v,l,cor)=>`<div class="kpi"><div class="v"${cor?` style="color:${cor}"`:''}>${v}</div><div class="l">${l}</div></div>`;
+  const corPr=e.pr?(e.pr.score>=75?'var(--ok)':e.pr.score<55?'var(--clock)':''):'';
+  return`<div class="card"><div class="eyebrow">estado de performance</div>
+    <div class="grid3" style="margin-top:8px">
+      ${kpi(e.pr?e.pr.score:'—','prontidão',corPr)}
+      ${kpi(e.cap?e.cap.score+'%':'—','capacidade')}
+      ${kpi(e.tend?e.tend.dir:'—','tendência',e.tend?e.tend.cor:'')}
+    </div>
+    ${e.pr&&e.pr.mot.length?`<div class="small" style="margin-top:10px"><b>Prontidão</b> — ${e.pr.mot.map(m=>`${m.txt} <b style="color:${m.c>=0?'var(--ok)':'var(--clock)'}">${m.c>=0?'+':''}${Math.round(m.c)}</b>`).join(' · ')}</div>`:''}
+    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Capacidade</b>: quão perto do seu melhor tempo você está nadando. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio a partir dos seus dados.</span></div>
+  </div>`;
+}
 function laudoConsolidado(pro,diag,comPct,brk,sem){
   const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
   const ev=evolucaoProvas(pro),evoluiu=ev.filter(e=>e.melhora),regr=ev.filter(e=>!e.melhora);
@@ -3078,6 +3140,7 @@ function telaRelatorio(){
     <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
     <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
+  ${cardEstado(pro,comPct,sem)}
   ${laudoConsolidado(pro,diag,comPct,brk,sem)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <div class="card"><div class="eyebrow">panorama</div>
