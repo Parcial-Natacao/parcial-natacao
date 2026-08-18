@@ -140,14 +140,24 @@ svg.chart{width:100%;height:auto;display:block}
 .note.warn{border-color:var(--clock);background:#FFF6F5}
 .note.ok{border-color:var(--ok);background:#F4FBF8}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-@media print{nav,header,.noprint{display:none!important}body{padding:0;background:#fff}.card{break-inside:avoid;box-shadow:none}}
+@media print{
+  nav,header,.noprint{display:none!important}
+  body{padding:0;background:#fff}
+  main,#app{max-width:100%!important;padding:0!important;margin:0!important}
+  .card{break-inside:avoid;box-shadow:none;border:0;border-top:1px solid #e5e2db;border-radius:0;margin:0;padding:11px 2px;background:#fff}
+  .card:first-child{border-top:0}
+  .eyebrow{font-size:10.5px}
+  h2,h3,.eyebrow{page-break-after:avoid}
+  svg,table,.grid3{break-inside:avoid}
+  @page{margin:14mm 12mm}
+}
 </style>
 
 <header id="hdr" class="hide">
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v21</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v22</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v21';
+const VER='v22';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -3230,7 +3240,7 @@ function estadoPerformance(pro,comPct,sem){
   let pc=0;
   if(comPct.length>=4){const hf=Math.floor(comPct.length/2);pc=md(comPct.slice(hf),'pct')-md(comPct.slice(0,hf),'pct');}
   const sc=net+(pc>1?1:pc<-1?-1:0);
-  if(ev.length||comPct.length>=4)tend={dir:sc>0?'↑':sc<0?'↓':'→',txt:sc>0?'capacidade melhorando':sc<0?'capacidade em queda — atenção':'capacidade estável',cor:sc>0?'var(--ok)':sc<0?'var(--clock)':'var(--ink-2)',nEv:ev.length,nPct:comPct.length};
+  if(ev.length||comPct.length>=4)tend={dir:sc>0?'↑':sc<0?'↓':'→',txt:sc>0?'capacidade melhorando':sc<0?'capacidade em queda — atenção':'capacidade estável',cor:sc>0?'var(--ok)':sc<0?'var(--clock)':'var(--ink-2)',net,pc,nEv:ev.length,nPct:comPct.length};
   return {pr,cap,tend};
 }
 function cardEstado(pro,comPct,sem){
@@ -3269,27 +3279,31 @@ function cargaACWR(){
 }
 /* Composição × desempenho: massa magra + relação peso/potência (tempo/peso) */
 function cardComposicaoRelativa(pro){
-  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null&&!bioSuspeita(b)).sort((a,b)=>a.data.localeCompare(b.data));
+  /* peso = medição MAIS RECENTE (a balança é confiável); massa magra só quando a
+     gordura% NÃO é suspeita — nada de chute a partir de bioimpedância inconsistente. */
+  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null).sort((a,b)=>a.data.localeCompare(b.data));
   if(!bio.length)return'';
   const ult=bio[bio.length-1];
-  const magra=b=>b.gordura!=null?+(b.peso*(1-b.gordura/100)).toFixed(1):(b.musculo!=null?b.musculo:null);
-  const lbm=magra(ult);
+  const gordOK=b=>(b.gordura!=null&&!bioSuspeita(b))?b.gordura:null;
+  const magra=b=>{const g=gordOK(b);return g!=null?+(b.peso*(1-g/100)).toFixed(1):null;};
+  const lbm=magra(ult), susp=bioSuspeita(ult);
   const prefer=Object.entries(pro.pbs||{}).find(([k])=>/^50 /.test(k));
   const ref=prefer?{prova:prefer[0].replace(/ (SC25|LC50)$/,''),tempo:prefer[1]}:null;
+  const confia=bio.filter(b=>magra(b)!=null);
   let nota='';
-  if(bio.length>=2){const a=bio[0],lA=magra(a),lB=lbm,dP=ult.peso-a.peso;
-    if(lA!=null&&lB!=null){const dL=lB-lA;
-      nota=(dP<-0.5&&dL>=-0.3)?'Peso caiu mantendo (ou ganhando) massa magra — melhora da relação peso/potência.'
-        :(dP>0.5&&dL<0.3)?'Peso subiu sem ganho de massa magra — atenção à composição.'
-        :'Composição estável entre as medições.';}}
+  if(confia.length>=2){const a=confia[0],lA=magra(a),lB=magra(confia[confia.length-1]),dP=confia[confia.length-1].peso-a.peso,dL=lB-lA;
+    nota=(dP<-0.5&&dL>=-0.3)?'Peso caiu mantendo (ou ganhando) massa magra — melhora da relação peso/potência.'
+      :(dP>0.5&&dL<0.3)?'Peso subiu sem ganho de massa magra — atenção à composição.'
+      :'Composição estável entre as medições.';}
   return`<div class="card"><div class="eyebrow">composição × desempenho</div>
     <div class="grid3" style="margin-top:8px">
-      <div class="kpi"><div class="v">${ult.peso}<span class="xs muted"> kg</span></div><div class="l">peso</div></div>
+      <div class="kpi"><div class="v">${ult.peso}<span class="xs muted"> kg</span></div><div class="l">peso · ${brCurta(ult.data)}</div></div>
       <div class="kpi"><div class="v">${lbm!=null?lbm:'—'}<span class="xs muted">${lbm!=null?' kg':''}</span></div><div class="l">massa magra</div></div>
       <div class="kpi"><div class="v">${ref?fmt(ref.tempo,true):'—'}</div><div class="l">${ref?ref.prova:'melhor tempo'}</div></div>
     </div>
-    ${nota?`<div class="note" style="margin-top:10px">${nota}</div>`:''}
-    <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). Perder peso mantendo a massa magra melhora a relação peso/potência — costuma refletir em velocidade.</div>
+    ${lbm==null?`<div class="note" style="margin-top:10px">Massa magra não calculada: a gordura da bioimpedância está inconsistente${susp?` (${susp})`:''}. Uso só o peso, que é confiável. Para calcular a composição, refaça a medição ou ajuste o valor.</div>`
+      :nota?`<div class="note" style="margin-top:10px">${nota}</div>`:''}
+    <div class="xs muted" style="margin-top:6px">Peso vem da sua última bioimpedância. Massa magra = peso × (1 − %gordura), só quando a gordura é plausível.</div>
   </div>`;
 }
 function cardCarga(){
@@ -3534,12 +3548,13 @@ function fingerprintDims(velPct,manutCV,pront,composicao,tend){
   const cl=v=>Math.max(0,Math.min(100,v));
   const gord=composicao&&composicao.gordura!=null?composicao.gordura:null;
   const qCV=manutCV==null?'':(manutCV<2?'ótima':manutCV<3.5?'boa':manutCV<5?'ok':'a melhorar');
+  const tScore=tend?Math.round(cl(50+(tend.net||0)*8+(tend.pc||0)*4)):null;
   return[
     {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
     {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
-    {eixo:'Composição', score: gord!=null?Math.round(cl(100-(gord-8)*4)):null, txt: gord!=null?gord.toFixed(0)+'% gord.':'s/ dado'},
-    {eixo:'Tendência', score: tend?(tend.dir==='↑'?80:tend.dir==='↓'?30:55):null, txt: tend?'capacidade '+tend.dir:'s/ dado'}
+    {eixo:'Composição', score: gord!=null?Math.round(cl(100-(gord-8)*4.5)):null, txt: gord!=null?gord.toFixed(0)+'% gordura':'s/ dado (bioimp.)'},
+    {eixo:'Tendência', score: tScore, txt: tend?('capacidade '+tend.dir+(tend.net?` (${tend.net>0?'+':''}${tend.net} prova)`:'')):'s/ dado'}
   ];
 }
 function cardFingerprint(m){
@@ -3571,9 +3586,12 @@ function motorPerformance(pro,comPct,sem,brk){
   const corr=correlacoes(pro,comPct);
   let sd=null;
   if(brk&&brk.length){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);sd=a.length?+(a.reduce((t,x)=>t+x,0)/a.length).toFixed(1):null;}
-  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null&&!bioSuspeita(b)).sort((a,b)=>a.data.localeCompare(b.data));
-  const ult=bio[bio.length-1]||null;
-  const composicao=ult?{peso:ult.peso,gordura:ult.gordura,massaMagra:ult.gordura!=null?+(ult.peso*(1-ult.gordura/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
+  /* peso vem da bioimpedância MAIS RECENTE (a balança é confiável mesmo quando a
+     gordura% não é); massa magra/composição só quando a gordura NÃO é suspeita. */
+  const bioAll=[...(pro.bioimp||[])].filter(b=>b.peso!=null).sort((a,b)=>a.data.localeCompare(b.data));
+  const ult=bioAll[bioAll.length-1]||null;
+  const gordOK=(ult&&ult.gordura!=null&&!bioSuspeita(ult))?ult.gordura:null;
+  const composicao=ult?{peso:ult.peso,data:ult.data,gordura:gordOK,gordSuspeita:bioSuspeita(ult),massaMagra:gordOK!=null?+(ult.peso*(1-gordOK/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
   return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),inventario:inv,confianca:Math.round(Math.min(100,pts))};
@@ -3616,6 +3634,22 @@ function laudoConsolidado(pro,diag,comPct,brk,sem){
     <div class="xs muted" style="margin-top:10px">${correl} Análise automática a partir dos seus dados e de faixas de referência da literatura esportiva — não substitui avaliação médica.</div>
   </div>`;
 }
+/* Cabeçalho do relatório: nome do atleta + provas-alvo (PB × projeção) no topo. */
+function cabecalhoRelatorio(pro,motor){
+  const nome=(S.u&&S.u.nome)||'Atleta';
+  const preds=motor.predicoes||[];
+  const pl=p=>{const q=p.prova.split(' ');return `${q[0]}m ${q[1]} · ${q[2]==='LC50'?'50m':'25m'}`;};
+  const linhas=preds.map(p=>`<tr><td><b>${pl(p)}</b></td><td class="n">${fmt(p.pb,true)}</td><td class="n" style="font-weight:700">${fmt(p.low,true)}–${fmt(p.high,true)}</td></tr>`).join('');
+  return`<div class="card" style="text-align:center">
+    <div style="font-size:24px;font-weight:800;letter-spacing:-.3px">${esc(nome)}</div>
+    <div class="small muted" style="margin-top:2px">Relatório de performance · ${brData(hoje())}</div>
+    ${preds.length?`<table style="margin:12px auto 0;width:100%;max-width:440px;text-align:left">
+      <thead><tr><th>prova-alvo</th><th class="n">PB</th><th class="n">projeção hoje</th></tr></thead>
+      <tbody>${linhas}</tbody></table>
+      <div class="xs muted" style="margin-top:6px">Projeção = tempo de competição provável hoje (detalhes abaixo).</div>`
+      :'<div class="small muted" style="margin-top:8px">Defina suas provas-alvo em Marcas para ver PB × projeção aqui.</div>'}
+  </div>`;
+}
 function telaRelatorio(){
   if(!ESF){coletarEsforcos().then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
@@ -3631,6 +3665,7 @@ function telaRelatorio(){
     <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
     <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
+  ${cabecalhoRelatorio(pro,motor)}
   ${cardModelo(motor)}
   ${cardEstado(pro,comPct,sem)}
   ${cardFingerprint(motor)}
