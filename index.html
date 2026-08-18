@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v14</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v15</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v14';
+const VER='v15';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -1166,6 +1166,11 @@ async function toggleFeito(treinoId,atId){
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
   toast(novo?'Treino feito ✓':'Fora da consolidação'); render();
 }
+async function setSessao(treinoId,atId,campo,val){
+  const t=await DB.get(kTr(S.u.equipe,treinoId))||S.treino;
+  t.sessao=t.sessao||{}; t.sessao[atId]=t.sessao[atId]||{}; t.sessao[atId][campo]=val; t.atualizado=Date.now();
+  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t; render();
+}
 function telaTreinoDetalhe(){
   const t=S.treino,tec=ehGestor();
   const alvo=tec?S.elenco.filter(a=>(t.para||[]).includes(a.id)):[S.u];
@@ -1181,10 +1186,17 @@ function telaTreinoDetalhe(){
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
   ${t.pdf?`<a class="btnlink" href="${t.pdf}" target="_blank" rel="noopener" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`:''}
-  ${at?(function(){const fz=treinoFeito(t,at.id);return`<div class="card tight" style="margin-top:8px"><div class="row">
-    <span class="grow"><b>${fz?'Treino feito':'Marcar como feito'}</b><div class="xs muted">${fz?'consolidado no relatório de performance':'marque quando terminar — só então entra no relatório'}</div></span>
-    <button class="sm" style="${fz?'background:var(--ok);color:#fff;font-weight:800':''}" onclick="toggleFeito('${t.id}','${at.id}')">${fz?'✓ Feito':'Feito'}</button>
-  </div></div>`})():''}
+  ${at?(function(){const fz=treinoFeito(t,at.id),s=(t.sessao&&t.sessao[at.id])||{};return`<div class="card tight" style="margin-top:8px">
+    <div class="row"><span class="grow"><b>${fz?'Treino feito':'Marcar como feito'}</b><div class="xs muted">${fz?'consolidado no relatório de performance':'marque quando terminar — só então entra no relatório'}</div></span>
+      <button class="sm" style="${fz?'background:var(--ok);color:#fff;font-weight:800':''}" onclick="toggleFeito('${t.id}','${at.id}')">${fz?'✓ Feito':'Feito'}</button></div>
+    <div class="grid2" style="margin-top:8px">
+      <div class="field"><label>RPE <span class="xs muted">(0 fácil–10 máx)</span></label>
+        <select onchange="setSessao('${t.id}','${at.id}','rpe',this.value===''?null:+this.value)"><option value="">—</option>${Array.from({length:11},(_,i)=>`<option ${s.rpe===i?'selected':''}>${i}</option>`).join('')}</select></div>
+      <div class="field"><label>Duração <span class="xs muted">min</span></label>
+        <input inputmode="numeric" value="${s.dur!=null?s.dur:''}" onchange="setSessao('${t.id}','${at.id}','dur',this.value?+this.value:null)"></div>
+    </div>
+    <div class="xs muted">RPE × duração vira a <b>carga da sessão</b> — compara natação e musculação no relatório.</div>
+  </div>`})():''}
   ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
   </div></div>`:''}
@@ -2543,6 +2555,11 @@ function telaGarmin(){
       <div class="field"><label>Tipo</label><select id="skTipo" onchange="secoDraft('tipo',this.value)">${['Musculação','Core','Mobilidade','Elástico','Outro'].map(o=>`<option ${((S.secoDraft&&S.secoDraft.tipo)||'Musculação')===o?'selected':''}>${o}</option>`).join('')}</select></div>
       <div class="field"><label>Data</label><input type="date" id="skData" value="${(S.secoDraft&&S.secoDraft.data)||hoje()}" onchange="secoDraft('data',this.value)"></div>
     </div>
+    <div class="grid2">
+      <div class="field"><label>RPE <span class="xs muted">(0–10)</span></label>
+        <select onchange="secoDraft('rpe',this.value===''?null:+this.value)"><option value="">—</option>${Array.from({length:11},(_,i)=>`<option ${(S.secoDraft&&S.secoDraft.rpe)===i?'selected':''}>${i}</option>`).join('')}</select></div>
+      <div class="field"><label>Duração <span class="xs muted">min</span></label><input inputmode="numeric" value="${(S.secoDraft&&S.secoDraft.dur!=null)?S.secoDraft.dur:''}" oninput="secoDraft('dur',this.value?+this.value:null)"></div>
+    </div>
     <div class="field"><label>Observação</label><input id="skObs" autocapitalize="sentences" value="${esc((S.secoDraft&&S.secoDraft.obs)||'')}" oninput="secoDraft('obs',this.value)" placeholder="ex.: puxada + tríceps, 4x10"></div>
     <div class="field"><label>Transcrição do treino <span class="xs muted">(digite o que está na foto/ficha)</span></label>
       <textarea id="skTrans" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" oninput="secoDraft('trans',this.value)" placeholder="ex.:&#10;Supino 4x8&#10;Puxada alta 4x10&#10;Core 3x40s">${esc((S.secoDraft&&S.secoDraft.trans)||'')}</textarea></div>
@@ -2651,7 +2668,7 @@ async function salvarSeco(){
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.seco=S.pro.seco||[];
   S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
-    obs:val('skObs'),transcricao:val('skTrans'),img:FOTO,arquivo:SECOPDF});
+    obs:val('skObs'),transcricao:val('skTrans'),rpe:(S.secoDraft&&S.secoDraft.rpe!=null)?S.secoDraft.rpe:null,dur:(S.secoDraft&&S.secoDraft.dur!=null)?S.secoDraft.dur:null,img:FOTO,arquivo:SECOPDF});
   if(S.pro.seco.length>24)S.pro.seco=S.pro.seco.slice(0,24);
   FOTO=null; SECOPDF=null; S.secoDraft=null; await salvarPro(); toast('Registro salvo'); render();
 }
@@ -2834,19 +2851,35 @@ async function lerSecoPorIA(inp){
   }catch(e){ toast('IA: '+e.message); }
 }
 function secoDraft(k,v){ S.secoDraft=S.secoDraft||{}; S.secoDraft[k]=v; }
-function dadosParaLaudo(){
+function dadosParaLaudo(motor){
   const pro=S.pro||{};
   const idade=(S.u&&S.u.nascimento)?anos(S.u):null;
   const exames=(pro.exames||[]).map(e=>{const o={data:e.data}; chavesExame(e).forEach(k=>o[k]=vExame(e,k)); return o;});
   const bio=(pro.bioimp||[]).map(b=>({data:b.data,peso:b.peso,gordura:b.gordura,musculo:b.musculo,agua:b.agua,visceral:b.visceral,imc:imcDe(b),tmb:tmbDe(b),suspeito:!!bioSuspeita(b)}));
   const ev=(typeof evolucaoProvas==='function')?evolucaoProvas(pro):[];
   const volume=(typeof volumePorSemana==='function')?volumePorSemana():[];
-  return {idade,sexo:((pro.bioimp||[]).slice(-1)[0]||{}).sexo||'M',exames,bioimpedancia:bio,evolucaoProvas:ev,volumeSemanal:volume};
+  const out={idade,sexo:((pro.bioimp||[]).slice(-1)[0]||{}).sexo||'M',exames,bioimpedancia:bio,evolucaoProvas:ev,volumeSemanal:volume};
+  if(motor)out.motor={
+    prontidao:motor.estado.pr?motor.estado.pr.score:null,
+    prontidaoDiasDados:motor.estado.pr?motor.estado.pr.dias:null,
+    capacidadePctPB:motor.estado.cap?motor.estado.cap.score:null,
+    tendencia:motor.estado.tend?motor.estado.tend.dir:null,
+    acwr:motor.carga?+motor.carga.acwr.toFixed(2):null,
+    speedDropPct:motor.speedDrop,
+    composicao:motor.composicao,
+    confiancaModelo:motor.confianca
+  };
+  return out;
 }
 async function gerarLaudoIA(){
   toast('Gerando laudo por IA… aguarde');
   try{
-    const d=await chamarIA({acao:'laudo',dados:dadosParaLaudo()});
+    const pro=S.pro||{}, esf=ESF||await coletarEsforcos();
+    const int=esf.filter(x=>!['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
+    const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
+    const brk=int.filter(x=>x.p1!=null&&x.dist===50).map(x=>({...x,delta:x.tempo-2*x.p1}));
+    const motor=motorPerformance(pro,comPct,volumePorSemana(),brk);
+    const d=await chamarIA({acao:'laudo',dados:dadosParaLaudo(motor)});
     S.laudoIA=d.laudo||''; render();
     setTimeout(()=>{const el=document.getElementById('laudoIA'); if(el)el.scrollIntoView({behavior:'smooth'});},120);
   }catch(e){ toast('IA: '+e.message); }
@@ -3222,6 +3255,29 @@ function cardCorrelacoes(pro,comPct){
   html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico — quanto mais dados, mais confiável. É associação, não causa.</div></div>`;
   return html;
 }
+/* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
+   Um só lugar que calcula tudo; relatório e laudo por IA consomem isto. */
+function motorPerformance(pro,comPct,sem,brk){
+  const est=estadoPerformance(pro,comPct,sem);
+  const carga=cargaACWR();
+  const corr=correlacoes(pro,comPct);
+  let sd=null;
+  if(brk&&brk.length){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);sd=a.length?+(a.reduce((t,x)=>t+x,0)/a.length).toFixed(1):null;}
+  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null&&!bioSuspeita(b)).sort((a,b)=>a.data.localeCompare(b.data));
+  const ult=bio[bio.length-1]||null;
+  const composicao=ult?{peso:ult.peso,gordura:ult.gordura,massaMagra:ult.gordura!=null?+(ult.peso*(1-ult.gordura/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
+  const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
+  const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
+  return {estado:est,carga,correlacoes:corr,speedDrop:sd,composicao,inventario:inv,confianca:Math.round(Math.min(100,pts))};
+}
+function cardModelo(m){
+  const iv=m.inventario, nf=m.confianca>=70?'boa':m.confianca>=40?'parcial':'inicial';
+  return`<div class="card"><div class="row"><div class="eyebrow">modelo de performance</div><div class="grow"></div>
+      <div class="kpi" style="text-align:right"><div class="v" style="${m.confianca>=70?'color:var(--ok)':m.confianca<40?'color:var(--clock)':''}">${m.confianca}%</div><div class="l">confiança</div></div></div>
+    <div class="small muted" style="margin-top:4px">Base: ${iv.tiros} tiro(s) · ${iv.competicoes} resultado(s) · ${iv.garmin} dia(s) de relógio · ${iv.exames} exame(s) · ${iv.bio} bioimpedância(s) · ${iv.seco} fora d'água.</div>
+    <div class="xs muted" style="margin-top:6px">A confiança do modelo (${nf}) sobe conforme você acumula dados — e cada número abaixo vem com a própria confiança.</div>
+  </div>`;
+}
 function laudoConsolidado(pro,diag,comPct,brk,sem){
   const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
   const ev=evolucaoProvas(pro),evoluiu=ev.filter(e=>e.melhora),regr=ev.filter(e=>!e.melhora);
@@ -3266,6 +3322,7 @@ function telaRelatorio(){
     <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
     <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
+  ${cardModelo(motorPerformance(pro,comPct,sem,brk))}
   ${cardEstado(pro,comPct,sem)}
   ${laudoConsolidado(pro,diag,comPct,brk,sem)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
