@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v19</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v20</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v19';
+const VER='v20';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -1003,9 +1003,15 @@ function pbDe(dados,dist,estilo){
     return b*(dist/50)*1.06}
   return null;
 }
+/* Zonas por %PB (velocidade relativa ao seu melhor tempo — é o que o app mede).
+   Aproxima as zonas aeróbias A1/A2/A3 (base→ritmo→potência) e o ritmo de prova.
+   Os cortes de %PB podem ser calibrados. */
 function zona(p){ if(p==null)return null;
-  if(p>=97)return{n:'ritmo de prova',c:'z4'}; if(p>=92)return{n:'velocidade',c:'z3'};
-  if(p>=86)return{n:'limiar',c:'z2'}; return{n:'aeróbio',c:'z1'} }
+  if(p>=96)return{n:'ritmo de prova',c:'z4',dsc:'sprint / velocidade máxima'};
+  if(p>=90)return{n:'A3',c:'z3',dsc:'potência aeróbica (perto do limiar)'};
+  if(p>=84)return{n:'A2',c:'z2',dsc:'ritmo (aeróbico médio)'};
+  return{n:'A1',c:'z1',dsc:'base aeróbica (leve)'} }
+const ZONAS_INFO='Zonas por velocidade (%PB): A1 base aeróbica (leve) · A2 ritmo · A3 potência aeróbica (perto do limiar) · ritmo de prova = sprint. %PB = seu tempo em relação ao seu melhor — quanto mais perto de 100%, mais rápido.';
 
 /* =====================================================================
    TREINOS — TÉCNICO
@@ -1634,6 +1640,10 @@ const PROVAS_CAT=[
   {d:50,e:'borboleta'},{d:100,e:'borboleta'},{d:200,e:'borboleta'},
   {d:100,e:'medley'},{d:200,e:'medley'},{d:400,e:'medley'}
 ];
+/* 25m não é prova oficial, mas é a parcial da prova e mede a intensidade real;
+   entra só no registro de MARCAS (não nas competições). */
+const PROVAS_25=[{d:25,e:'livre'},{d:25,e:'peito'},{d:25,e:'costas'},{d:25,e:'borboleta'}];
+const PROVAS_MARCA=[...PROVAS_25,...PROVAS_CAT];
 const REVEZ=[
   {r:4,d:50,e:'livre',gen:['masculino','feminino','misto']},
   {r:4,d:50,e:'medley',gen:['masculino','feminino','misto']},
@@ -2235,6 +2245,28 @@ function pbsTabela(pbs,pis){
       <td class="n" style="text-align:right;font-weight:700">${fmt(v,true)}</td>
       <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}</tbody></table>`;
 }
+/* provas principais do atleta — foco da projeção e da assinatura de sprint */
+function provasAlvo(pro){
+  if(pro&&pro.alvos&&pro.alvos.length)return pro.alvos.map(s=>{const p=s.split(' ');return{d:+p[0],e:p.slice(1).join(' ')}});
+  const pbs=Object.keys((pro&&pro.pbs)||{}), has=(d,e)=>pbs.some(k=>k.startsWith(d+' '+e+' '));
+  for(const e of ['peito','livre','costas','borboleta','medley']){const arr=[50,100].filter(d=>has(d,e)).map(d=>({d,e})); if(arr.length)return arr;}
+  return[];
+}
+function cardAlvos(pro){
+  const cur=new Set(provasAlvo(pro).map(a=>a.d+' '+a.e)), cand=[];
+  for(const e of ['peito','livre','costas','borboleta'])for(const d of [50,100])cand.push({d,e});
+  const chips=cand.map(c=>{const k=c.d+' '+c.e, on=cur.has(k);
+    return`<button class="chip${on?' best':''}" style="cursor:pointer;font-weight:${on?'800':'400'};${on?'':'opacity:.5'}" onclick="toggleAlvo('${k}')">${c.d} ${c.e}</button>`;}).join(' ');
+  return`<div class="card"><div class="eyebrow">provas-alvo</div>
+    <div class="small muted" style="margin:4px 0 8px">Suas provas principais — a <b>Projeção de Tempo</b> e a <b>Assinatura de Sprint</b> focam nelas. Toque para ligar/desligar. Sem escolha, uso 50 e 100 do seu estilo principal.</div>
+    <div class="chips" style="gap:6px;flex-wrap:wrap">${chips}</div></div>`;
+}
+async function toggleAlvo(k){
+  S.pro=S.pro||{pbs:{}};
+  const set=new Set((S.pro.alvos&&S.pro.alvos.length)?S.pro.alvos:provasAlvo(S.pro).map(a=>a.d+' '+a.e));
+  set.has(k)?set.delete(k):set.add(k); S.pro.alvos=[...set];
+  await salvarPro(); render();
+}
 function telaMarcas(){
   const pro=S.pro||{pbs:{},resultados:[]};
   const res=[...(pro.resultados||[])].sort((a,b)=>b.data.localeCompare(a.data));
@@ -2254,6 +2286,7 @@ function telaMarcas(){
       <div class="blk" style="margin-top:16px"><h3>Piscina longa · 50m</h3><div class="ln"></div></div>${pbsTabela(pro.pbs,'LC50')}
     `:'<div class="small muted" style="margin-top:6px">Nenhuma marca registrada. Toque em + Tempo.</div>'}
   </div>
+  ${cardAlvos(pro)}
   <div class="card">
     <div class="eyebrow">histórico de competições</div>
     ${res.length?res.map(r=>{
@@ -2275,8 +2308,9 @@ function telaMarcas(){
 function abrirNovaMarca(){
   sheet(`<h2>Registrar tempo</h2>
     <div class="field"><label>Prova</label><select id="mkProva">
-      ${PROVAS_CAT.map((p,i)=>`<option value="${i}">${p.d}m ${p.e}</option>`).join('')}</select></div>
+      ${PROVAS_MARCA.map((p,i)=>`<option value="${i}">${p.d}m ${p.e}${p.d===25?' (parcial/treino)':''}</option>`).join('')}</select></div>
     <div class="field"><label>Piscina</label><select id="mkPis"><option value="SC25">Curta · 25m</option><option value="LC50">Longa · 50m</option></select></div>
+    <div class="xs muted" style="margin:-4px 0 8px">O <b>25m</b> não é prova oficial, mas registre seu melhor 25 — ele é a parcial da prova e calibra o %PB dos seus tiros de 25m (você treina em piscina curta).</div>
     <div class="field"><label>Tempo</label>
       <div class="row" style="gap:6px">
         <input id="mkH" inputmode="numeric" placeholder="h" style="text-align:center">
@@ -2295,7 +2329,7 @@ function abrirNovaMarca(){
     <button class="primary full" onclick="salvarMarca()">Salvar</button>`);
 }
 async function salvarMarca(){
-  const b=PROVAS_CAT[+document.getElementById('mkProva').value];
+  const b=PROVAS_MARCA[+document.getElementById('mkProva').value];
   const pis=document.getElementById('mkPis').value,ms=msHMSC(val('mkH'),val('mkM'),val('mkS'),val('mkC'));
   if(!ms)return toast('Informe o tempo (ao menos os segundos)');
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
@@ -3353,33 +3387,54 @@ function cardBaseline(pro,comPct){
     <div class="xs muted" style="margin-top:8px">Verde = variação favorável para você; vermelho = desfavorável. Peso é neutro (depende do objetivo).</div>
   </div>`;
 }
-/* ── PREDIÇÃO 50/100 (faixa + confiança) ────────────────────────────────────
-   Projeta o tempo provável HOJE a partir da forma recente (mediana do %PB nos
-   tiros da prova), ajustada por prontidão e tendência. Nunca "você fará X":
-   devolve uma FAIXA + % de confiança + os fatores que a compõem. */
+/* média dos tiros MAIS RÁPIDOS (topo 20%) numa prova, nos últimos `dias` — melhor
+   sinal do que a média, porque o treino tem muito nado leve. */
+function melhorTempo(comPct,d,e,dias){
+  const h0=new Date(hoje()+'T00:00:00');
+  const rec=comPct.filter(x=>x.dist===d&&x.estilo===e&&(!dias||(h0-new Date(x.data+'T00:00:00'))/86400000<dias)).map(x=>x.tempo).sort((a,b)=>a-b);
+  if(!rec.length)return null; const n=Math.max(1,Math.ceil(rec.length*0.2));
+  return rec.slice(0,n).reduce((t,x)=>t+x,0)/n;
+}
+function melhorPct(comPct,d,e,dias){
+  const h0=new Date(hoje()+'T00:00:00');
+  const rec=comPct.filter(x=>x.dist===d&&x.estilo===e&&(!dias||(h0-new Date(x.data+'T00:00:00'))/86400000<dias)).map(x=>x.pct).sort((a,b)=>b-a);
+  if(!rec.length)return null; const n=Math.max(1,Math.ceil(rec.length*0.2));
+  return rec.slice(0,n).reduce((t,x)=>t+x,0)/n;
+}
+/* ── PREDIÇÃO das provas-alvo (faixa + confiança) ───────────────────────────
+   Combina dois métodos ancorados no que você REALMENTE nada:
+   (1) seus melhores tiros recentes na prova, "afiados" p/ ritmo de prova;
+   (2) sua melhor parcial de 25m, montando ida+volta com desgaste.
+   Faixa = união dos dois; nunca promete um tempo exato; teto no seu PB. */
 function predicao(pro,comPct,est){
-  const pbs=(pro&&pro.pbs)||{}; if(!Object.keys(pbs).length||!comPct||!comPct.length)return[];
-  const md=a=>{const s=[...a].sort((x,y)=>x-y),n=s.length;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;};
-  const dp=a=>{if(a.length<2)return 0;const m=a.reduce((t,x)=>t+x,0)/a.length;return Math.sqrt(a.reduce((t,x)=>t+(x-m)*(x-m),0)/a.length);};
+  const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[]; if(!alvos.length||!comPct||!comPct.length)return[];
+  const pbs=(pro&&pro.pbs)||{};
   const pront=est&&est.pr?est.pr.score:null, dias=est&&est.pr?est.pr.dias:0, tend=est&&est.tend?est.tend.dir:'→';
+  const aPr=pront!=null?Math.max(-1.5,Math.min(1.5,-(pront-72)*0.06))/100:0, aTend=tend==='↑'?-0.005:tend==='↓'?0.005:0;
+  const ajusta=t=>t*(1+aPr+aTend);
+  /* tempo de 50 projetado (melhores tiros de 50 + parcial de 25 ida+volta) */
+  const proj50=(e,pis)=>{const cs=[];const bt=melhorTempo(comPct,50,e,120);if(bt!=null)cs.push(bt*0.97);const t25=melhorTempo(comPct,25,e,120);if(t25!=null)cs.push(t25*2*1.03);
+    if(!cs.length)return null;let c=cs.reduce((s,x)=>s+x,0)/cs.length;const pb50=pbs[`50 ${e} ${pis}`];return pb50?Math.max(c,pb50*0.985):c;};
   const out=[];
-  for(const[k,pb]of Object.entries(pbs)){
-    const p=k.split(' '), d=+p[0], es=p[1], pis=p.slice(2).join(' ')||'SC25';
-    if(![50,100].includes(d))continue;
-    const eff=comPct.filter(e=>e.dist===d&&e.estilo===es); if(eff.length<2)continue;
-    const pcts=eff.map(e=>e.pct), forma=md(pcts), desvio=dp(pcts);
-    const aPr=pront!=null?Math.max(-1.5,Math.min(1.5,-(pront-72)*0.06))/100:0;
-    const aTend=tend==='↑'?-0.005:tend==='↓'?0.005:0, aSharp=-0.01;
-    let central=pb*(100/forma)*(1+aPr+aTend+aSharp);
-    const hw=Math.max(1.2,Math.min(6,desvio*0.8+1.2));
-    let low=Math.max(central*(1-hw/100),pb*0.98), high=Math.max(central*(1+hw/100),pb);
-    let c=Math.round(Math.min(100,Math.min(50,eff.length*10)+(pront!=null?Math.min(25,dias*1.5):0)+(est&&est.tend?15:0)+(eff.length>=3?10:0)));
-    const fat=[`Forma recente ${forma.toFixed(0)}% do PB (${eff.length} tiros)`];
-    if(pront!=null)fat.push(`Prontidão ${pront}${pront>=80?' (empurrão)':pront<60?' (freio)':''}`);
-    fat.push(`Tendência ${tend}`);
-    out.push({prova:`${d} ${es} ${pis}`,d,es,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),conf:c,fatores:fat});
+  for(const a of alvos)for(const pis of ['SC25','LC50']){
+    const pb=pbs[`${a.d} ${a.e} ${pis}`]; if(!pb)continue;
+    const cents=[], fat=[];
+    const bt=melhorTempo(comPct,a.d,a.e,120);                 // método 1: melhores tiros na prova
+    if(bt!=null){cents.push(bt*0.97); fat.push(`Melhores tiros de ${a.d} (~${(pb/bt*100).toFixed(0)}% do PB), afiados p/ prova`);}
+    if(a.d===50){const t25=melhorTempo(comPct,25,a.e,120);    // método 2 (50): parcial de 25 ida+volta
+      if(t25!=null){cents.push(t25*2*1.03); fat.push(`Parcial de 25m (melhor ~${fmt(t25,true)}) → ida+volta`);}}
+    else if(a.d===100){const p50=proj50(a.e,pis);             // método 2 (100): 50 projetado ×2 com desgaste
+      if(p50!=null){cents.push(p50*2*1.05); fat.push(`50 projetado (${fmt(p50,true)}) ×2 com desgaste`);}}
+    if(!cents.length)continue;
+    let central=Math.max(ajusta(cents.reduce((s,x)=>s+x,0)/cents.length),pb*0.985);
+    const spread=(cents.length>1?Math.abs(cents[0]-cents[1])/2:central*0.03)+central*0.02;
+    const low=Math.max(central-spread,pb*0.98), high=central+spread;
+    const nEff=comPct.filter(e=>e.dist===a.d&&e.estilo===a.e).length;
+    const c=Math.round(Math.min(85, Math.min(40,nEff*8)+(cents.length>1?20:0)+(pront!=null?Math.min(18,dias*1.2):0)+(bt!=null?12:0)));
+    if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
+    out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),conf:c,fatores:fat});
   }
-  return out.sort((a,b)=>b.conf-a.conf||a.d-b.d).slice(0,4);
+  return out.sort((x,y)=>y.conf-x.conf||x.d-y.d).slice(0,4);
 }
 function cardPredicao(pro,comPct,est){
   const ps=predicao(pro,comPct,est); if(!ps.length)return'';
@@ -3389,10 +3444,10 @@ function cardPredicao(pro,comPct,est){
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
       <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · confiança <span style="color:${cor}">${p.conf}%</span></div>
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div></div>`;}).join('');
-  return`<div class="card"><div class="eyebrow">projeção de tempo — hoje</div>
-    <div class="small muted" style="margin:4px 0 4px">Faixa provável se competisse hoje, a partir da sua forma recente ajustada por prontidão e tendência. Estimativa de apoio — não é garantia.</div>
+  return`<div class="card"><div class="eyebrow">projeção de tempo — provas-alvo</div>
+    <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável hoje, combinando seus <b>melhores tiros</b> (afiados p/ ritmo de prova) com a <b>parcial de 25m</b> (ida+volta). Ajustado por prontidão e tendência. Estimativa de apoio — não é garantia.</div>
     ${linhas}
-    <div class="xs muted" style="margin-top:8px">Mais tiros recentes na prova e mais dias de VFC ⇒ mais confiança. A faixa reflete a variação dos seus tempos.</div>
+    <div class="xs muted" style="margin-top:8px">Foca nas provas-alvo (defina em Marcas). Registre seu melhor 25m e faça alguns tiros fortes na prova para a faixa ficar mais precisa. Teto no seu PB.</div>
   </div>`;
 }
 /* ── O QUE MUDOU EM 28 DIAS + POR QUÊ ───────────────────────────────────────
@@ -3446,12 +3501,30 @@ function cardMudancas(pro,comPct){
   </div>`;
 }
 /* ── SPRINT FINGERPRINT (radar) — só dimensões observáveis ───────────────────*/
-function fingerprintDims(cap,speedDrop,pront,composicao,tend){
+/* Velocidade = seus MELHORES tiros nas provas-alvo (%PB), não a média. */
+function velocFingerprint(pro,comPct){
+  const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[], vals=[];
+  for(const a of alvos){const m=melhorPct(comPct,a.d,a.e,120); if(m!=null)vals.push(m);}
+  if(!vals.length&&comPct.length){const s=comPct.map(x=>x.pct).sort((a,b)=>b-a),n=Math.max(1,Math.ceil(s.length*0.2));vals.push(s.slice(0,n).reduce((t,x)=>t+x,0)/n);}
+  return vals.length?vals.reduce((t,x)=>t+x,0)/vals.length:null;
+}
+/* Manutenção = constância dos tempos em séries repetidas (coef. de variação).
+   Agrupa por dia+distância+estilo; CV% médio dos grupos com ≥3 tiros. Menor = melhor. */
+function manutencaoCV(comPct){
+  const g={};
+  for(const e of comPct){const k=e.data+'|'+e.dist+'|'+e.estilo;(g[k]=g[k]||[]).push(e.tempo);}
+  const cvs=[];
+  for(const k in g){const a=g[k]; if(a.length<3)continue;
+    const m=a.reduce((t,x)=>t+x,0)/a.length, sd=Math.sqrt(a.reduce((t,x)=>t+(x-m)*(x-m),0)/a.length);
+    if(m>0)cvs.push(sd/m*100);}
+  return cvs.length?cvs.reduce((t,x)=>t+x,0)/cvs.length:null;
+}
+function fingerprintDims(velPct,manutCV,pront,composicao,tend){
   const cl=v=>Math.max(0,Math.min(100,v));
   const gord=composicao&&composicao.gordura!=null?composicao.gordura:null;
   return[
-    {eixo:'Velocidade', score: cap!=null?Math.round(cl((cap-85)/13*100)):null, txt: cap!=null?cap.toFixed(0)+'% PB':'s/ dado'},
-    {eixo:'Manutenção', score: speedDrop!=null?Math.round(cl(100-speedDrop*6)):null, txt: speedDrop!=null?'queda '+speedDrop.toFixed(0)+'%':'s/ dado'},
+    {eixo:'Velocidade', score: velPct!=null?Math.round(cl((velPct-70)/30*100)):null, txt: velPct!=null?velPct.toFixed(0)+'% PB (melhor)':'s/ dado'},
+    {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*16.7)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'%':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
     {eixo:'Composição', score: gord!=null?Math.round(cl(100-(gord-8)*4)):null, txt: gord!=null?gord.toFixed(0)+'% gord.':'s/ dado'},
     {eixo:'Tendência', score: tend?(tend.dir==='↑'?80:tend.dir==='↓'?30:55):null, txt: tend?'capacidade '+tend.dir:'s/ dado'}
@@ -3471,7 +3544,7 @@ function cardFingerprint(m){
     <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo.</div>
     <div style="display:flex;justify-content:center"><svg viewBox="0 0 220 220" style="width:230px;max-width:100%">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
-    <div class="xs muted" style="margin-top:6px">Velocidade=%PB médio · Manutenção=queda do 2º 25 · Recuperação=prontidão · Composição=%gordura · Tendência=direção da capacidade. Eixo "s/ dado" fica no centro.</div>
+    <div class="xs muted" style="margin-top:6px">Velocidade=seus melhores tiros (%PB) · Manutenção=constância dos tempos repetidos (menor variação = melhor) · Recuperação=prontidão · Composição=%gordura · Tendência=direção da capacidade. Eixo "s/ dado" fica no centro.</div>
   </div>`;
 }
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
@@ -3487,7 +3560,7 @@ function motorPerformance(pro,comPct,sem,brk){
   const composicao=ult?{peso:ult.peso,gordura:ult.gordura,massaMagra:ult.gordura!=null?+(ult.peso*(1-ult.gordura/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
-  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(est.cap?est.cap.score:null,sd,est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),inventario:inv,confianca:Math.round(Math.min(100,pts))};
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),inventario:inv,confianca:Math.round(Math.min(100,pts))};
 }
 function cardModelo(m){
   const iv=m.inventario, nf=m.confianca>=70?'boa':m.confianca>=40?'parcial':'inicial';
