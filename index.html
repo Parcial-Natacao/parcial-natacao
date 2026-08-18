@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v22</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v23</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v22';
+const VER='v23';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -3277,33 +3277,44 @@ function cargaACWR(){
   if(cr<=0)return null;
   return {ag,cr:Math.round(cr),acwr:ag/cr};
 }
+/* Estima a composição de forma transparente. O peso é sempre real (balança).
+   Se a gordura% do aparelho for plausível (8–45%), usa-a; senão ESTIMA a partir de
+   idade/sexo (+ altura via Deurenberg, quando houver), porque a bioimpedância do
+   atleta costuma ler gordura baixa demais. Score com TETO 90 (nunca "100/perfeito"). */
+function composicaoEstim(pro){
+  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null).sort((a,b)=>a.data.localeCompare(b.data));
+  if(!bio.length)return null;
+  const ult=bio[bio.length-1];
+  const idade=(typeof anos==='function'&&S.u)?(anos(S.u)||42):42;
+  const sexoF=!!(S.u&&S.u.store&&S.u.store.sexo==='feminino');
+  const plausivel=g=>g!=null&&g>=8&&g<=45;
+  let gord=ult.gordura, estimada=false, motivo='';
+  if(!plausivel(gord)){
+    /* a bioimpedância do atleta lê gordura baixa demais → estima por idade/sexo.
+       (Deurenberg por IMC foi descartado: superestima em quem é musculoso.) */
+    estimada=true; motivo=bioSuspeita(ult)||'gordura da bioimpedância implausível';
+    const est=(sexoF?20:12)+(Math.max(30,idade)-30)*0.25;
+    gord=Math.max(sexoF?16:11, Math.min(sexoF?30:22, est));
+  }
+  gord=+gord.toFixed(1);
+  const massaMagra=+(ult.peso*(1-gord/100)).toFixed(1);
+  const score=Math.round(Math.max(0,Math.min(90,100-(gord-6)*2.6)));   // teto 90 (nunca "perfeito")
+  return {peso:ult.peso,data:ult.data,gordura:gord,estimada,motivo,massaMagra,score,imc:imcDe(ult),tmb:tmbDe(ult)};
+}
 /* Composição × desempenho: massa magra + relação peso/potência (tempo/peso) */
 function cardComposicaoRelativa(pro){
-  /* peso = medição MAIS RECENTE (a balança é confiável); massa magra só quando a
-     gordura% NÃO é suspeita — nada de chute a partir de bioimpedância inconsistente. */
-  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null).sort((a,b)=>a.data.localeCompare(b.data));
-  if(!bio.length)return'';
-  const ult=bio[bio.length-1];
-  const gordOK=b=>(b.gordura!=null&&!bioSuspeita(b))?b.gordura:null;
-  const magra=b=>{const g=gordOK(b);return g!=null?+(b.peso*(1-g/100)).toFixed(1):null;};
-  const lbm=magra(ult), susp=bioSuspeita(ult);
+  const c=composicaoEstim(pro); if(!c)return'';
   const prefer=Object.entries(pro.pbs||{}).find(([k])=>/^50 /.test(k));
   const ref=prefer?{prova:prefer[0].replace(/ (SC25|LC50)$/,''),tempo:prefer[1]}:null;
-  const confia=bio.filter(b=>magra(b)!=null);
-  let nota='';
-  if(confia.length>=2){const a=confia[0],lA=magra(a),lB=magra(confia[confia.length-1]),dP=confia[confia.length-1].peso-a.peso,dL=lB-lA;
-    nota=(dP<-0.5&&dL>=-0.3)?'Peso caiu mantendo (ou ganhando) massa magra — melhora da relação peso/potência.'
-      :(dP>0.5&&dL<0.3)?'Peso subiu sem ganho de massa magra — atenção à composição.'
-      :'Composição estável entre as medições.';}
   return`<div class="card"><div class="eyebrow">composição × desempenho</div>
     <div class="grid3" style="margin-top:8px">
-      <div class="kpi"><div class="v">${ult.peso}<span class="xs muted"> kg</span></div><div class="l">peso · ${brCurta(ult.data)}</div></div>
-      <div class="kpi"><div class="v">${lbm!=null?lbm:'—'}<span class="xs muted">${lbm!=null?' kg':''}</span></div><div class="l">massa magra</div></div>
+      <div class="kpi"><div class="v">${c.peso}<span class="xs muted"> kg</span></div><div class="l">peso · ${brCurta(c.data)}</div></div>
+      <div class="kpi"><div class="v">${c.massaMagra}<span class="xs muted"> kg</span></div><div class="l">massa magra</div></div>
       <div class="kpi"><div class="v">${ref?fmt(ref.tempo,true):'—'}</div><div class="l">${ref?ref.prova:'melhor tempo'}</div></div>
     </div>
-    ${lbm==null?`<div class="note" style="margin-top:10px">Massa magra não calculada: a gordura da bioimpedância está inconsistente${susp?` (${susp})`:''}. Uso só o peso, que é confiável. Para calcular a composição, refaça a medição ou ajuste o valor.</div>`
-      :nota?`<div class="note" style="margin-top:10px">${nota}</div>`:''}
-    <div class="xs muted" style="margin-top:6px">Peso vem da sua última bioimpedância. Massa magra = peso × (1 − %gordura), só quando a gordura é plausível.</div>
+    <div class="row" style="justify-content:space-between;margin-top:10px"><span class="small">Gordura ${c.estimada?'estimada':'medida'}</span><span class="small t" style="font-weight:800">~${c.gordura}%</span></div>
+    ${c.estimada?`<div class="note" style="margin-top:8px">A gordura da bioimpedância está inconsistente (${c.motivo}). Estimei ~${c.gordura}% pela sua idade/sexo — valor de apoio, não medido. Se tiver uma medição de gordura confiável (ex.: dobras cutâneas), registre na bioimpedância que eu passo a usá-la.</div>`:''}
+    <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). Perder peso mantendo a massa magra melhora a relação peso/potência — costuma refletir em velocidade.</div>
   </div>`;
 }
 function cardCarga(){
@@ -3546,14 +3557,13 @@ function manutencaoCV(comPct){
 }
 function fingerprintDims(velPct,manutCV,pront,composicao,tend){
   const cl=v=>Math.max(0,Math.min(100,v));
-  const gord=composicao&&composicao.gordura!=null?composicao.gordura:null;
   const qCV=manutCV==null?'':(manutCV<2?'ótima':manutCV<3.5?'boa':manutCV<5?'ok':'a melhorar');
   const tScore=tend?Math.round(cl(50+(tend.net||0)*8+(tend.pc||0)*4)):null;
   return[
     {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
     {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
-    {eixo:'Composição', score: gord!=null?Math.round(cl(100-(gord-8)*4.5)):null, txt: gord!=null?gord.toFixed(0)+'% gordura':'s/ dado (bioimp.)'},
+    {eixo:'Composição', score: composicao&&composicao.score!=null?composicao.score:null, txt: composicao?`~${composicao.gordura}% gordura${composicao.estimada?' (est.)':''}`:'s/ dado'},
     {eixo:'Tendência', score: tScore, txt: tend?('capacidade '+tend.dir+(tend.net?` (${tend.net>0?'+':''}${tend.net} prova)`:'')):'s/ dado'}
   ];
 }
@@ -3586,12 +3596,8 @@ function motorPerformance(pro,comPct,sem,brk){
   const corr=correlacoes(pro,comPct);
   let sd=null;
   if(brk&&brk.length){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);sd=a.length?+(a.reduce((t,x)=>t+x,0)/a.length).toFixed(1):null;}
-  /* peso vem da bioimpedância MAIS RECENTE (a balança é confiável mesmo quando a
-     gordura% não é); massa magra/composição só quando a gordura NÃO é suspeita. */
-  const bioAll=[...(pro.bioimp||[])].filter(b=>b.peso!=null).sort((a,b)=>a.data.localeCompare(b.data));
-  const ult=bioAll[bioAll.length-1]||null;
-  const gordOK=(ult&&ult.gordura!=null&&!bioSuspeita(ult))?ult.gordura:null;
-  const composicao=ult?{peso:ult.peso,data:ult.data,gordura:gordOK,gordSuspeita:bioSuspeita(ult),massaMagra:gordOK!=null?+(ult.peso*(1-gordOK/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
+  /* composição estimada de forma transparente (peso real; gordura medida ou estimada) */
+  const composicao=(typeof composicaoEstim==='function')?composicaoEstim(pro):null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
   return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),inventario:inv,confianca:Math.round(Math.min(100,pts))};
@@ -3787,10 +3793,33 @@ function graficoBarras(arr,crescerBom){
       <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${(H-P-h-5).toFixed(1)}" font-size="11" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${crescerBom?(a.v/1000).toFixed(1)+'k':fmt(a.v,true)}</text>`}).join('')}
     <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#D8D3C9"/></svg>`;
 }
+/* PDF/impressão que funciona no CELULAR: monta uma página isolada só com o
+   relatório (sem nav) e imprime nela. Tenta uma nova aba (melhor no iOS/Android);
+   se o popup for bloqueado, cai para um iframe oculto. Assim "Salvar como PDF"
+   do próprio navegador funciona no telefone. */
 function imprimirRelatorio(){
   try{ window.scrollTo(0,0); }catch(e){}
-  if(typeof window.print!=='function')return toast('Seu navegador não abre impressão aqui. Use "Enviar" para mandar o relatório.');
-  try{ window.print(); }catch(e){ toast('Não abriu a impressão. Use "Enviar" ou o Laudo por IA.'); }
+  const app=document.getElementById('app'); if(!app)return toast('Abra o Relatório primeiro.');
+  const clone=app.cloneNode(true); clone.querySelectorAll('.noprint').forEach(n=>n.remove());
+  const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
+  const nome=(S.u&&S.u.nome)||'PARCIAL';
+  const corpo=clone.innerHTML;
+  const cabeca=`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)} — relatório</title>${estilos}<style>body{padding:14px;background:#fff}@media print{body{padding:0}}</style>`;
+  const script='<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},500);};window.onafterprint=function(){setTimeout(function(){try{window.close();}catch(e){}},300);};</scr'+'ipt>';
+  const doc='<!doctype html><html lang="pt-BR"><head>'+cabeca+'</head><body>'+corpo+script+'</body></html>';
+  let w=null; try{ w=window.open('','_blank'); }catch(e){}
+  if(w&&w.document){ w.document.open(); w.document.write(doc); w.document.close(); return; }
+  /* fallback: iframe oculto (popup bloqueado — comum em PWA no celular) */
+  const ifr=document.createElement('iframe');
+  ifr.setAttribute('aria-hidden','true');
+  ifr.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';
+  document.body.appendChild(ifr);
+  const d=ifr.contentWindow.document;
+  d.open(); d.write('<!doctype html><html><head>'+cabeca+'</head><body>'+corpo+'</body></html>'); d.close();
+  const go=()=>{ try{ ifr.contentWindow.focus(); ifr.contentWindow.print(); }
+    catch(e){ toast('Não consegui abrir o PDF. Use o menu do navegador → Imprimir/Compartilhar.'); }
+    setTimeout(()=>{ try{ifr.remove();}catch(e){} }, 2000); };
+  setTimeout(go, 600);
 }
 async function compartilharRelatorio(){
   const pro=S.pro||{};
