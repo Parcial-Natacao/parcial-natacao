@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v20</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v21</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v20';
+const VER='v21';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -888,10 +888,10 @@ function render(){
   const mapa=ehGestor()
     ?{treinos:telaTreinosTec,elenco:telaElenco,competicao:(S.u.perfil==='pro'&&S.compAtletaMode)?telaCompAtleta:telaCompeticao}
     :S.u.perfil==='pro'
-      ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio,store:telaStore}
+      ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio}
       :S.u.podeMarcas
-        ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,store:telaStore}
-        :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,store:telaStore};
+        ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas}
+        :{treinos:telaTreinosAtleta,competicao:telaCompAtleta};
   app.innerHTML=(mapa[S.aba]||Object.values(mapa)[0])();
 }
 /* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
@@ -900,10 +900,10 @@ function navBar(){
   const abas=ehGestor()
     ?[['treinos','≡','Treinos'],['elenco','◎','Elenco'],['competicao','▲','Competição']]
     :S.u.perfil==='pro'
-      ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório'],['store','▣','Store']]
+      ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório']]
       :S.u.podeMarcas
-        ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['store','▣','Store']]
-        :[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['store','▣','Store']];
+        ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas']]
+        :[['treinos','≡','Treinos'],['competicao','▲','Comp.']];
   document.getElementById('nav').classList.remove('hide');
   document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
     `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
@@ -2253,19 +2253,26 @@ function provasAlvo(pro){
   return[];
 }
 function cardAlvos(pro){
-  const cur=new Set(provasAlvo(pro).map(a=>a.d+' '+a.e)), cand=[];
-  for(const e of ['peito','livre','costas','borboleta'])for(const d of [50,100])cand.push({d,e});
-  const chips=cand.map(c=>{const k=c.d+' '+c.e, on=cur.has(k);
-    return`<button class="chip${on?' best':''}" style="cursor:pointer;font-weight:${on?'800':'400'};${on?'':'opacity:.5'}" onclick="toggleAlvo('${k}')">${c.d} ${c.e}</button>`;}).join(' ');
+  const cur=provasAlvo(pro).map(a=>a.d+' '+a.e);
+  const chips=cur.length?cur.map(k=>{const p=k.split(' ');
+    return`<span class="chip best" style="font-weight:800">${p[0]}m ${p.slice(1).join(' ')} <b onclick="removerAlvo('${k}')" style="cursor:pointer;color:var(--clock);margin-left:3px">✕</b></span>`;}).join(' ')
+    :'<span class="small muted">Nenhuma escolhida — usando 50 e 100 do seu estilo principal.</span>';
+  const opts=PROVAS_CAT.filter(p=>!cur.includes(p.d+' '+p.e)).map(p=>`<option value="${p.d} ${p.e}">${p.d}m ${p.e}</option>`).join('');
   return`<div class="card"><div class="eyebrow">provas-alvo</div>
-    <div class="small muted" style="margin:4px 0 8px">Suas provas principais — a <b>Projeção de Tempo</b> e a <b>Assinatura de Sprint</b> focam nelas. Toque para ligar/desligar. Sem escolha, uso 50 e 100 do seu estilo principal.</div>
-    <div class="chips" style="gap:6px;flex-wrap:wrap">${chips}</div></div>`;
+    <div class="small muted" style="margin:4px 0 8px">Suas provas principais — a <b>Projeção de Tempo</b> e a <b>Assinatura de Sprint</b> focam nelas. Adicione quantas quiser (um medista pode ter 6+).</div>
+    <div class="chips" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>
+    <div class="row" style="gap:6px">
+      <select id="alvoSel" style="flex:1">${opts||'<option value="">(todas já adicionadas)</option>'}</select>
+      <button class="sm primary" onclick="adicionarAlvo()">+ Adicionar</button></div></div>`;
 }
-async function toggleAlvo(k){
-  S.pro=S.pro||{pbs:{}};
-  const set=new Set((S.pro.alvos&&S.pro.alvos.length)?S.pro.alvos:provasAlvo(S.pro).map(a=>a.d+' '+a.e));
-  set.has(k)?set.delete(k):set.add(k); S.pro.alvos=[...set];
-  await salvarPro(); render();
+async function adicionarAlvo(){
+  const v=(document.getElementById('alvoSel')||{}).value; if(!v)return;
+  S.pro=S.pro||{pbs:{}}; const set=new Set((S.pro.alvos&&S.pro.alvos.length)?S.pro.alvos:provasAlvo(S.pro).map(a=>a.d+' '+a.e));
+  set.add(v); S.pro.alvos=[...set]; await salvarPro(); render();
+}
+async function removerAlvo(k){
+  S.pro=S.pro||{pbs:{}}; const set=new Set((S.pro.alvos&&S.pro.alvos.length)?S.pro.alvos:provasAlvo(S.pro).map(a=>a.d+' '+a.e));
+  set.delete(k); S.pro.alvos=[...set]; await salvarPro(); render();
 }
 function telaMarcas(){
   const pro=S.pro||{pbs:{},resultados:[]};
@@ -3402,36 +3409,37 @@ function melhorPct(comPct,d,e,dias){
   return rec.slice(0,n).reduce((t,x)=>t+x,0)/n;
 }
 /* ── PREDIÇÃO das provas-alvo (faixa + confiança) ───────────────────────────
-   Combina dois métodos ancorados no que você REALMENTE nada:
-   (1) seus melhores tiros recentes na prova, "afiados" p/ ritmo de prova;
-   (2) sua melhor parcial de 25m, montando ida+volta com desgaste.
-   Faixa = união dos dois; nunca promete um tempo exato; teto no seu PB. */
+   Estima o tempo de COMPETIÇÃO hoje. Ancora no que mais parece prova: seus tiros
+   mais rápidos e a parcial de 25m montada com o SEU desgaste real (razão entre
+   seus PBs — ex.: seu 100 é PB100/(2×PB50) mais lento que dois 50). Prova é
+   esforço máximo → a faixa é ESTREITA em volta da melhor estimativa; discordância
+   entre métodos baixa a CONFIANÇA (não alarga a faixa). Teto no seu PB. */
+function raceEst(comPct,pbs,d,e){
+  const pbAny=dd=>pbs[`${dd} ${e} SC25`]||pbs[`${dd} ${e} LC50`]||null;
+  const fade=dd=>{const cur=pbAny(dd),half=pbAny(dd/2);return (cur&&half)?cur/(2*half):(dd<=50?1.04:dd<=100?1.10:1.11);};
+  const cands=[], fat=[];
+  const bt=melhorTempo(comPct,d,e,120);
+  if(bt!=null){const pb=pbAny(d);cands.push(bt*0.97);fat.push(`Melhores tiros de ${d}${pb?` (~${(pb/bt*100).toFixed(0)}% do PB)`:''}`);}
+  if(d>25){const sub=raceEst(comPct,pbs,d/2,e); if(sub){cands.push(sub.est*2*fade(d));fat.push(`${d/2} projetado (${fmt(sub.est,true)}) ×2 c/ seu desgaste`);}}
+  if(!cands.length)return null;
+  return {est:Math.min(...cands),cands,fat};
+}
 function predicao(pro,comPct,est){
   const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[]; if(!alvos.length||!comPct||!comPct.length)return[];
   const pbs=(pro&&pro.pbs)||{};
   const pront=est&&est.pr?est.pr.score:null, dias=est&&est.pr?est.pr.dias:0, tend=est&&est.tend?est.tend.dir:'→';
   const aPr=pront!=null?Math.max(-1.5,Math.min(1.5,-(pront-72)*0.06))/100:0, aTend=tend==='↑'?-0.005:tend==='↓'?0.005:0;
-  const ajusta=t=>t*(1+aPr+aTend);
-  /* tempo de 50 projetado (melhores tiros de 50 + parcial de 25 ida+volta) */
-  const proj50=(e,pis)=>{const cs=[];const bt=melhorTempo(comPct,50,e,120);if(bt!=null)cs.push(bt*0.97);const t25=melhorTempo(comPct,25,e,120);if(t25!=null)cs.push(t25*2*1.03);
-    if(!cs.length)return null;let c=cs.reduce((s,x)=>s+x,0)/cs.length;const pb50=pbs[`50 ${e} ${pis}`];return pb50?Math.max(c,pb50*0.985):c;};
   const out=[];
   for(const a of alvos)for(const pis of ['SC25','LC50']){
     const pb=pbs[`${a.d} ${a.e} ${pis}`]; if(!pb)continue;
-    const cents=[], fat=[];
-    const bt=melhorTempo(comPct,a.d,a.e,120);                 // método 1: melhores tiros na prova
-    if(bt!=null){cents.push(bt*0.97); fat.push(`Melhores tiros de ${a.d} (~${(pb/bt*100).toFixed(0)}% do PB), afiados p/ prova`);}
-    if(a.d===50){const t25=melhorTempo(comPct,25,a.e,120);    // método 2 (50): parcial de 25 ida+volta
-      if(t25!=null){cents.push(t25*2*1.03); fat.push(`Parcial de 25m (melhor ~${fmt(t25,true)}) → ida+volta`);}}
-    else if(a.d===100){const p50=proj50(a.e,pis);             // método 2 (100): 50 projetado ×2 com desgaste
-      if(p50!=null){cents.push(p50*2*1.05); fat.push(`50 projetado (${fmt(p50,true)}) ×2 com desgaste`);}}
-    if(!cents.length)continue;
-    let central=Math.max(ajusta(cents.reduce((s,x)=>s+x,0)/cents.length),pb*0.985);
-    const spread=(cents.length>1?Math.abs(cents[0]-cents[1])/2:central*0.03)+central*0.02;
-    const low=Math.max(central-spread,pb*0.98), high=central+spread;
-    const nEff=comPct.filter(e=>e.dist===a.d&&e.estilo===a.e).length;
-    const c=Math.round(Math.min(85, Math.min(40,nEff*8)+(cents.length>1?20:0)+(pront!=null?Math.min(18,dias*1.2):0)+(bt!=null?12:0)));
-    if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
+    const re=raceEst(comPct,pbs,a.d,a.e); if(!re)continue;
+    let central=Math.max(re.est*1.015*(1+aPr+aTend), pb*0.985);   // + leve penalidade de não estar afinado; teto no PB
+    const band=(a.d<=50?0.025:a.d<=100?0.035:0.045)+(re.cands.length<2?0.01:0);
+    const low=Math.max(central*(1-band),pb*0.98), high=central*(1+band);
+    const disc=re.cands.length>1?Math.abs(Math.max(...re.cands)-Math.min(...re.cands))/central:0;
+    const nEff=comPct.filter(x=>x.dist===a.d&&x.estilo===a.e).length;
+    const c=Math.round(Math.min(85, Math.min(35,nEff*7)+(re.cands.length>1?Math.max(4,20-disc*120):8)+(pront!=null?Math.min(18,dias*1.2):0)+12));
+    const fat=[...re.fat]; if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
     out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),conf:c,fatores:fat});
   }
   return out.sort((x,y)=>y.conf-x.conf||x.d-y.d).slice(0,4);
@@ -3508,23 +3516,27 @@ function velocFingerprint(pro,comPct){
   if(!vals.length&&comPct.length){const s=comPct.map(x=>x.pct).sort((a,b)=>b-a),n=Math.max(1,Math.ceil(s.length*0.2));vals.push(s.slice(0,n).reduce((t,x)=>t+x,0)/n);}
   return vals.length?vals.reduce((t,x)=>t+x,0)/vals.length:null;
 }
-/* Manutenção = constância dos tempos em séries repetidas (coef. de variação).
-   Agrupa por dia+distância+estilo; CV% médio dos grupos com ≥3 tiros. Menor = melhor. */
+/* Manutenção = constância dos tempos numa SÉRIE (coef. de variação).
+   Agrupa por dia+distância+estilo e, dentro do grupo, considera só o "bloco de
+   qualidade" (tempos até 8% acima do mais rápido) — assim aquecimento/soltura no
+   mesmo dia não inflam a variação. CV% médio ponderado pelo tamanho da série. */
 function manutencaoCV(comPct){
   const g={};
   for(const e of comPct){const k=e.data+'|'+e.dist+'|'+e.estilo;(g[k]=g[k]||[]).push(e.tempo);}
-  const cvs=[];
-  for(const k in g){const a=g[k]; if(a.length<3)continue;
+  let somaCV=0,somaW=0;
+  for(const k in g){let a=g[k].slice().sort((x,y)=>x-y); const rap=a[0];
+    a=a.filter(t=>t<=rap*1.08); if(a.length<3)continue;
     const m=a.reduce((t,x)=>t+x,0)/a.length, sd=Math.sqrt(a.reduce((t,x)=>t+(x-m)*(x-m),0)/a.length);
-    if(m>0)cvs.push(sd/m*100);}
-  return cvs.length?cvs.reduce((t,x)=>t+x,0)/cvs.length:null;
+    if(m>0){somaCV+=(sd/m*100)*a.length; somaW+=a.length;}}
+  return somaW?somaCV/somaW:null;
 }
 function fingerprintDims(velPct,manutCV,pront,composicao,tend){
   const cl=v=>Math.max(0,Math.min(100,v));
   const gord=composicao&&composicao.gordura!=null?composicao.gordura:null;
+  const qCV=manutCV==null?'':(manutCV<2?'ótima':manutCV<3.5?'boa':manutCV<5?'ok':'a melhorar');
   return[
-    {eixo:'Velocidade', score: velPct!=null?Math.round(cl((velPct-70)/30*100)):null, txt: velPct!=null?velPct.toFixed(0)+'% PB (melhor)':'s/ dado'},
-    {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*16.7)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'%':'s/ dado'},
+    {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
+    {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
     {eixo:'Composição', score: gord!=null?Math.round(cl(100-(gord-8)*4)):null, txt: gord!=null?gord.toFixed(0)+'% gord.':'s/ dado'},
     {eixo:'Tendência', score: tend?(tend.dir==='↑'?80:tend.dir==='↓'?30:55):null, txt: tend?'capacidade '+tend.dir:'s/ dado'}
@@ -3532,19 +3544,23 @@ function fingerprintDims(velPct,manutCV,pront,composicao,tend){
 }
 function cardFingerprint(m){
   const dims=m&&m.fingerprint; if(!dims||dims.filter(d=>d.score!=null).length<3)return'';
-  const cx=110,cy=110,R=78, ang=i=>-90+i*72, pt=(i,r)=>[cx+r*Math.cos(ang(i)*Math.PI/180),cy+r*Math.sin(ang(i)*Math.PI/180)];
-  const poly=(r,fn)=>dims.map((d,i)=>{const[x,y]=pt(i,typeof r==='function'?r(d):r);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
+  const cx=125,cy=98,R=64, ang=i=>-90+i*72, rad=i=>ang(i)*Math.PI/180;
+  const pt=(i,r)=>[cx+r*Math.cos(rad(i)),cy+r*Math.sin(rad(i))];
+  const poly=r=>dims.map((d,i)=>{const[x,y]=pt(i,typeof r==='function'?r(d):r);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
   const rings=[0.25,0.5,0.75,1].map(f=>`<polygon points="${poly(R*f)}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join('');
   const axes=dims.map((d,i)=>{const[x,y]=pt(i,R);return`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;}).join('');
   const dataPoly=`<polygon points="${poly(d=>R*(d.score||0)/100)}" fill="var(--accent)" fill-opacity="0.22" stroke="var(--accent)" stroke-width="2"/>`;
   const dots=dims.map((d,i)=>{const[x,y]=pt(i,R*(d.score||0)/100);return d.score!=null?`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--accent)"/>`:'';}).join('');
-  const labels=dims.map((d,i)=>{const[x,y]=pt(i,R+15);const an=Math.abs(x-cx)<6?'middle':x>cx?'start':'end';return`<text x="${x.toFixed(1)}" y="${(y+ (y<cy?-2:10)).toFixed(1)}" text-anchor="${an}" font-size="10" fill="var(--ink-2)">${d.eixo}</text>`;}).join('');
-  const legenda=dims.map(d=>`<tr><td>${d.eixo}</td><td class="n" style="font-weight:700">${d.score!=null?d.score:'—'}</td><td class="xs muted">${d.txt}</td></tr>`).join('');
+  const labels=dims.map((d,i)=>{const[x,y]=pt(i,R+9);const dx=x-cx,dy=y-cy;
+    const an=Math.abs(dx)<8?'middle':dx>0?'start':'end';
+    const yy=y+(Math.abs(dy)<8?(dy<0?-6:12):dy<0?-4:11);
+    return`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="${an}" font-size="9.5" font-family="Barlow,sans-serif" fill="var(--ink-2)">${d.eixo}</text>`;}).join('');
+  const legenda=dims.map(d=>`<tr><td>${d.eixo}</td><td class="n" style="font-weight:700">${d.score!=null?d.score:'—'}</td><td class="xs muted" style="padding-left:8px">${d.txt}</td></tr>`).join('');
   return`<div class="card"><div class="eyebrow">assinatura de sprint</div>
-    <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo.</div>
-    <div style="display:flex;justify-content:center"><svg viewBox="0 0 220 220" style="width:230px;max-width:100%">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
+    <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo (mais longe do centro = melhor).</div>
+    <div style="display:flex;justify-content:center"><svg viewBox="0 0 250 196" style="width:100%;max-width:290px">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
-    <div class="xs muted" style="margin-top:6px">Velocidade=seus melhores tiros (%PB) · Manutenção=constância dos tempos repetidos (menor variação = melhor) · Recuperação=prontidão · Composição=%gordura · Tendência=direção da capacidade. Eixo "s/ dado" fica no centro.</div>
+    <div class="xs muted" style="margin-top:6px">Velocidade=%PB dos seus melhores tiros · Manutenção=constância dos tempos numa série (menor variação = melhor) · Recuperação=prontidão · Composição=%gordura · Tendência=direção da capacidade. Eixo "s/ dado" fica no centro.</div>
   </div>`;
 }
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
