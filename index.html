@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v15</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v16</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v15';
+const VER='v16';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -2678,10 +2678,12 @@ async function apagarSeco(id){S.pro.seco=S.pro.seco.filter(x=>x.id!==id);await s
    PRO — RELATÓRIO DE PERFORMANCE
    ===================================================================== */
 async function coletarEsforcos(){
-  const out=[];
+  const out=[]; const ses=[];
   for(const meta of S.tridx.filter(t=>(t.para||[]).includes(S.u.id)).slice(0,25)){
     const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
     if(!treinoFeito(t,S.u.id))continue;   /* só consolida treino marcado como feito */
+    const sj=t.sessao&&t.sessao[S.u.id];
+    if(sj&&sj.rpe!=null&&sj.dur)ses.push({data:t.data,tipo:'natação',load:sj.rpe*sj.dur});
     for(const b of t.blocos||[])for(const i of b.itens){
       const r=t.registros?.[S.u.id]?.[i.id]; if(!r)continue;
       const series=(i.rodadas||1)>1?(r.rd||[]):[r];
@@ -2690,9 +2692,32 @@ async function coletarEsforcos(){
           p1:i.parcial?(s.parciais?.[k]??null):null,forte:i.forte,vol:i.vol})});
     }
   }
+  SESSOES=ses;
   return out.sort((a,b)=>a.data.localeCompare(b.data));
 }
-let ESF=null;
+let ESF=null, SESSOES=[];
+/* Carga total (session-RPE = duração × RPE) por modalidade, últimos N dias */
+function cargaTotal(dias){
+  dias=dias||28; const h0=new Date(hoje()+'T00:00:00');
+  const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
+  let natacao=0,forca=0;
+  for(const s of (SESSOES||[]))if(dentro(s.data))natacao+=s.load;
+  for(const s of ((S.pro&&S.pro.seco)||[]))if(s.rpe!=null&&s.dur&&dentro(s.data))forca+=s.rpe*s.dur;
+  const total=natacao+forca;
+  return total>0?{natacao:Math.round(natacao),forca:Math.round(forca),total:Math.round(total)}:null;
+}
+function cardCargaTotal(){
+  const c=cargaTotal(28); if(!c)return'';
+  const pN=c.total?Math.round(c.natacao/c.total*100):0;
+  return`<div class="card"><div class="eyebrow">carga total — 28 dias</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${c.total}</div><div class="l">total (UA)</div></div>
+      <div class="kpi"><div class="v">${c.natacao}</div><div class="l">natação ${pN}%</div></div>
+      <div class="kpi"><div class="v">${c.forca}</div><div class="l">força ${100-pN}%</div></div>
+    </div>
+    <div class="xs muted" style="margin-top:8px">Carga da sessão = <b>duração × RPE</b> (UA = unidades arbitrárias). Põe natação e musculação na mesma escala. Preencha RPE e duração ao concluir cada treino e cada sessão de força.</div>
+  </div>`;
+}
 /* ---------- exames laboratoriais ---------- */
 /* ─────────────────────────────────────────────────────────────
    MARCADORES LABORATORIAIS
@@ -2867,6 +2892,7 @@ function dadosParaLaudo(motor){
     acwr:motor.carga?+motor.carga.acwr.toFixed(2):null,
     speedDropPct:motor.speedDrop,
     composicao:motor.composicao,
+    cargaTotal28d:motor.cargaTotal,
     confiancaModelo:motor.confianca
   };
   return out;
@@ -3255,6 +3281,43 @@ function cardCorrelacoes(pro,comPct){
   html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico — quanto mais dados, mais confiável. É associação, não causa.</div></div>`;
   return html;
 }
+/* ── BASELINE INDIVIDUAL MÓVEL ──────────────────────────────────────────────
+   Compara o valor recente de cada variável com a linha de base do atleta. */
+function baselineSerie(pts,janela,recentes){
+  if(!pts||!pts.length)return null;
+  const s=[...pts].sort((a,b)=>b.data.localeCompare(a.data));
+  const h0=new Date(hoje()+'T00:00:00'), dd=d=>(h0-new Date(d+'T00:00:00'))/86400000;
+  const at=s.slice(0,recentes||3), base=s.filter(p=>dd(p.data)<(janela||28));
+  if(!at.length||base.length<3)return null;
+  const avg=a=>a.reduce((t,x)=>t+x.v,0)/a.length;
+  const a=avg(at), b=avg(base);
+  return {atual:a,base:b,desvio:b?(a-b)/b*100:0,n:base.length};
+}
+function baselinesResumo(pro,comPct){
+  const gar=pro.garmin||[], bio=(pro.bioimp||[]).filter(b=>!bioSuspeita(b));
+  const spec=[
+    ['VFC','ms',1, gar.filter(x=>x.hrv!=null).map(x=>({data:x.data,v:x.hrv})),1],
+    ['FC repouso','bpm',-1, gar.filter(x=>x.fc!=null).map(x=>({data:x.data,v:x.fc})),1],
+    ['Sono','h',1, gar.filter(x=>x.sono!=null).map(x=>({data:x.data,v:x.sono})),1],
+    ['Peso','kg',0, bio.filter(b=>b.peso!=null).map(b=>({data:b.data,v:b.peso})),1],
+    ['Massa magra','kg',1, bio.filter(b=>b.peso!=null&&b.gordura!=null).map(b=>({data:b.data,v:+(b.peso*(1-b.gordura/100)).toFixed(1)})),1],
+    ['%PB','%',1, (comPct||[]).map(e=>({data:e.data,v:e.pct})),0]
+  ];
+  return spec.map(([nome,un,sinal,pts,dec])=>{const bl=baselineSerie(pts,28,nome==='%PB'?5:3);return bl?{nome,un,sinal,dec,atual:bl.atual,desvio:bl.desvio,n:bl.n}:null}).filter(Boolean);
+}
+function cardBaseline(pro,comPct){
+  const rs=baselinesResumo(pro,comPct); if(!rs.length)return'';
+  const linhas=rs.map(r=>{const d=r.desvio, seta=d>1?'↑':d<-1?'↓':'→';
+    const fav=r.sinal===0?null:(r.sinal>0?d>0:d<0);
+    const cor=fav==null?'var(--ink-2)':(fav?'var(--ok)':(Math.abs(d)>1?'var(--clock)':'var(--ink-2)'));
+    return`<tr><td>${r.nome}</td><td class="n" style="font-weight:700">${r.atual.toFixed(r.dec)}${r.un==='%'?'%':' '+r.un}</td>
+      <td class="n" style="color:${cor}">${seta} ${d>=0?'+':''}${d.toFixed(0)}%</td></tr>`;}).join('');
+  return`<div class="card"><div class="eyebrow">seu estado atual</div>
+    <div class="small muted" style="margin:4px 0 6px">Valor recente comparado à sua linha de base de 28 dias.</div>
+    <table><thead><tr><th>indicador</th><th class="n">agora</th><th class="n">vs base 28d</th></tr></thead><tbody>${linhas}</tbody></table>
+    <div class="xs muted" style="margin-top:8px">Verde = variação favorável para você; vermelho = desfavorável. Peso é neutro (depende do objetivo).</div>
+  </div>`;
+}
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
    Um só lugar que calcula tudo; relatório e laudo por IA consomem isto. */
 function motorPerformance(pro,comPct,sem,brk){
@@ -3268,7 +3331,7 @@ function motorPerformance(pro,comPct,sem,brk){
   const composicao=ult?{peso:ult.peso,gordura:ult.gordura,massaMagra:ult.gordura!=null?+(ult.peso*(1-ult.gordura/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
-  return {estado:est,carga,correlacoes:corr,speedDrop:sd,composicao,inventario:inv,confianca:Math.round(Math.min(100,pts))};
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),correlacoes:corr,speedDrop:sd,composicao,inventario:inv,confianca:Math.round(Math.min(100,pts))};
 }
 function cardModelo(m){
   const iv=m.inventario, nf=m.confianca>=70?'boa':m.confianca>=40?'parcial':'inicial';
@@ -3324,6 +3387,7 @@ function telaRelatorio(){
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
   ${cardModelo(motorPerformance(pro,comPct,sem,brk))}
   ${cardEstado(pro,comPct,sem)}
+  ${cardBaseline(pro,comPct)}
   ${laudoConsolidado(pro,diag,comPct,brk,sem)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <div class="card"><div class="eyebrow">panorama</div>
@@ -3339,6 +3403,7 @@ function telaRelatorio(){
     <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b>${(function(){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);if(!a.length)return'';const d=a.reduce((t,x)=>t+x,0)/a.length;return` · queda de velocidade média <b class="t">${d.toFixed(1)}%</b>`})()}</div>
   </div>`:''}
   ${cardCarga()}
+  ${cardCargaTotal()}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
   <div class="card"><div class="eyebrow">diagnóstico</div>
