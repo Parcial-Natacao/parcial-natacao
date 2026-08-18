@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v18</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v19</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v18';
+const VER='v19';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -2568,7 +2568,8 @@ function telaGarmin(){
     ${seco.length?`<div class="sep"></div>${seco.slice(0,8).map(s=>`<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)">
       ${s.arquivo?`<a href="${s.arquivo}" target="_blank" rel="noopener" class="av" style="text-decoration:none">📄</a>`:(s.img?`<img src="${s.img}" style="width:52px;height:52px;object-fit:cover;border-radius:9px;border:1px solid var(--line)">`:'<div class="av">◻</div>')}
       <div class="grow"><b>${esc(s.tipo)}</b><div class="xs muted">${brData(s.data)}${s.obs?' · '+esc(s.obs):''}</div>
-        ${s.transcricao?`<div class="xs" style="margin-top:3px;white-space:pre-wrap;color:var(--ink-2)">${esc(s.transcricao)}</div>`:''}</div>
+        ${s.transcricao?`<div class="xs" style="margin-top:3px;white-space:pre-wrap;color:var(--ink-2)">${esc(s.transcricao)}</div>`:''}
+        ${(()=>{const f=parseForca(s.transcricao||s.texto||'');return f.tonelagem>0?`<div class="xs" style="margin-top:2px;color:var(--ok)">tonelagem ~${f.tonelagem.toLocaleString('pt-BR')} kg${(s.rpe!=null&&s.dur)?` · carga ${s.rpe*s.dur} UA`:''}</div>`:'';})()}</div>
       <button class="sm ghost" onclick="apagarSeco('${s.id}')">✕</button></div>`).join('')}`:''}
   </div><div style="height:20px"></div>`;
 }
@@ -2716,7 +2717,35 @@ function cardCargaTotal(){
       <div class="kpi"><div class="v">${c.forca}</div><div class="l">força ${100-pN}%</div></div>
     </div>
     <div class="xs muted" style="margin-top:8px">Carga da sessão = <b>duração × RPE</b> (UA = unidades arbitrárias). Põe natação e musculação na mesma escala. Preencha RPE e duração ao concluir cada treino e cada sessão de força.</div>
+    ${(()=>{const t=tonelagem(28);return t?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>Tonelagem de força (28d):</b> ~${t.total.toLocaleString('pt-BR')} kg em ${t.sessoes} sessão(ões) — volume real de musculação (séries×reps×carga), quando a ficha traz as cargas.</div>`:'';})()}
   </div>`;
+}
+/* Força estruturada: transcrição livre da ficha → {exercício, séries, reps, carga}
+   → tonelagem (séries×reps×carga). Best-effort; ignora exercícios sem carga (peso
+   do corpo, tempo). Refina o session-RPE com a carga real de musculação. */
+function parseForca(txt){
+  if(!txt)return{itens:[],tonelagem:0};
+  const itens=[]; let ton=0;
+  for(let ln of String(txt).split(/\n|;/)){
+    ln=ln.trim(); if(!ln)continue;
+    const m=ln.match(/(\d{1,2})\s*[x×]\s*(\d{1,3})/i); if(!m)continue;
+    const series=+m[1], reps=+m[2], resto=ln.slice(m.index+m[0].length);
+    const seg=/(\d{1,3})\s*s\b/i.test(resto);                 // reps em segundos → sem tonelagem
+    let carga=null; const mk=ln.match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*kg\b/i)||(!seg&&resto.match(/[-–]?\s*(\d{1,3}(?:[.,]\d{1,2})?)\b/));
+    if(mk)carga=parseFloat(mk[1].replace(',','.'));
+    const ex=ln.slice(0,m.index).replace(/[-–:]+$/,'').trim()||'exercício';
+    const t=(carga&&!seg)?series*reps*carga:0; ton+=t;
+    itens.push({ex,series,reps,carga:seg?null:carga,ton:Math.round(t)});
+  }
+  return{itens,tonelagem:Math.round(ton)};
+}
+function tonelagem(dias){
+  dias=dias||28; const h0=new Date(hoje()+'T00:00:00');
+  const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
+  let total=0,n=0;
+  for(const s of ((S.pro&&S.pro.seco)||[])){ if(!s.data||!dentro(s.data))continue;
+    const f=parseForca(s.transcricao||s.texto||s.obs||''); if(f.tonelagem>0){total+=f.tonelagem;n++;} }
+  return total>0?{total:Math.round(total),sessoes:n}:null;
 }
 /* ---------- exames laboratoriais ---------- */
 /* ─────────────────────────────────────────────────────────────
@@ -2895,6 +2924,10 @@ function dadosParaLaudo(motor){
     cargaTotal28d:motor.cargaTotal,
     baselines:(motor.baselines||[]).map(b=>({indicador:b.nome,agora:+b.atual.toFixed(b.dec),desvioPct:+b.desvio.toFixed(0)})),
     predicoes:(motor.predicoes||[]).map(p=>({prova:p.prova,faixa:fmt(p.low)+'–'+fmt(p.high),central:fmt(p.central),pb:fmt(p.pb),confianca:p.conf})),
+    fingerprint:(motor.fingerprint||[]).filter(d=>d.score!=null).map(d=>({eixo:d.eixo,score:d.score})),
+    mudancas28d:(motor.mudancas&&motor.mudancas.movers||[]).map(x=>({indicador:x.nome,deltaPct:+x.dPct.toFixed(0)})),
+    porqueMudou:(motor.mudancas&&motor.mudancas.porque)||[],
+    tonelagem28d:motor.tonelagem28d?motor.tonelagem28d.total:null,
     confiancaModelo:motor.confianca
   };
   return out;
@@ -3362,6 +3395,85 @@ function cardPredicao(pro,comPct,est){
     <div class="xs muted" style="margin-top:8px">Mais tiros recentes na prova e mais dias de VFC ⇒ mais confiança. A faixa reflete a variação dos seus tempos.</div>
   </div>`;
 }
+/* ── O QUE MUDOU EM 28 DIAS + POR QUÊ ───────────────────────────────────────
+   Compara a janela atual (0–28d) com a anterior (28–56d) por variável e liga a
+   mudança de capacidade à recuperação/carga (decomposição, não causa provada). */
+function janelaStat(pts,ini,fim,mode){
+  const h0=new Date(hoje()+'T00:00:00'), dd=d=>(h0-new Date(d+'T00:00:00'))/86400000;
+  const s=pts.filter(p=>{const x=dd(p.data);return x>=ini&&x<fim;}).map(p=>p.v);
+  if(!s.length)return null;
+  return mode==='sum'?s.reduce((t,x)=>t+x,0):s.reduce((t,x)=>t+x,0)/s.length;
+}
+function mudancas28d(pro,comPct){
+  const gar=pro.garmin||[], bio=(pro.bioimp||[]).filter(b=>!bioSuspeita(b)), carga=[];
+  for(const s of (SESSOES||[]))carga.push({data:s.data,v:s.load});
+  for(const s of (pro.seco||[]))if(s.rpe!=null&&s.dur&&s.data)carga.push({data:s.data,v:s.rpe*s.dur});
+  const spec=[
+    ['Capacidade (%PB)',1,'%',0,'avg',(comPct||[]).map(e=>({data:e.data,v:e.pct}))],
+    ['VFC',1,'ms',0,'avg',gar.filter(x=>x.hrv!=null).map(x=>({data:x.data,v:x.hrv}))],
+    ['FC repouso',-1,'bpm',0,'avg',gar.filter(x=>x.fc!=null).map(x=>({data:x.data,v:x.fc}))],
+    ['Sono',1,'h',1,'avg',gar.filter(x=>x.sono!=null).map(x=>({data:x.data,v:x.sono}))],
+    ['Carga (UA)',0,'',0,'sum',carga],
+    ['Peso',0,'kg',1,'avg',bio.filter(b=>b.peso!=null).map(b=>({data:b.data,v:b.peso}))],
+    ['Massa magra',1,'kg',1,'avg',bio.filter(b=>b.peso!=null&&b.gordura!=null).map(b=>({data:b.data,v:+(b.peso*(1-b.gordura/100)).toFixed(1)}))]
+  ];
+  const mov=[];
+  for(const[nome,sinal,un,dec,mode,pts]of spec){
+    const a=janelaStat(pts,0,28,mode), b=janelaStat(pts,28,56,mode);
+    if(a==null||b==null)continue;
+    const dPct=b?(a-b)/Math.abs(b)*100:0; if(Math.abs(dPct)<1)continue;
+    mov.push({nome,sinal,un,dec,atual:a,anterior:b,dPct});
+  }
+  mov.sort((x,y)=>Math.abs(y.dPct)-Math.abs(x.dPct));
+  const cap=mov.find(m=>m.nome[0]==='C'&&m.nome.indexOf('apac')>0), vfc=mov.find(m=>m.nome==='VFC'), cg=mov.find(m=>m.nome.indexOf('Carga')===0);
+  const porque=[];
+  if(cap){let f=`Capacidade ${cap.dPct>0?'subiu':'caiu'} ${Math.abs(cap.dPct).toFixed(0)}%`;
+    if(cap.dPct>0)f+=vfc&&vfc.dPct>0?' — recuperação (VFC) melhor sustentou o ganho.':cg&&cg.dPct>0?' — respondeu bem ao aumento de carga.':'.';
+    else f+=cg&&cg.dPct>10?' — pode refletir fadiga do aumento de carga.':vfc&&vfc.dPct<0?' — recuperação (VFC) mais baixa acompanhou a queda.':'.';
+    porque.push(f);}
+  return{movers:mov.slice(0,6),porque};
+}
+function cardMudancas(pro,comPct){
+  const m=mudancas28d(pro,comPct); if(!m.movers.length)return'';
+  const linhas=m.movers.map(x=>{const seta=x.dPct>0.5?'↑':x.dPct<-0.5?'↓':'→';
+    const fav=x.sinal===0?null:(x.sinal>0?x.dPct>0:x.dPct<0);
+    const cor=fav==null?'var(--ink-2)':(fav?'var(--ok)':'var(--clock)');
+    return`<tr><td>${x.nome}</td><td class="n">${x.anterior.toFixed(x.dec)}${x.un?' '+x.un:''}</td><td class="n" style="font-weight:700">${x.atual.toFixed(x.dec)}${x.un?' '+x.un:''}</td><td class="n" style="color:${cor}">${seta} ${x.dPct>=0?'+':''}${x.dPct.toFixed(0)}%</td></tr>`;}).join('');
+  return`<div class="card"><div class="eyebrow">o que mudou — últimos 28 dias</div>
+    <div class="small muted" style="margin:4px 0 6px">Janela atual (0–28 dias) comparada à anterior (28–56 dias).</div>
+    <table><thead><tr><th>indicador</th><th class="n">antes</th><th class="n">agora</th><th class="n">Δ</th></tr></thead><tbody>${linhas}</tbody></table>
+    ${m.porque.length?`<div class="note" style="margin-top:10px"><b>Por quê:</b> ${m.porque.join(' ')} <span class="muted">(leitura de apoio, não causa comprovada)</span></div>`:''}
+  </div>`;
+}
+/* ── SPRINT FINGERPRINT (radar) — só dimensões observáveis ───────────────────*/
+function fingerprintDims(cap,speedDrop,pront,composicao,tend){
+  const cl=v=>Math.max(0,Math.min(100,v));
+  const gord=composicao&&composicao.gordura!=null?composicao.gordura:null;
+  return[
+    {eixo:'Velocidade', score: cap!=null?Math.round(cl((cap-85)/13*100)):null, txt: cap!=null?cap.toFixed(0)+'% PB':'s/ dado'},
+    {eixo:'Manutenção', score: speedDrop!=null?Math.round(cl(100-speedDrop*6)):null, txt: speedDrop!=null?'queda '+speedDrop.toFixed(0)+'%':'s/ dado'},
+    {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
+    {eixo:'Composição', score: gord!=null?Math.round(cl(100-(gord-8)*4)):null, txt: gord!=null?gord.toFixed(0)+'% gord.':'s/ dado'},
+    {eixo:'Tendência', score: tend?(tend.dir==='↑'?80:tend.dir==='↓'?30:55):null, txt: tend?'capacidade '+tend.dir:'s/ dado'}
+  ];
+}
+function cardFingerprint(m){
+  const dims=m&&m.fingerprint; if(!dims||dims.filter(d=>d.score!=null).length<3)return'';
+  const cx=110,cy=110,R=78, ang=i=>-90+i*72, pt=(i,r)=>[cx+r*Math.cos(ang(i)*Math.PI/180),cy+r*Math.sin(ang(i)*Math.PI/180)];
+  const poly=(r,fn)=>dims.map((d,i)=>{const[x,y]=pt(i,typeof r==='function'?r(d):r);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
+  const rings=[0.25,0.5,0.75,1].map(f=>`<polygon points="${poly(R*f)}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join('');
+  const axes=dims.map((d,i)=>{const[x,y]=pt(i,R);return`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;}).join('');
+  const dataPoly=`<polygon points="${poly(d=>R*(d.score||0)/100)}" fill="var(--accent)" fill-opacity="0.22" stroke="var(--accent)" stroke-width="2"/>`;
+  const dots=dims.map((d,i)=>{const[x,y]=pt(i,R*(d.score||0)/100);return d.score!=null?`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--accent)"/>`:'';}).join('');
+  const labels=dims.map((d,i)=>{const[x,y]=pt(i,R+15);const an=Math.abs(x-cx)<6?'middle':x>cx?'start':'end';return`<text x="${x.toFixed(1)}" y="${(y+ (y<cy?-2:10)).toFixed(1)}" text-anchor="${an}" font-size="10" fill="var(--ink-2)">${d.eixo}</text>`;}).join('');
+  const legenda=dims.map(d=>`<tr><td>${d.eixo}</td><td class="n" style="font-weight:700">${d.score!=null?d.score:'—'}</td><td class="xs muted">${d.txt}</td></tr>`).join('');
+  return`<div class="card"><div class="eyebrow">assinatura de sprint</div>
+    <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo.</div>
+    <div style="display:flex;justify-content:center"><svg viewBox="0 0 220 220" style="width:230px;max-width:100%">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
+    <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
+    <div class="xs muted" style="margin-top:6px">Velocidade=%PB médio · Manutenção=queda do 2º 25 · Recuperação=prontidão · Composição=%gordura · Tendência=direção da capacidade. Eixo "s/ dado" fica no centro.</div>
+  </div>`;
+}
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
    Um só lugar que calcula tudo; relatório e laudo por IA consomem isto. */
 function motorPerformance(pro,comPct,sem,brk){
@@ -3375,7 +3487,7 @@ function motorPerformance(pro,comPct,sem,brk){
   const composicao=ult?{peso:ult.peso,gordura:ult.gordura,massaMagra:ult.gordura!=null?+(ult.peso*(1-ult.gordura/100)).toFixed(1):null,imc:imcDe(ult),tmb:tmbDe(ult)}:null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
-  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),inventario:inv,confianca:Math.round(Math.min(100,pts))};
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(est.cap?est.cap.score:null,sd,est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),inventario:inv,confianca:Math.round(Math.min(100,pts))};
 }
 function cardModelo(m){
   const iv=m.inventario, nf=m.confianca>=70?'boa':m.confianca>=40?'parcial':'inicial';
@@ -3424,15 +3536,18 @@ function telaRelatorio(){
   const brk=int.filter(e=>e.p1!=null&&e.dist===50).map(e=>({...e,delta:e.tempo-2*e.p1}));
   const sem=volumePorSemana();
   const diag=diagnostico(comPct,brk,sem,pro);
+  const motor=motorPerformance(pro,comPct,sem,brk);
   return`
   <div class="row noprint" style="margin:16px 0 6px"><h2>Relatório</h2><div class="grow"></div>
     <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
     <button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
-  ${cardModelo(motorPerformance(pro,comPct,sem,brk))}
+  ${cardModelo(motor)}
   ${cardEstado(pro,comPct,sem)}
+  ${cardFingerprint(motor)}
   ${cardBaseline(pro,comPct)}
-  ${cardPredicao(pro,comPct,estadoPerformance(pro,comPct,sem))}
+  ${cardMudancas(pro,comPct)}
+  ${cardPredicao(pro,comPct,motor.estado)}
   ${laudoConsolidado(pro,diag,comPct,brk,sem)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <div class="card"><div class="eyebrow">panorama</div>
