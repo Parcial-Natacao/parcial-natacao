@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v12</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v13</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v12';
+const VER='v13';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -3166,6 +3166,57 @@ function cardCarga(){
     <div class="xs muted" style="margin-top:6px">Compara o volume da última semana com a sua média das últimas quatro. Acima de 1,5 costuma indicar salto de carga (mais risco); abaixo de 0,8, pouco estímulo.</div>
   </div>`;
 }
+/* ── CORRELAÇÕES: cruza o histórico do próprio atleta ──────────────────────── */
+function garminNaData(pro,dataISO,campo){
+  const g=(pro.garmin||[]).filter(x=>x[campo]!=null);
+  let best=null,bd=99;
+  for(const x of g){const d=Math.abs((new Date(dataISO)-new Date(x.data))/86400000); if(d<=3&&d<bd){bd=d;best=x[campo];}}
+  return best;
+}
+function correlacoes(pro,comPct){
+  const out={rec:null,carga:null};
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+  /* Recuperação × desempenho: %PB por estado de VFC no dia do tiro */
+  const hrvAll=(pro.garmin||[]).filter(x=>x.hrv!=null).map(x=>x.hrv);
+  if(hrvAll.length>=6&&comPct.length>=6){
+    const base=avg(hrvAll), b={bom:[],neutro:[],ruim:[]};
+    for(const e of comPct){const hv=garminNaData(pro,e.data,'hrv'); if(hv==null)continue; const dev=(hv-base)/base*100; (dev>4?b.bom:dev<-4?b.ruim:b.neutro).push(e.pct);}
+    if(b.bom.length>=2||b.ruim.length>=2){
+      const rB=avg(b.bom),rR=avg(b.ruim);
+      out.rec={bom:{n:b.bom.length,pct:avg(b.bom)},neutro:{n:b.neutro.length,pct:avg(b.neutro)},ruim:{n:b.ruim.length,pct:avg(b.ruim)},
+        insight:(b.bom.length>=2&&b.ruim.length>=2&&rB!=null&&rR!=null)?(rB-rR>1.5?`Com recuperação boa você nada em média <b>${(rB-rR).toFixed(0)}%</b> mais perto do seu melhor tempo do que com recuperação ruim.`:'Sem diferença clara entre recuperação boa e ruim ainda.'):null};
+    }
+  }
+  /* Carga × desempenho: %PB médio por faixa de carga semanal */
+  const semKey=d=>{const dt=new Date(d+'T00:00:00'),on=new Date(dt);on.setDate(dt.getDate()-((dt.getDay()+6)%7));return on.toISOString().slice(0,10);};
+  const loadSem={},pctSem={};
+  for(const t of S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&t.data))loadSem[semKey(t.data)]=(loadSem[semKey(t.data)]||0)+(t.vol||0);
+  for(const e of comPct){const k=semKey(e.data);(pctSem[k]=pctSem[k]||[]).push(e.pct);}
+  const semanas=Object.keys(pctSem).map(k=>({load:loadSem[k]||0,pct:avg(pctSem[k])})).filter(s=>s.load>0);
+  if(semanas.length>=4){
+    semanas.sort((a,b)=>a.load-b.load);
+    const t=Math.ceil(semanas.length/3), bx=[semanas.slice(0,t),semanas.slice(t,2*t),semanas.slice(2*t)];
+    const faixas=bx.map((b,i)=>({nome:['baixa','média','alta'][i],load:avg(b.map(x=>x.load)),pct:avg(b.map(x=>x.pct)),n:b.length})).filter(f=>f.pct!=null);
+    if(faixas.length>=2)out.carga={faixas,melhor:faixas.slice().sort((a,b)=>b.pct-a.pct)[0]};
+  }
+  return out;
+}
+function cardCorrelacoes(pro,comPct){
+  const c=correlacoes(pro,comPct);
+  if(!c.rec&&!c.carga)return'';
+  let html=`<div class="card"><div class="eyebrow">correlações</div>`;
+  if(c.rec){const r=c.rec, lin=(nome,o)=>o&&o.n>=2?`<tr><td>${nome}</td><td class="n">${o.n}</td><td class="n" style="font-weight:700">${o.pct.toFixed(0)}%</td></tr>`:'';
+    html+=`<h3 style="margin:8px 0 4px">Recuperação × desempenho</h3>
+      <table><thead><tr><th>recuperação</th><th class="n">tiros</th><th class="n">%PB méd</th></tr></thead><tbody>${lin('boa',r.bom)}${lin('neutra',r.neutro)}${lin('ruim',r.ruim)}</tbody></table>
+      ${r.insight?`<div class="note" style="margin-top:8px">${r.insight}</div>`:''}`;}
+  if(c.carga){const cg=c.carga;
+    html+=`<h3 style="margin:12px 0 4px">Carga × desempenho</h3>
+      <table><thead><tr><th>carga semanal</th><th class="n">volume</th><th class="n">%PB méd</th></tr></thead><tbody>
+      ${cg.faixas.map(f=>`<tr><td>${f.nome}</td><td class="n">${(f.load/1000).toFixed(1)}k</td><td class="n" style="font-weight:700">${f.pct.toFixed(0)}%</td></tr>`).join('')}</tbody></table>
+      ${cg.melhor?`<div class="note" style="margin-top:8px">Seus melhores %PB aparecem na carga <b>${cg.melhor.nome}</b> (~${(cg.melhor.load/1000).toFixed(1)}k/semana) — faixa aparentemente mais produtiva para você.</div>`:''}`;}
+  html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico — quanto mais dados, mais confiável. É associação, não causa.</div></div>`;
+  return html;
+}
 function laudoConsolidado(pro,diag,comPct,brk,sem){
   const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
   const ev=evolucaoProvas(pro),evoluiu=ev.filter(e=>e.melhora),regr=ev.filter(e=>!e.melhora);
@@ -3245,6 +3296,7 @@ function telaRelatorio(){
     })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
   ${cardComposicaoRelativa(pro)}
   ${cardEvolucao(pro,'evolução em competições')}
+  ${cardCorrelacoes(pro,comPct)}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
   <div style="height:20px"></div>`;
