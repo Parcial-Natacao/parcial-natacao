@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v10</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v12</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v10';
+const VER='v12';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -658,7 +658,7 @@ async function carregarDados(){
   else if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
-  if(S.u.perfil==='pro')S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  if(S.u.perfil==='pro'||S.u.podeMarcas)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
 async function sincronizar(sil){
@@ -681,7 +681,7 @@ function ligarSincronia(){
     clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!S.escrevendo)sincronizar(true)},350);
   },e=>console.warn('sync',e.message));
 }
-async function salvarPro(){ if(S.u?.perfil==='pro')await DB.set(kPro(S.u.id),S.pro) }
+async function salvarPro(){ if(S.u&&(S.u.perfil==='pro'||S.u.podeMarcas))await DB.set(kPro(S.u.id),S.pro) }
 
 /* =====================================================================
    TELAS DE ENTRADA
@@ -889,7 +889,9 @@ function render(){
     ?{treinos:telaTreinosTec,elenco:telaElenco,competicao:(S.u.perfil==='pro'&&S.compAtletaMode)?telaCompAtleta:telaCompeticao}
     :S.u.perfil==='pro'
       ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio,store:telaStore}
-      :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,store:telaStore};
+      :S.u.podeMarcas
+        ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,store:telaStore}
+        :{treinos:telaTreinosAtleta,competicao:telaCompAtleta,store:telaStore};
   app.innerHTML=(mapa[S.aba]||Object.values(mapa)[0])();
 }
 /* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
@@ -899,7 +901,9 @@ function navBar(){
     ?[['treinos','≡','Treinos'],['elenco','◎','Elenco'],['competicao','▲','Competição']]
     :S.u.perfil==='pro'
       ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório'],['store','▣','Store']]
-      :[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['store','▣','Store']];
+      :S.u.podeMarcas
+        ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['store','▣','Store']]
+        :[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['store','▣','Store']];
   document.getElementById('nav').classList.remove('hide');
   document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
     `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
@@ -1151,11 +1155,16 @@ async function abrirTreino(id){
   push(); S.treino=await DB.get(kTr(S.u.equipe,id)); S.sub='detalhe'; render(); window.scrollTo(0,0);
 }
 
-async function marcarFeito(treinoId,atId,v){
+function temposDoAtleta(t,atId){const r=t&&t.registros&&t.registros[atId]; if(!r)return false;
+  return Object.values(r).some(x=>(x.tempos&&x.tempos.some(v=>v!=null))||(x.rd&&x.rd.some(rr=>(rr.tempos||[]).some(v=>v!=null)))||x.ritmo100!=null);}
+/* treino "feito": marcado explicitamente, ou tem tempos lançados (e não foi desmarcado) */
+function treinoFeito(t,atId){ if(t&&t.feito&&t.feito[atId]===true)return true; if(t&&t.feito&&t.feito[atId]===false)return false; return temposDoAtleta(t,atId); }
+async function toggleFeito(treinoId,atId){
   const t=await DB.get(kTr(S.u.equipe,treinoId))||S.treino;
-  t.feito=t.feito||{}; t.feito[atId]=v; t.atualizado=Date.now();
+  const novo=!treinoFeito(t,atId);
+  t.feito=t.feito||{}; t.feito[atId]=novo; t.atualizado=Date.now();
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
-  toast(v?'Marcado como feito':'Fora da consolidação'); render();
+  toast(novo?'Treino feito ✓':'Fora da consolidação'); render();
 }
 function telaTreinoDetalhe(){
   const t=S.treino,tec=ehGestor();
@@ -1172,11 +1181,10 @@ function telaTreinoDetalhe(){
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
   ${t.pdf?`<a class="btnlink" href="${t.pdf}" target="_blank" rel="noopener" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`:''}
-  ${at?`<div class="card tight" style="margin-top:8px"><div class="row">
-    <span class="grow"><b>Fiz este treino</b><div class="xs muted">${(t.feito&&t.feito[at.id]===false)?'marcado como NÃO feito — fora da consolidação':'marque "Não fiz" para tirar do relatório'}</div></span>
-    <button class="sm ${!(t.feito&&t.feito[at.id]===false)?'primary':'ghost'}" onclick="marcarFeito('${t.id}','${at.id}',true)">✓ Fiz</button>
-    <button class="sm ${(t.feito&&t.feito[at.id]===false)?'primary':'ghost'}" onclick="marcarFeito('${t.id}','${at.id}',false)">Não fiz</button>
-  </div></div>`:''}
+  ${at?(function(){const fz=treinoFeito(t,at.id);return`<div class="card tight" style="margin-top:8px"><div class="row">
+    <span class="grow"><b>${fz?'Treino feito':'Marcar como feito'}</b><div class="xs muted">${fz?'consolidado no relatório de performance':'marque quando terminar — só então entra no relatório'}</div></span>
+    <button class="sm" style="${fz?'background:var(--ok);color:#fff;font-weight:800':''}" onclick="toggleFeito('${t.id}','${at.id}')">${fz?'✓ Feito':'Feito'}</button>
+  </div></div>`})():''}
   ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
   </div></div>`:''}
@@ -1497,6 +1505,9 @@ function telaAtletaDetalhe(){
     <div class="eyebrow">nível</div>
     <div class="opt" style="margin-top:8px">${NIVEIS.map(n=>`<button class="${a.nivel===n?'on':''}" onclick="mudarNivel('${a.id}','${n}')">${n}</button>`).join('')}</div>
   </div>
+  ${a.perfil!=='pro'?`<div class="card"><div class="row">
+    <span class="grow"><b>Pode inserir Marcas</b><div class="xs muted">${a.podeMarcas?'tem a aba Marcas e importa o currículo da ABMN':'libera a aba Marcas + importação do currículo da ABMN'}</div></span>
+    <button class="sm" style="${a.podeMarcas?'background:var(--ok);color:#fff;font-weight:800':''}" onclick="togglePodeMarcas('${a.id}')">${a.podeMarcas?'✓ Liberado':'Liberar'}</button></div></div>`:''}
   ${seus.length?`<div class="card"><div class="eyebrow">últimos treinos</div>
     ${seus.slice(0,6).map(t=>`<button class="lst" onclick="abrirTreino('${t.id}')">
       <span class="grow"><b>${esc(t.titulo)}</b><span class="xs muted" style="display:block">${brData(t.data)}</span></span>
@@ -1510,6 +1521,11 @@ function telaAtletaDetalhe(){
     <button class="full ghost" style="margin-top:12px;color:var(--clock)" onclick="apagarAtleta('${a.id}')">Apagar definitivamente…</button>
     <div class="xs muted" style="margin-top:6px">Apagar tira o atleta e os dados dele de vez e libera o CPF (o login continua no Firebase).</div>
   </div><div style="height:20px"></div>`;
+}
+async function togglePodeMarcas(atId){
+  const a=S.elenco.find(x=>x.id===atId); if(!a)return;
+  a.podeMarcas=!a.podeMarcas; await DB.set(kUser(a.email),a);
+  toast(a.podeMarcas?'Marcas liberadas para '+prim(a.nome):'Marcas removidas'); render();
 }
 async function mudarNivel(id,n){
   const a=S.elenco.find(x=>x.id===id); if(!a)return;
@@ -2216,7 +2232,8 @@ function telaMarcas(){
   <div class="card">
     <div class="eyebrow">importar da ABMN</div>
     <p class="small muted" style="margin:4px 0 8px">Tem o <b>Currículo On-Line</b> da ABMN em PDF? Importe seus melhores tempos e o histórico de competições de uma vez — cada resultado entra no quadro de evolução.</p>
-    <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarABMN(this)"></div>
+    <input type="file" id="abmnFile" accept="application/pdf,.pdf" style="display:none" onchange="importarABMN(this)">
+    <button class="sm primary" onclick="document.getElementById('abmnFile').click()">Importar currículo ABMN (PDF)</button>
   </div>
   <div class="card">
     <div class="eyebrow">melhores tempos</div>
@@ -2647,7 +2664,7 @@ async function coletarEsforcos(){
   const out=[];
   for(const meta of S.tridx.filter(t=>(t.para||[]).includes(S.u.id)).slice(0,25)){
     const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
-    if(t.feito&&t.feito[S.u.id]===false)continue;   /* atleta marcou "Não fiz" → fora da consolidação */
+    if(!treinoFeito(t,S.u.id))continue;   /* só consolida treino marcado como feito */
     for(const b of t.blocos||[])for(const i of b.itens){
       const r=t.registros?.[S.u.id]?.[i.id]; if(!r)continue;
       const series=(i.rodadas||1)>1?(r.rd||[]):[r];
@@ -3096,6 +3113,59 @@ function cardEstado(pro,comPct,sem){
     <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Capacidade</b>: quão perto do seu melhor tempo você está nadando. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio a partir dos seus dados.</span></div>
   </div>`;
 }
+/* Carga aguda × crônica (ACWR): volume dos últimos 7 dias / média semanal em 28 dias.
+   Só conta treino marcado como feito. */
+function cargaACWR(){
+  const h0=new Date(hoje()+'T00:00:00');
+  const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&t.data);
+  const dias=t=>Math.floor((h0-new Date(t.data+'T00:00:00'))/86400000);
+  let ag=0,cr28=0;
+  for(const t of meus){const d=dias(t); if(d<0)continue;
+    if(d<7)ag+=(t.vol||0);
+    if(d<28)cr28+=(t.vol||0);}
+  const cr=cr28/4;
+  if(cr<=0)return null;
+  return {ag,cr:Math.round(cr),acwr:ag/cr};
+}
+/* Composição × desempenho: massa magra + relação peso/potência (tempo/peso) */
+function cardComposicaoRelativa(pro){
+  const bio=[...(pro.bioimp||[])].filter(b=>b.peso!=null&&!bioSuspeita(b)).sort((a,b)=>a.data.localeCompare(b.data));
+  if(!bio.length)return'';
+  const ult=bio[bio.length-1];
+  const magra=b=>b.gordura!=null?+(b.peso*(1-b.gordura/100)).toFixed(1):(b.musculo!=null?b.musculo:null);
+  const lbm=magra(ult);
+  const prefer=Object.entries(pro.pbs||{}).find(([k])=>/^50 /.test(k));
+  const ref=prefer?{prova:prefer[0].replace(/ (SC25|LC50)$/,''),tempo:prefer[1]}:null;
+  let nota='';
+  if(bio.length>=2){const a=bio[0],lA=magra(a),lB=lbm,dP=ult.peso-a.peso;
+    if(lA!=null&&lB!=null){const dL=lB-lA;
+      nota=(dP<-0.5&&dL>=-0.3)?'Peso caiu mantendo (ou ganhando) massa magra — melhora da relação peso/potência.'
+        :(dP>0.5&&dL<0.3)?'Peso subiu sem ganho de massa magra — atenção à composição.'
+        :'Composição estável entre as medições.';}}
+  return`<div class="card"><div class="eyebrow">composição × desempenho</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${ult.peso}<span class="xs muted"> kg</span></div><div class="l">peso</div></div>
+      <div class="kpi"><div class="v">${lbm!=null?lbm:'—'}<span class="xs muted">${lbm!=null?' kg':''}</span></div><div class="l">massa magra</div></div>
+      <div class="kpi"><div class="v">${ref?fmt(ref.tempo,true):'—'}</div><div class="l">${ref?ref.prova:'melhor tempo'}</div></div>
+    </div>
+    ${nota?`<div class="note" style="margin-top:10px">${nota}</div>`:''}
+    <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). Perder peso mantendo a massa magra melhora a relação peso/potência — costuma refletir em velocidade.</div>
+  </div>`;
+}
+function cardCarga(){
+  const c=cargaACWR(); if(!c)return'';
+  const r=c.acwr;
+  const est=r>1.5?{t:'warn',txt:'pico de carga — atenção à fadiga/lesão'}:r<0.8?{t:'',txt:'carga baixa — recuperação ou pouco estímulo'}:{t:'ok',txt:'faixa recomendada (0,8–1,3)'};
+  return`<div class="card"><div class="eyebrow">carga aguda × crônica</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${r.toFixed(2)}</div><div class="l">ACWR</div></div>
+      <div class="kpi"><div class="v">${(c.ag/1000).toFixed(1)}k</div><div class="l">aguda (7 dias)</div></div>
+      <div class="kpi"><div class="v">${(c.cr/1000).toFixed(1)}k</div><div class="l">crônica (méd/sem)</div></div>
+    </div>
+    <div class="note ${est.t}" style="margin-top:10px">${est.txt}</div>
+    <div class="xs muted" style="margin-top:6px">Compara o volume da última semana com a sua média das últimas quatro. Acima de 1,5 costuma indicar salto de carga (mais risco); abaixo de 0,8, pouco estímulo.</div>
+  </div>`;
+}
 function laudoConsolidado(pro,diag,comPct,brk,sem){
   const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
   const ev=evolucaoProvas(pro),evoluiu=ev.filter(e=>e.melhora),regr=ev.filter(e=>!e.melhora);
@@ -3153,8 +3223,9 @@ function telaRelatorio(){
   ${brk.length?`<div class="card"><div class="eyebrow">custo do segundo 25</div>
     <h3 style="margin:3px 0 9px">Onde a velocidade escapa</h3>
     ${graficoBarras(brk.slice(-10).map(e=>({rot:brCurta(e.data),v:e.delta})))}
-    <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b></div>
+    <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b>${(function(){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);if(!a.length)return'';const d=a.reduce((t,x)=>t+x,0)/a.length;return` · queda de velocidade média <b class="t">${d.toFixed(1)}%</b>`})()}</div>
   </div>`:''}
+  ${cardCarga()}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
   <div class="card"><div class="eyebrow">diagnóstico</div>
@@ -3172,6 +3243,7 @@ function telaRelatorio(){
       ${(tm!=null||imc!=null)?`<div class="note" style="margin-top:8px">${imc!=null?`IMC <b>${imc}</b>. `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
       ${flagsBio(b).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
     })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
+  ${cardComposicaoRelativa(pro)}
   ${cardEvolucao(pro,'evolução em competições')}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
