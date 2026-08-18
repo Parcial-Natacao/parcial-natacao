@@ -147,7 +147,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v13</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v14</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -173,7 +173,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v13';
+const VER='v14';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -3083,7 +3083,7 @@ function estadoPerformance(pro,comPct,sem){
     const sn=g.filter(x=>x.sono!=null).slice(0,7);
     if(sn.length>=3){const m=md(sn,'sono');const c=m<6.5?-8:(m>=7.5?4:0);if(c){s+=c;mot.push({c,txt:`sono ${m.toFixed(1)}h`});}}
     if(sem&&sem.length>=2&&sem[sem.length-1].m>sem[sem.length-2].m*1.25){s-=8;mot.push({c:-8,txt:'volume +25%'});}
-    pr={score:Math.round(cl(s,0,100)),mot};
+    pr={score:Math.round(cl(s,0,100)),mot,dias:Math.max(h.length,f.length)};
   }
   /* Capacidade: quão perto do melhor tempo os tiros recentes estão saindo */
   let cap=null;
@@ -3095,7 +3095,7 @@ function estadoPerformance(pro,comPct,sem){
   let pc=0;
   if(comPct.length>=4){const hf=Math.floor(comPct.length/2);pc=md(comPct.slice(hf),'pct')-md(comPct.slice(0,hf),'pct');}
   const sc=net+(pc>1?1:pc<-1?-1:0);
-  if(ev.length||comPct.length>=4)tend={dir:sc>0?'↑':sc<0?'↓':'→',txt:sc>0?'capacidade melhorando':sc<0?'capacidade em queda — atenção':'capacidade estável',cor:sc>0?'var(--ok)':sc<0?'var(--clock)':'var(--ink-2)'};
+  if(ev.length||comPct.length>=4)tend={dir:sc>0?'↑':sc<0?'↓':'→',txt:sc>0?'capacidade melhorando':sc<0?'capacidade em queda — atenção':'capacidade estável',cor:sc>0?'var(--ok)':sc<0?'var(--clock)':'var(--ink-2)',nEv:ev.length,nPct:comPct.length};
   return {pr,cap,tend};
 }
 function cardEstado(pro,comPct,sem){
@@ -3110,7 +3110,12 @@ function cardEstado(pro,comPct,sem){
       ${kpi(e.tend?e.tend.dir:'—','tendência',e.tend?e.tend.cor:'')}
     </div>
     ${e.pr&&e.pr.mot.length?`<div class="small" style="margin-top:10px"><b>Prontidão</b> — ${e.pr.mot.map(m=>`${m.txt} <b style="color:${m.c>=0?'var(--ok)':'var(--clock)'}">${m.c>=0?'+':''}${Math.round(m.c)}</b>`).join(' · ')}</div>`:''}
-    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Capacidade</b>: quão perto do seu melhor tempo você está nadando. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio a partir dos seus dados.</span></div>
+    ${(function(){const cf=(n,a,m)=>n>=a?{t:'alta',c:'var(--ok)'}:n>=m?{t:'média',c:''}:{t:'baixa',c:'var(--clock)'};
+      const ps=[]; if(e.pr){const c=cf(e.pr.dias,14,7);ps.push(`Prontidão <b style="color:${c.c}">${c.t}</b> <span class="xs muted">(${e.pr.dias} dias de VFC/FC)</span>`);}
+      if(e.cap){const c=cf(e.cap.n,12,6);ps.push(`Capacidade <b style="color:${c.c}">${c.t}</b> <span class="xs muted">(${e.cap.n} tiros)</span>`);}
+      if(e.tend){const base=Math.max(e.tend.nEv,e.tend.nPct>=8?2:e.tend.nPct>=4?1:0);const c=cf(base,3,1);ps.push(`Tendência <b style="color:${c.c}">${c.t}</b>`);}
+      return ps.length?`<div class="small" style="margin-top:8px"><b>Confiança</b> — ${ps.join(' · ')}</div>`:'';})()}
+    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Capacidade</b>: quão perto do seu melhor tempo você está nadando. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio; a confiança sobe conforme você acumula dados.</span></div>
   </div>`;
 }
 /* Carga aguda × crônica (ACWR): volume dos últimos 7 dias / média semanal em 28 dias.
@@ -3155,15 +3160,15 @@ function cardComposicaoRelativa(pro){
 function cardCarga(){
   const c=cargaACWR(); if(!c)return'';
   const r=c.acwr;
-  const est=r>1.5?{t:'warn',txt:'pico de carga — atenção à fadiga/lesão'}:r<0.8?{t:'',txt:'carga baixa — recuperação ou pouco estímulo'}:{t:'ok',txt:'faixa recomendada (0,8–1,3)'};
-  return`<div class="card"><div class="eyebrow">carga aguda × crônica</div>
+  const est=r>1.5?{t:'',txt:'carga da semana bem acima da sua habitual'}:r<0.8?{t:'',txt:'carga da semana abaixo da sua habitual'}:{t:'ok',txt:'carga em linha com a sua habitual'};
+  return`<div class="card"><div class="eyebrow">relação de carga aguda/crônica</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${r.toFixed(2)}</div><div class="l">ACWR</div></div>
       <div class="kpi"><div class="v">${(c.ag/1000).toFixed(1)}k</div><div class="l">aguda (7 dias)</div></div>
       <div class="kpi"><div class="v">${(c.cr/1000).toFixed(1)}k</div><div class="l">crônica (méd/sem)</div></div>
     </div>
     <div class="note ${est.t}" style="margin-top:10px">${est.txt}</div>
-    <div class="xs muted" style="margin-top:6px">Compara o volume da última semana com a sua média das últimas quatro. Acima de 1,5 costuma indicar salto de carga (mais risco); abaixo de 0,8, pouco estímulo.</div>
+    <div class="xs muted" style="margin-top:6px">Indica como a carga recente se compara à sua carga habitual. Interprete junto com o volume absoluto, a recuperação e o seu histórico — é um descritor de carga, não uma medida de risco de lesão.</div>
   </div>`;
 }
 /* ── CORRELAÇÕES: cruza o histórico do próprio atleta ──────────────────────── */
