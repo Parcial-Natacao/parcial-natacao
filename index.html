@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v26</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v27</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v26';
+const VER='v27';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -2755,8 +2755,11 @@ function fotoSeco(inp){
 async function salvarSeco(){
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   S.pro.seco=S.pro.seco||[];
+  const _pf=parseForca(val('skTrans'));
+  const _ce={tonelagem:_pf.tonelagem,seriesTotal:_pf.itens.reduce((a,i)=>a+(i.series||0),0),exerciciosComCarga:_pf.itens.filter(i=>i.carga!=null).length};
   S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
-    obs:val('skObs'),transcricao:val('skTrans'),rpe:(S.secoDraft&&S.secoDraft.rpe!=null)?S.secoDraft.rpe:null,dur:(S.secoDraft&&S.secoDraft.dur!=null)?S.secoDraft.dur:null,img:FOTO,arquivo:SECOPDF});
+    obs:val('skObs'),transcricao:val('skTrans'),rpe:(S.secoDraft&&S.secoDraft.rpe!=null)?S.secoDraft.rpe:null,dur:(S.secoDraft&&S.secoDraft.dur!=null)?S.secoDraft.dur:null,
+    exercicios:_pf.itens,cargaEstruturada:_ce,img:FOTO,arquivo:SECOPDF});
   if(S.pro.seco.length>24)S.pro.seco=S.pro.seco.slice(0,24);
   FOTO=null; SECOPDF=null; S.secoDraft=null; await salvarPro(); toast('Registro salvo'); render();
 }
@@ -2765,9 +2768,15 @@ async function apagarSeco(id){S.pro.seco=S.pro.seco.filter(x=>x.id!==id);await s
 /* =====================================================================
    PRO — RELATÓRIO DE PERFORMANCE
    ===================================================================== */
-async function coletarEsforcos(){
+async function coletarEsforcos(opts){
   const out=[]; const ses=[];
-  for(const meta of S.tridx.filter(t=>(t.para||[]).includes(S.u.id)).slice(0,25)){
+  /* janela TEMPORAL opcional: coletarEsforcos({dias:56}). Sem argumento mantém o
+     comportamento antigo (os 25 treinos mais recentes) por compatibilidade. */
+  const dias=opts&&opts.dias, h0=new Date(hoje()+'T00:00:00');
+  const noPrazo=d=>{ if(!dias)return true; const x=(h0-new Date((d||'')+'T00:00:00'))/86400000; return x>=0&&x<dias; };
+  const metas=S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&noPrazo(t.data));
+  const lista=dias?metas:metas.slice(0,25);
+  for(const meta of lista){
     const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
     if(!treinoFeito(t,S.u.id))continue;   /* só consolida treino marcado como feito */
     const sj=t.sessao&&t.sessao[S.u.id];
@@ -2807,9 +2816,38 @@ function cardCargaTotal(){
     ${(()=>{const t=tonelagem(28);return t?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>Tonelagem de força (28d):</b> ~${t.total.toLocaleString('pt-BR')} kg em ${t.sessoes} sessão(ões) — volume real de musculação (séries×reps×carga), quando a ficha traz as cargas.</div>`:'';})()}
   </div>`;
 }
-/* Força estruturada: transcrição livre da ficha → {exercício, séries, reps, carga}
-   → tonelagem (séries×reps×carga). Best-effort; ignora exercícios sem carga (peso
-   do corpo, tempo). Refina o session-RPE com a carga real de musculação. */
+/* ── FORÇA ESTRUTURADA (FASE 1) ─────────────────────────────────────────────
+   Dicionário PEQUENO e transparente de exercícios → id canônico + grupo.
+   Sem equivalências especulativas; ordem importa (mais específico primeiro). */
+const EXERCICIOS=[
+  ['supino_inclinado',{nome:'Supino inclinado',grupo:'peito',rx:/supino\s+inclinad/i}],
+  ['supino_reto',{nome:'Supino reto',grupo:'peito',rx:/\bsupino(\s+(reto|barra|livre|halter))?\b/i}],
+  ['agachamento',{nome:'Agachamento',grupo:'perna',rx:/\bagachament/i}],
+  ['leg_press',{nome:'Leg press',grupo:'perna',rx:/\bleg\s*press\b/i}],
+  ['cadeira_extensora',{nome:'Cadeira extensora',grupo:'quadríceps',rx:/extensora/i}],
+  ['mesa_flexora',{nome:'Mesa flexora',grupo:'posterior',rx:/flexora/i}],
+  ['levantamento_terra',{nome:'Levantamento terra',grupo:'posterior',rx:/\b(levantamento\s+terra|deadlift)\b/i}],
+  ['remada',{nome:'Remada',grupo:'costas',rx:/\bremada\b/i}],
+  ['puxada',{nome:'Puxada',grupo:'costas',rx:/\b(puxada|pulldown|puxador)\b/i}],
+  ['desenvolvimento',{nome:'Desenvolvimento (ombro)',grupo:'ombro',rx:/\b(desenvolvimento|militar|ohp)\b/i}],
+  ['rosca',{nome:'Rosca (bíceps)',grupo:'bíceps',rx:/\brosca\b/i}],
+  ['triceps',{nome:'Tríceps',grupo:'tríceps',rx:/\btr[ií]ceps|testa\b/i}]
+];
+function normalizarExercicio(nome){
+  const n=(nome||'').toLowerCase().trim();
+  if(n)for(const[id,def]of EXERCICIOS)if(def.rx.test(n))return{idExercicio:id,nomeCanonico:def.nome,grupoMuscular:def.grupo};
+  return{idExercicio:null,nomeCanonico:null,grupoMuscular:null};
+}
+/* e-1RM estimado (NÃO é força máxima medida). Epley + Brzycki, 1–10 reps. */
+function estimarE1RM(carga,reps){
+  if(carga==null||!(carga>0)||reps==null||reps<1||reps>10)return{valor:null,metodo:null,carga,reps,confianca:0};
+  if(reps===1)return{valor:+(+carga).toFixed(1),metodo:'direto (1RM)',carga,reps,confianca:1};
+  const epley=carga*(1+reps/30), brzycki=carga*36/(37-reps);
+  return{valor:+((epley+brzycki)/2).toFixed(1),metodo:'Epley+Brzycki',carga,reps,confianca:reps<=6?0.9:reps<=8?0.8:0.7};
+}
+/* Interpreta a ficha de força. Carga só com indicação CONFIÁVEL (kg explícito =
+   alta; número solto = média). Descanso/pausa nunca vira carga. Reps em segundos
+   (prancha) = isométrico → sem carga e tonelagem 0. Mantém campos antigos (ex/ton). */
 function parseForca(txt){
   if(!txt)return{itens:[],tonelagem:0};
   const itens=[]; let ton=0;
@@ -2817,22 +2855,109 @@ function parseForca(txt){
     ln=ln.trim(); if(!ln)continue;
     const m=ln.match(/(\d{1,2})\s*[x×]\s*(\d{1,3})/i); if(!m)continue;
     const series=+m[1], reps=+m[2], resto=ln.slice(m.index+m[0].length);
-    const seg=/(\d{1,3})\s*s\b/i.test(resto);                 // reps em segundos → sem tonelagem
-    let carga=null; const mk=ln.match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*kg\b/i)||(!seg&&resto.match(/[-–]?\s*(\d{1,3}(?:[.,]\d{1,2})?)\b/));
-    if(mk)carga=parseFloat(mk[1].replace(',','.'));
-    const ex=ln.slice(0,m.index).replace(/[-–:]+$/,'').trim()||'exercício';
-    const t=(carga&&!seg)?series*reps*carga:0; ton+=t;
-    itens.push({ex,series,reps,carga:seg?null:carga,ton:Math.round(t)});
+    const tempoReps=/^\s*(s|seg|segundos|"|”)\b/i.test(resto)||/^\s*(s|seg)/i.test(resto);  // reps em segundos → isométrico
+    let carga=null, unidade=null, conf=0;
+    if(!tempoReps){
+      const semSR=ln.replace(m[0],' ');
+      const mkg=semSR.match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*kg\b/i);
+      if(mkg){carga=parseFloat(mkg[1].replace(',','.'));unidade='kg';conf=0.9;}
+      else{
+        const limpo=semSR
+          .replace(/\b(descanso|pausa|desc\.?|rest|intervalo|int\.?|sa[íi]da|pace)\b\D{0,4}\d{1,3}\s*(s|seg|min|'|"|”)?/ig,' ')
+          .replace(/\d{1,3}\s*(s|seg|min|'|"|”)\b/ig,' ');   // remove qualquer tempo restante
+        const mnum=limpo.match(/(\d{1,3}(?:[.,]\d{1,2})?)/);
+        if(mnum){carga=parseFloat(mnum[1].replace(',','.'));unidade='kg?';conf=0.5;}
+      }
+    }
+    const norm=normalizarExercicio(ln.slice(0,m.index));
+    const nomeOriginal=ln.slice(0,m.index).replace(/[-–:]+$/,'').trim()||'exercício';
+    const tonI=(carga!=null&&!tempoReps)?series*reps*carga:0; ton+=tonI;
+    const e1=estimarE1RM(carga,reps);
+    itens.push({idExercicio:norm.idExercicio,nomeOriginal,nomeCanonico:norm.nomeCanonico,grupoMuscular:norm.grupoMuscular,
+      series,reps,carga,unidade,tonelagem:Math.round(tonI),e1rm:e1.valor,confianca:conf,
+      ex:nomeOriginal,ton:Math.round(tonI)});   // compat
   }
   return{itens,tonelagem:Math.round(ton)};
+}
+/* itens de força de uma sessão: usa os estruturados salvos, ou reprocessa a ficha
+   (compatibilidade com sessões antigas sem `exercicios`). */
+function itensForca(s){
+  if(s&&Array.isArray(s.exercicios)&&s.exercicios.length)return s.exercicios;
+  return parseForca((s&&(s.transcricao||s.texto||s.obs))||'').itens;
+}
+function tonForcaSessao(s){
+  if(s&&s.cargaEstruturada&&s.cargaEstruturada.tonelagem!=null)return s.cargaEstruturada.tonelagem;
+  return itensForca(s).reduce((a,i)=>a+(i.tonelagem||i.ton||0),0);
 }
 function tonelagem(dias){
   dias=dias||28; const h0=new Date(hoje()+'T00:00:00');
   const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
   let total=0,n=0;
   for(const s of ((S.pro&&S.pro.seco)||[])){ if(!s.data||!dentro(s.data))continue;
-    const f=parseForca(s.transcricao||s.texto||s.obs||''); if(f.tonelagem>0){total+=f.tonelagem;n++;} }
+    const t=tonForcaSessao(s); if(t>0){total+=t;n++;} }
   return total>0?{total:Math.round(total),sessoes:n}:null;
+}
+/* ── HISTÓRICO E PROGRESSÃO DE FORÇA (por exercício canônico) ────────────────*/
+function tendenciaSerie(vals){ // vals cronológicos; retorna ↑/→/↓ pela 1ª vs última
+  const v=vals.filter(x=>x!=null); if(v.length<2)return '→';
+  const d=(v[v.length-1]-v[0])/(Math.abs(v[0])||1)*100;
+  return d>3?'↑':d<-3?'↓':'→';
+}
+function historicoForcaExercicio(pro,idExercicio,dias){
+  dias=dias||90; const h0=new Date(hoje()+'T00:00:00');
+  const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
+  const secos=[...((pro&&pro.seco)||[])].filter(s=>s.data&&dentro(s.data)).sort((a,b)=>a.data.localeCompare(b.data));
+  const sessoes=[]; let nome=null;
+  for(const s of secos){
+    const its=itensForca(s).filter(i=>i.idExercicio===idExercicio&&i.carga!=null);
+    if(!its.length)continue;
+    nome=nome||its[0].nomeCanonico;
+    const melhor=its.slice().sort((a,b)=>(b.e1rm||0)-(a.e1rm||0)||(b.carga||0)-(a.carga||0))[0];
+    sessoes.push({data:s.data,carga:melhor.carga,reps:melhor.reps,series:its.reduce((a,i)=>a+(i.series||0),0),
+      tonelagem:Math.round(its.reduce((a,i)=>a+(i.tonelagem||0),0)),
+      e1rm:melhor.e1rm!=null?melhor.e1rm:(estimarE1RM(melhor.carga,melhor.reps).valor)});
+  }
+  if(!sessoes.length)return null;
+  const cargas=sessoes.map(x=>x.carga), e1s=sessoes.map(x=>x.e1rm).filter(x=>x!=null), vols=sessoes.map(x=>x.tonelagem);
+  return {exercicio:nome,idExercicio,sessoes,
+    melhorE1RM:e1s.length?Math.max(...e1s):null, melhorCarga:Math.max(...cargas), ultimaCarga:cargas[cargas.length-1],
+    tendenciaE1RM:tendenciaSerie(sessoes.map(x=>x.e1rm)), tendenciaCarga:tendenciaSerie(cargas), tendenciaVolume:tendenciaSerie(vols),
+    confianca:Math.min(1,sessoes.length/4)};
+}
+function progressaoForca(pro,dias){
+  dias=dias||90;
+  const ids=new Set();
+  const h0=new Date(hoje()+'T00:00:00'), dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
+  for(const s of ((pro&&pro.seco)||[])){ if(!s.data||!dentro(s.data))continue;
+    for(const i of itensForca(s))if(i.idExercicio&&i.carga!=null)ids.add(i.idExercicio); }
+  const exercicios=[];
+  for(const id of ids){
+    const h=historicoForcaExercicio(pro,id,dias); if(!h||h.sessoes.length<2)continue;
+    const a=h.sessoes[0], b=h.sessoes[h.sessoes.length-1];
+    const pct=(x,y)=>x&&y!=null?+(( y-x)/Math.abs(x)*100).toFixed(1):null;
+    // densidade = tonelagem por minuto, quando a sessão tem duração
+    const dens=s=>{const sec=(pro.seco||[]).find(k=>k.data===s.data); const dur=sec&&sec.dur; return dur?s.tonelagem/dur:null;};
+    exercicios.push({idExercicio:id,nome:h.exercicio,
+      inicio:{data:a.data,carga:a.carga,e1rm:a.e1rm,tonelagem:a.tonelagem},
+      atual:{data:b.data,carga:b.carga,e1rm:b.e1rm,tonelagem:b.tonelagem},
+      delta:{cargaPct:pct(a.carga,b.carga),e1rmPct:pct(a.e1rm,b.e1rm),tonelagemPct:pct(a.tonelagem,b.tonelagem),densidadePct:pct(dens(a),dens(b))},
+      tendencia:h.tendenciaE1RM, nSessoes:h.sessoes.length, confianca:h.confianca});
+  }
+  return {exercicios:exercicios.sort((x,y)=>(y.delta.e1rmPct||-999)-(x.delta.e1rmPct||-999)), dias};
+}
+function cardEvolucaoForca(pro){
+  const p=progressaoForca(pro,90); if(!p.exercicios.length)return'';
+  const linhas=p.exercicios.map(e=>{const d=e.delta.e1rmPct, cor=d>0?'var(--ok)':d<0?'var(--clock)':'var(--ink-2)';
+    const e0=e.inicio.e1rm, e1=e.atual.e1rm;
+    return`<div style="border-top:1px solid var(--line);padding:8px 0">
+      <div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(e.nome)}</b>
+        <span class="n" style="font-weight:700;color:${cor}">${d>0?'+':''}${d!=null?d+'%':'—'}</span></div>
+      <div class="xs muted">e-1RM ${e0!=null?e0:'—'} → ${e1!=null?e1:'—'} kg · carga ${e.inicio.carga}→${e.atual.carga} kg · ${e.nSessoes} sessão(ões)</div></div>`;}).join('');
+  return`<div class="card"><div class="eyebrow">evolução de força</div>
+    <div class="small muted" style="margin:4px 0 4px">Progresso por exercício nos últimos ${p.dias} dias (e-1RM = 1RM estimado, não medido). Sem ranking entre exercícios diferentes.</div>
+    ${linhas}
+    <div class="xs muted" style="margin-top:8px">e-1RM estimado por Epley+Brzycki a partir de carga×reps (1–10 reps). Registre a ficha com as cargas para acompanhar a progressão.</div>
+  </div>`;
 }
 /* ---------- exames laboratoriais ---------- */
 /* ─────────────────────────────────────────────────────────────
@@ -3015,6 +3140,7 @@ function dadosParaLaudo(motor){
     mudancas28d:(motor.mudancas&&motor.mudancas.movers||[]).map(x=>({indicador:x.nome,deltaPct:+x.dPct.toFixed(0)})),
     porqueMudou:(motor.mudancas&&motor.mudancas.porque)||[],
     tonelagem28d:motor.tonelagem28d?motor.tonelagem28d.total:null,
+    forca:motor.forca?{sessoes90d:motor.forca.sessoes,tonelagem90d:motor.forca.tonelagem?motor.forca.tonelagem.total:null,progressao:(motor.forca.exercicios||[]).map(e=>({exercicio:e.nome,e1rmAtual:e.e1rmAtual,e1rmPct:e.e1rmPct}))}:null,
     confiancaModelo:motor.confianca
   };
   return out;
@@ -3642,7 +3768,12 @@ function motorPerformance(pro,comPct,sem,brk){
   const composicao=(typeof composicaoEstim==='function')?composicaoEstim(pro):null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
-  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),inventario:inv,confianca:Math.round(Math.min(100,pts))};
+  /* FASE 1 — força estruturada disponível ao relatório e (depois) ao laudo */
+  const progF=(typeof progressaoForca==='function')?progressaoForca(pro,90):{exercicios:[]};
+  const ton90=(typeof tonelagem==='function')?tonelagem(90):null;
+  const secForca=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;return x>=0&&x<90&&tonForcaSessao(s)>0;})).length;
+  const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.atual.e1rm,e1rmPct:e.delta.e1rmPct}))};
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),forca,inventario:inv,confianca:Math.round(Math.min(100,pts))};
 }
 function cardModelo(m){
   const iv=m.inventario, nf=m.confianca>=70?'boa':m.confianca>=40?'parcial':'inicial';
@@ -3736,6 +3867,7 @@ function telaRelatorio(){
   </div>`:''}
   ${cardCarga()}
   ${cardCargaTotal()}
+  ${cardEvolucaoForca(pro)}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
   <div class="card"><div class="eyebrow">diagnóstico</div>
