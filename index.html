@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v28</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v29</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v28';
+const VER='v29';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -482,6 +482,7 @@ async function cadastrarFB(dados){
     const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:CODIGO_PRO};
     await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
     await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
+    if(typeof registrarEquipeDev==='function')await registrarEquipeDev(eqSlug);
     return nova;
   }
 
@@ -504,7 +505,7 @@ async function cadastrarFB(dados){
 
   /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
      dos dados PRO (só o dono lê pro_<uid>). */
-  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?DEV_EMAILS.includes(em):false);
+  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false);
   const u={id:cred.user.uid,perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
@@ -552,6 +553,7 @@ async function cadastrar(dados){
     const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:CODIGO_PRO};
     await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
     await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
+    if(typeof registrarEquipeDev==='function')await registrarEquipeDev(eqSlug);
     return nova;
   }
 
@@ -573,7 +575,7 @@ async function cadastrar(dados){
 
   const sal=novoSal();
   const em=email.toLowerCase();
-  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?DEV_EMAILS.includes(em):false);
+  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false);
   const u={id:uid(),perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
@@ -822,7 +824,8 @@ function abrirConta(){
         <button class="sm ${S.gestao?'primary':''}" onclick="alternarGestao()">${S.gestao?'Ativada':'Ativar'}</button></div>`:''}
     ${ehDev()?`<div class="sep"></div>
       <div class="row" style="align-items:center;gap:10px">
-        <div class="grow"><b>Desenvolvedor</b><div class="xs muted">Aprovar e gerir os técnicos do app.</div></div>
+        <div class="grow"><b>Desenvolvedor</b><div class="xs muted">Criar equipes e aprovar/gerir os técnicos do app.</div></div>
+        <button class="sm" onclick="abrirDevEquipes()">Equipes</button>
         <button class="sm" onclick="abrirDevTecnicos()">Técnicos</button></div>`:''}
     <div class="sep"></div>
     <button class="full ghost" onclick="abrirModo()">Dados e backup</button>
@@ -1499,6 +1502,40 @@ async function abrirDevTecnicos(){
     ${linhas.length?linhas.join(''):'<div class="small muted">Nenhum técnico cadastrado ainda.</div>'}
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
+async function abrirDevEquipes(){
+  if(!ehDev())return;
+  const slugs=await DB.get('dev_equipes')||[];
+  const linhas=[];
+  for(const sg of slugs){const eq=await DB.get(kEq(sg)); if(!eq)continue;
+    const us=await DB.get(kEqUsers(sg))||[];
+    linhas.push(`<div class="lst"><span class="av">▤</span>
+      <span class="grow"><b>${esc(eq.nome)}</b><span class="xs muted" style="display:block">${eq.tecnicoEmail?('téc: '+esc(eq.tecnicoEmail)):'sem técnico ainda'} · ${us.length} membro(s)</span></span></div>`);
+  }
+  sheet(`<h2>Equipes</h2>
+    <p class="small muted" style="margin:6px 0 10px">Crie a equipe aqui. Depois o técnico se cadastra como <b>técnico</b> usando exatamente esse nome de equipe e você libera na aba <b>Técnicos</b> (ou pré-aprove pelo e-mail abaixo). O app não cria a senha do técnico — isso ele faz no próprio cadastro.</p>
+    <div class="field"><label>Nome da nova equipe</label><input id="deqNome" autocapitalize="words" placeholder="ex.: Time Águia"></div>
+    <div class="field"><label>E-mail do técnico <span class="xs muted">(opcional — pré-aprova o cadastro dele)</span></label><input id="deqEmail" inputmode="email" autocapitalize="off" placeholder="tecnico@email.com"></div>
+    <button class="primary full" onclick="criarEquipeDev()">Criar equipe</button>
+    <div class="sep"></div>
+    <div class="eyebrow">equipes cadastradas</div>
+    ${linhas.length?linhas.join(''):'<div class="small muted" style="margin-top:6px">Nenhuma equipe registrada ainda.</div>'}
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
+async function criarEquipeDev(){
+  if(!ehDev())return;
+  const nome=val('deqNome'); if(!nome)return toast('Dê um nome à equipe');
+  const sg=slug(nome); if(!sg)return toast('Nome inválido');
+  if(await DB.get(kEq(sg)))return toast('Já existe uma equipe com esse nome');
+  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
+  await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]);
+  await registrarEquipeDev(sg);
+  const em=(val('deqEmail')||'').toLowerCase().trim();
+  if(em){const pre=await DB.get('dev_pre')||[]; if(!pre.includes(em)){pre.push(em);await DB.set('dev_pre',pre);}}
+  toast(`Equipe "${nome.trim()}" criada`); abrirDevEquipes();
+}
+async function registrarEquipeDev(sg){
+  const idx=await DB.get('dev_equipes')||[]; if(!idx.includes(sg)){idx.push(sg);await DB.set('dev_equipes',idx);}
+}
 async function aprovarTecnico(email){
   if(!ehDev())return;
   const u=await DB.get(kUser(email)); if(!u)return;
@@ -1717,7 +1754,8 @@ function telaCompeticao(){
   if(!S.comp)return`
     <div class="row" style="margin:16px 0 6px"><h2>Competição</h2><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovaCompTec()">+ Nova</button></div>
-    ${S.u.perfil==='pro'?`<button class="ghost full" style="margin-bottom:8px" onclick="S.compAtletaMode=true;render()">★ Minhas competições (como atleta) ›</button>`:''}
+    ${S.u.perfil==='pro'?`<button class="ghost full" style="margin-bottom:8px" onclick="S.compAtletaMode=true;render()">★ Gerenciar as minhas (como atleta) ›</button>`:''}
+    ${blocoCompAtletas()}
     ${S.cidx.length?`<div class="eyebrow">competições da equipe</div>`:''}
     ${S.cidx.map(c=>`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirComp('${c.id}')">
       <div class="av">▲</div><div class="grow"><b>${esc(c.nome)}</b>
@@ -1755,9 +1793,19 @@ async function criarComp(){
     piscina:document.getElementById('ccPis').value,provas:[],criadoEm:Date.now()};
   await DB.set(kCmp(S.u.equipe,c.id),c);
   const idx=[{id:c.id,nome:c.nome,data:c.data,local:c.local,piscina:c.piscina},...(await DB.get(kCIdx(S.u.equipe))||[])];
-  await DB.set(kCIdx(S.u.equipe),idx); S.cidx=idx; S.comp=c; fecharSheet(); render();
+  await DB.set(kCIdx(S.u.equipe),idx); S.cidx=idx; S.comp=c;
+  /* import opcional do balizamento em PDF na própria criação */
+  if(window._ccPdf){
+    try{ const txt=await pdfTexto(window._ccPdf); const provas=parseBalizamentoTecnico(txt);
+      if(provas.length){ await incorporar(provas); toast(`${provas.length} prova(s) importada(s) do PDF`); }
+      else toast('Competição criada. Não achei provas dos seus atletas no PDF.');
+    }catch(e){ toast('Competição criada. Não li o PDF: '+e.message); }
+    window._ccPdf=null;
+  }
+  fecharSheet(); render();
 }
 function abrirNovaCompTec(){
+  window._ccPdf=null;
   sheet(`<h2>Nova competição</h2>
     <div class="field"><label>Nome</label><input id="ccNome" autocapitalize="words" placeholder="ex.: Campeonato Brasileiro Master"></div>
     <div class="grid2">
@@ -1765,7 +1813,43 @@ function abrirNovaCompTec(){
       <div class="field"><label>Piscina</label><select id="ccPis"><option>SC25</option><option>LC50</option></select></div>
     </div>
     <div class="field"><label>Local</label><input id="ccLocal" autocapitalize="words" placeholder="Cidade / clube"></div>
+    <div class="field"><label>Balizamento em PDF <span class="xs muted">(opcional)</span></label>
+      <input type="file" accept="application/pdf,.pdf" onchange="window._ccPdf=this.files[0]||null"></div>
+    <div class="xs muted" style="margin:-4px 0 8px">Crie só com o nome e adicione as provas depois, <b>ou</b> já suba o PDF do balizamento — ele importa as provas/séries/raias/tempos dos seus atletas do Elenco.</div>
     <button class="primary full" onclick="criarComp()">Criar</button>`);
+}
+/* técnico vê as competições que os ATLETAS cadastraram (atribuídas a cada um) */
+function blocoCompAtletas(){
+  const rows=[];
+  for(const a of (S.elenco||[]))for(const mc of (a.competicoes||[]))rows.push({a,mc});
+  if(!rows.length)return'';
+  rows.sort((x,y)=>(y.mc.data||'').localeCompare(x.mc.data||''));
+  return`<div class="card"><div class="eyebrow">competições dos atletas</div>
+    <p class="small muted" style="margin:4px 0 8px">Cadastradas pelos próprios atletas — com as provas e tempos que eles lançaram.</p>
+    ${rows.map(({a,mc})=>`<button class="lst" onclick="verCompAtleta('${a.id}','${mc.id}')">
+      <span class="av">${iniciais(a.nome)}</span>
+      <span class="grow"><b>${esc(mc.nome)}</b><span class="xs muted" style="display:block">por ${esc(prim(a.nome))} · ${brData(mc.data)} · ${mc.piscina} · ${(mc.provas||[]).length} prova(s)</span></span>
+      <span class="tag o">›</span></button>`).join('')}
+  </div>`;
+}
+function verCompAtleta(atId,mcId){
+  const a=(S.elenco||[]).find(x=>x.id===atId); if(!a)return;
+  const mc=(a.competicoes||[]).find(x=>x.id===mcId); if(!mc)return;
+  const provas=(mc.provas||[]).map(p=>{
+    const ps=(p.parciais||[]).filter(x=>x!=null);
+    const fin=p.tempo!=null?p.tempo:(ps.length?ps[ps.length-1]:null);
+    const dif=(fin!=null&&p.inscricao!=null)?fin-p.inscricao:null;
+    return`<div style="padding:8px 0;border-top:1px solid var(--line)">
+      <div class="row"><div class="grow"><b>${p.dist}m ${esc(p.estilo)}</b>
+        <div class="xs muted">${p.serie?'série '+p.serie:''}${p.raia?' · raia '+p.raia:''}${p.inscricao!=null?' · inscrição '+fmt(p.inscricao,true):''}</div></div>
+        <div class="t" style="font-weight:800">${fin!=null?fmt(fin,true):'—'}</div></div>
+      ${ps.length?`<div class="chips" style="margin-top:4px">${ps.map(v=>`<span class="chip">${fmt(v,true)}</span>`).join('')}</div>`:''}
+      ${dif!=null?`<div class="xs" style="margin-top:4px;color:${dif<0?'var(--ok)':'var(--clock)'}">${dif<0?'baixou ':'ficou '}${fmt(Math.abs(dif),true)} vs inscrição</div>`:''}</div>`;
+  }).join('')||'<div class="small muted">Sem provas cadastradas.</div>';
+  sheet(`<h2>${esc(mc.nome)}</h2>
+    <div class="small muted">Registrada por <b>${esc(a.nome)}</b> · ${brData(mc.data)} · ${mc.piscina}${mc.local?' · '+esc(mc.local):''}</div>
+    <div style="margin-top:10px">${provas}</div>
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 async function abrirComp(id){push();S.comp=await DB.get(kCmp(S.u.equipe,id));S.provaSel=null;render();window.scrollTo(0,0)}
 async function mutarComp(fn){
