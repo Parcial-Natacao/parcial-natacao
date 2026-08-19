@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v23</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v26</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v23';
+const VER='v26';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -1048,6 +1048,34 @@ function grupoTreinos(lista,cardFn){
   }
   return html;
 }
+/* Calendário mês a mês (visão do técnico): marca os dias com treino; tocar no dia
+   abre os treinos daquele dia. Mais organizado que a lista longa. */
+function calendarioTreinos(lista,cardFn,podeCriar){
+  const porDia={}; for(const t of lista){const d=t.data||''; if(d)(porDia[d]=porDia[d]||[]).push(t);}
+  if(!S.calYM){S.calYM=(lista.length?[...lista].sort((a,b)=>(b.data||'').localeCompare(a.data||''))[0].data:hoje()).slice(0,7);}
+  const Y=+S.calYM.slice(0,4), M=+S.calYM.slice(5,7);
+  const inicioSemana=new Date(Y,M-1,1).getDay(), diasNoMes=new Date(Y,M,0).getDate(), hj=hoje();
+  const nav=dl=>{let y=Y,m=M+dl; if(m<1){m=12;y--} if(m>12){m=1;y++} return y+'-'+String(m).padStart(2,'0');};
+  const cell=d=>{const ds=`${Y}-${String(M).padStart(2,'0')}-${String(d).padStart(2,'0')}`, arr=porDia[ds]||[], sel=S.calDia===ds, eHoje=ds===hj;
+    const bg=sel?'var(--ink)':arr.length?'var(--deck)':'transparent', cor=sel?'var(--deck)':'inherit';
+    return`<button onclick="S.calDia='${ds}';render()" style="aspect-ratio:1;border:1px solid ${eHoje?'var(--water)':'var(--line)'};border-radius:10px;background:${bg};color:${cor};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0">
+      <span style="font-size:13px;font-weight:${arr.length?'800':'400'}">${d}</span>
+      ${arr.length?`<span style="font-size:8px;line-height:1;color:${sel?'var(--deck)':'var(--water)'}">●${arr.length>1?arr.length:''}</span>`:''}</button>`;};
+  let cells=''; for(let i=0;i<inicioSemana;i++)cells+='<div></div>'; for(let d=1;d<=diasNoMes;d++)cells+=cell(d);
+  const doDia=S.calDia?(porDia[S.calDia]||[]):null;
+  return`<div class="card">
+    <div class="row" style="align-items:center;margin-bottom:10px">
+      <button class="sm ghost" onclick="S.calYM='${nav(-1)}';S.calDia=null;render()">‹</button>
+      <div class="grow" style="text-align:center;font-weight:800;text-transform:capitalize">${MESES[M-1]} ${Y}</div>
+      <button class="sm ghost" onclick="S.calYM='${nav(1)}';S.calDia=null;render()">›</button></div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:10px;color:var(--ink-2);margin-bottom:5px">${['dom','seg','ter','qua','qui','sex','sáb'].map(n=>`<div>${n}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div></div>
+  ${S.calDia?`<div class="blk" style="margin-top:12px"><h3 style="text-transform:capitalize">${brData(S.calDia)}</h3><div class="ln"></div></div>
+    ${doDia.length?doDia.map(cardFn).join(''):`<div class="small muted" style="margin:10px 0;text-align:center">Nenhum treino nesse dia.${podeCriar?`<br><button class="sm ghost" style="margin-top:6px" onclick="novoTreinoDia('${S.calDia}')">+ Criar treino nesse dia</button>`:''}</div>`}`
+    :`<div class="small muted" style="margin-top:12px;text-align:center">Toque num dia para ver os treinos.</div>`}`;
+}
+function novoTreinoDia(ds){ push(); S.sub='novo'; S.editando=false; S.treino=null; S.selMulti=[]; TREINOPDF=null;
+  S.rascunho={data:ds,nivel:'',piscina:'SC25',parcial25:'1',titulo:'',texto:''}; render(); }
 const cardTreinoTec=t=>`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:10px 0" onclick="abrirTreino('${t.id}')">
   <div class="av">${brCurta(t.data).slice(0,2)}</div>
   <div class="grow"><b>${esc(t.titulo)}</b><div class="xs muted">${brData(t.data)} · ${(t.vol/1000).toFixed(1)}k · ${t.nAtletas||0} atleta(s)</div></div>
@@ -1066,7 +1094,11 @@ function telaTreinosTec(){
   <div class="opt" style="margin-bottom:6px">
     ${['todos',...NIVEIS].map(n=>`<button class="${S.filtroNivel===n?'on':''}" onclick="S.filtroNivel='${n}';render()">${n==='todos'?'Todos':n}</button>`).join('')}
   </div>
-  ${lista.length?grupoTreinos(lista,cardTreinoTec):`<div class="empty"><div class="big">Nenhum treino ainda</div>
+  <div class="row" style="gap:6px;margin-bottom:8px">
+    <button class="sm ${S.treinoView!=='lista'?'primary':'ghost'}" onclick="S.treinoView='cal';render()">📅 Calendário</button>
+    <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
+  </div>
+  ${lista.length?(S.treinoView==='lista'?grupoTreinos(lista,cardTreinoTec):calendarioTreinos(lista,cardTreinoTec,true)):`<div class="empty"><div class="big">Nenhum treino ainda</div>
       <p class="small">Cole o treino do dia e escolha quem vai recebê-lo.</p></div>`}`;
 }
 
@@ -1390,7 +1422,11 @@ function telaTreinosAtleta(){
   <div class="row" style="margin:16px 0 6px"><h2>Meus treinos</h2><div class="grow"></div>
     <span class="tag o">${esc(S.u.nivel||'')}</span></div>
   ${futuros?`<div class="xs muted" style="margin:2px 0 8px">Há ${futuros} treino(s) programado(s) para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
-  ${meus.length?grupoTreinos(meus,cardTreinoAtleta):
+  ${meus.length?`<div class="row" style="gap:6px;margin-bottom:8px">
+    <button class="sm ${S.treinoView!=='lista'?'primary':'ghost'}" onclick="S.treinoView='cal';render()">📅 Calendário</button>
+    <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
+  </div>
+  ${S.treinoView==='lista'?grupoTreinos(meus,cardTreinoAtleta):calendarioTreinos(meus,cardTreinoAtleta,false)}`:
     `<div class="empty"><div class="big">Nada por aqui ainda</div><p class="small">Assim que o técnico publicar um treino para você, ele aparece nesta tela.</p></div>`}`;
 }
 
@@ -3287,19 +3323,25 @@ function composicaoEstim(pro){
   const ult=bio[bio.length-1];
   const idade=(typeof anos==='function'&&S.u)?(anos(S.u)||42):42;
   const sexoF=!!(S.u&&S.u.store&&S.u.store.sexo==='feminino');
-  const plausivel=g=>g!=null&&g>=8&&g<=45;
-  let gord=ult.gordura, estimada=false, motivo='';
+  const plausivel=g=>g!=null&&g>=5&&g<=45;      // atleta muito magro (5%) é real
+  let gord=ult.gordura, estimada=false, motivo='', fonte='medida';
   if(!plausivel(gord)){
-    /* a bioimpedância do atleta lê gordura baixa demais → estima por idade/sexo.
-       (Deurenberg por IMC foi descartado: superestima em quem é musculoso.) */
-    estimada=true; motivo=bioSuspeita(ult)||'gordura da bioimpedância implausível';
-    const est=(sexoF?20:12)+(Math.max(30,idade)-30)*0.25;
-    gord=Math.max(sexoF?16:11, Math.min(sexoF?30:22, est));
+    estimada=true;
+    if(ult.agua!=null&&ult.agua>=45&&ult.agua<=80){
+      /* a % de gordura do aparelho lê baixo demais, mas a ÁGUA é confiável:
+         massa magra ≈ água corporal ÷ 0,732 (hidratação) → gordura por diferença. */
+      gord=100*(1-(ult.agua/100)/0.732); fonte='água corporal';
+      motivo=`a gordura% do aparelho (${ult.gordura}%) é implausível; estimada pela sua água corporal (${ult.agua}%)`;
+    } else {
+      gord=(sexoF?20:12)+(Math.max(30,idade)-30)*0.25; fonte='idade/sexo';
+      motivo='a gordura% do aparelho é implausível; estimada por idade/sexo';
+    }
+    gord=Math.max(sexoF?12:5, Math.min(sexoF?32:24, gord));
   }
   gord=+gord.toFixed(1);
   const massaMagra=+(ult.peso*(1-gord/100)).toFixed(1);
-  const score=Math.round(Math.max(0,Math.min(90,100-(gord-6)*2.6)));   // teto 90 (nunca "perfeito")
-  return {peso:ult.peso,data:ult.data,gordura:gord,estimada,motivo,massaMagra,score,imc:imcDe(ult),tmb:tmbDe(ult)};
+  const score=Math.round(Math.max(0,Math.min(90,92-(gord-6)*3)));   // teto 90 (nunca "perfeito")
+  return {peso:ult.peso,data:ult.data,gordura:gord,estimada,fonte,motivo,massaMagra,score,imc:imcDe(ult),tmb:tmbDe(ult)};
 }
 /* Composição × desempenho: massa magra + relação peso/potência (tempo/peso) */
 function cardComposicaoRelativa(pro){
@@ -3313,7 +3355,7 @@ function cardComposicaoRelativa(pro){
       <div class="kpi"><div class="v">${ref?fmt(ref.tempo,true):'—'}</div><div class="l">${ref?ref.prova:'melhor tempo'}</div></div>
     </div>
     <div class="row" style="justify-content:space-between;margin-top:10px"><span class="small">Gordura ${c.estimada?'estimada':'medida'}</span><span class="small t" style="font-weight:800">~${c.gordura}%</span></div>
-    ${c.estimada?`<div class="note" style="margin-top:8px">A gordura da bioimpedância está inconsistente (${c.motivo}). Estimei ~${c.gordura}% pela sua idade/sexo — valor de apoio, não medido. Se tiver uma medição de gordura confiável (ex.: dobras cutâneas), registre na bioimpedância que eu passo a usá-la.</div>`:''}
+    ${c.estimada?`<div class="note" style="margin-top:8px">${c.motivo.charAt(0).toUpperCase()+c.motivo.slice(1)}. Massa magra e composição vêm dessa estimativa${c.fonte==='água corporal'?' — que usa um dado confiável do seu exame':''}. Se tiver uma medição de gordura confiável (dobras/DEXA), registre-a que eu passo a usar.</div>`:''}
     <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). Perder peso mantendo a massa magra melhora a relação peso/potência — costuma refletir em velocidade.</div>
   </div>`;
 }
@@ -3619,10 +3661,10 @@ function laudoConsolidado(pro,diag,comPct,brk,sem){
   const saude=(exUlt||bioUlt)
     ? (alertas.length?`${alertas.length} ponto(s) de atenção nos exames/composição (detalhados abaixo).`:'Exames e composição sem alertas — base saudável para treinar forte.')
     : 'Sem exames de sangue ou bioimpedância lançados ainda.';
-  const tm=bioUlt?tmbDe(bioUlt):null, imc=bioUlt?imcDe(bioUlt):null, susp=bioUlt?bioSuspeita(bioUlt):null;
-  const comp=!bioUlt||bioUlt.gordura==null ? ''
-    : susp ? `Bioimpedância com valor suspeito (${susp}) — não considerada. Confira a medição.`
-    : `Gordura ${bioUlt.gordura}%${bioUlt.musculo!=null?`, massa muscular ${bioUlt.musculo}kg`:''}${imc!=null?`, IMC ${imc}`:''}${tm!=null?`, TMB ~${tm} kcal`:''}.`;
+  const ce=(typeof composicaoEstim==='function')?composicaoEstim(pro):null;
+  const comp=!ce ? ''
+    : ce.estimada ? `Gordura ~${ce.gordura}% (estimada${ce.fonte==='água corporal'?' pela água corporal':''}), massa magra ~${ce.massaMagra} kg${ce.tmb!=null?`, TMB ~${ce.tmb} kcal`:''}. A gordura% direta da bioimpedância lê baixo demais e não foi usada.`
+    : `Gordura ${ce.gordura}%, massa magra ${ce.massaMagra} kg${ce.imc!=null?`, IMC ${ce.imc}`:''}${ce.tmb!=null?`, TMB ~${ce.tmb} kcal`:''}.`;
   const treino=(comPct.length||ev.length)
     ? `${md!=null?`Tiros a <b>${md.toFixed(0)}%</b> do melhor tempo`:'Sem tiros suficientes'}${ev.length?` · ${evoluiu.length} prova(s) em evolução${regr.length?`, ${regr.length} em queda`:''} nas competições`:''}.`
     : 'Poucos tempos lançados para avaliar o desempenho.';
