@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v27</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v28</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v27';
+const VER='v28';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -3623,17 +3623,23 @@ function predicao(pro,comPct,est){
   const pront=est&&est.pr?est.pr.score:null, dias=est&&est.pr?est.pr.dias:0, tend=est&&est.tend?est.tend.dir:'→';
   const aPr=pront!=null?Math.max(-1.5,Math.min(1.5,-(pront-72)*0.06))/100:0, aTend=tend==='↑'?-0.005:tend==='↓'?0.005:0;
   const out=[];
-  for(const a of alvos)for(const pis of ['SC25','LC50']){
-    const pb=pbs[`${a.d} ${a.e} ${pis}`]; if(!pb)continue;
+  for(const a of alvos){
     const re=raceEst(comPct,pbs,a.d,a.e); if(!re)continue;
-    let central=Math.max(re.est*1.015*(1+aPr+aTend), pb*0.985);   // + leve penalidade de não estar afinado; teto no PB
-    const band=(a.d<=50?0.025:a.d<=100?0.035:0.045)+(re.cands.length<2?0.01:0);
-    const low=Math.max(central*(1-band),pb*0.98), high=central*(1+band);
-    const disc=re.cands.length>1?Math.abs(Math.max(...re.cands)-Math.min(...re.cands))/central:0;
-    const nEff=comPct.filter(x=>x.dist===a.d&&x.estilo===a.e).length;
-    const c=Math.round(Math.min(85, Math.min(35,nEff*7)+(re.cands.length>1?Math.max(4,20-disc*120):8)+(pront!=null?Math.min(18,dias*1.2):0)+12));
-    const fat=[...re.fat]; if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
-    out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),conf:c,fatores:fat});
+    /* os tiros de treino não distinguem piscina; uso a piscina de treino (curta) como
+       referência e escalo cada piscina pelo SEU PRÓPRIO PB → longa fica mais lenta. */
+    const refPB=pbs[`${a.d} ${a.e} SC25`]||pbs[`${a.d} ${a.e} LC50`];
+    const formRatio=refPB?re.est/refPB:1;
+    for(const pis of ['SC25','LC50']){
+      const pb=pbs[`${a.d} ${a.e} ${pis}`]; if(!pb)continue;
+      let central=Math.max(pb*formRatio*1.015*(1+aPr+aTend), pb*0.985);   // escala pelo PB DESTA piscina; +1.5% não-afinado; teto no PB
+      const band=(a.d<=50?0.025:a.d<=100?0.035:0.045)+(re.cands.length<2?0.01:0);
+      const low=Math.max(central*(1-band),pb*0.98), high=central*(1+band);
+      const disc=re.cands.length>1?Math.abs(Math.max(...re.cands)-Math.min(...re.cands))/central:0;
+      const nEff=comPct.filter(x=>x.dist===a.d&&x.estilo===a.e).length;
+      const c=Math.round(Math.min(85, Math.min(35,nEff*7)+(re.cands.length>1?Math.max(4,20-disc*120):8)+(pront!=null?Math.min(18,dias*1.2):0)+12));
+      const fat=[...re.fat]; if(pis==='LC50'&&pbs[`${a.d} ${a.e} SC25`])fat.push('Ajustado p/ piscina longa (seu gap SC↔LC)'); if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
+      out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),conf:c,fatores:fat});
+    }
   }
   return out.sort((x,y)=>y.conf-x.conf||x.d-y.d).slice(0,4);
 }
