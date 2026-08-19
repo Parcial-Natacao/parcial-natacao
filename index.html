@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v29</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v31</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v29';
+const VER='v31';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -376,6 +376,20 @@ function parseTempo(x){
   if(p.length===1)return Math.round(p[0]*1000);
   if(p.length===2)return Math.round((p[0]*60+p[1])*1000);
   return Math.round((p[0]*3600+p[1]*60+p[2])*1000);
+}
+/* Igual a parseTempo, mas usa a DISTÂNCIA para desfazer a ambiguidade de "1.09":
+   num 100m, 1,09s é impossível → interpreta como 1:09 (min:seg). Se já vier com
+   ":" ou "'" (min explícito), respeita. Evita o "1.08" virar 1,08s. */
+function parseTempoDist(x,dist){
+  if(x==null||x==='')return null;
+  const s=String(x).trim();
+  if(/[:'′h]/.test(s))return parseTempo(s);                 // separador de minuto explícito
+  const m=s.replace(',','.').match(/^(\d{1,2})\.(\d{2})$/);  // "M.SS" com 2 dígitos após o ponto
+  if(m&&dist){
+    const seg=parseFloat(s.replace(',','.'));
+    if(seg<dist*0.4 && +m[2]<60) return Math.round((+m[1]*60 + +m[2])*1000);  // rápido demais p/ a distância → min:seg
+  }
+  return parseTempo(s);
 }
 let tT; function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');
   clearTimeout(tT);tT=setTimeout(()=>e.classList.remove('on'),2600)}
@@ -931,23 +945,26 @@ const ESTILOS=[[/borbol|golfin|\bfly\b|\bbf\b/i,'borboleta'],[/costas?|\bcs\b/i,
 const RECURSOS=[[/pernad|perna|kick/i,'pernada'],[/braçad|braço|pull/i,'braçada'],[/educativ|técnic|drill/i,'técnica'],
  [/palmar|paddle/i,'palmar'],[/saíd|partida|start/i,'saída'],[/vira|turn/i,'virada'],[/filipin|pullout|submers/i,'filipina'],
  [/progressiv/i,'progressivo'],[/boia|pull\s*buoy/i,'boia']];
-const CABECA=/^(aquecimen|aquec|warm|ativa|técnic|tecnic|educativ|principal|série|serie|conjunto|main|tiros?\b|velocidad|aeróbi|aerobi|limiar|soltura|volta[\s-]*à?\s*calma|volta calma|desaquec|pré[\s-]*principal|pre[\s-]*principal|complemento|final|regenerat|poliment|core|seco|dryland|travessia)/i;
+const CABECA=/^(aquecimen|aquec|warm|ativa|técnic|tecnic|educativ|parte\s*princip|principal|série|serie|conjunto|main|tiros?\b|velocidad|aeróbi|aerobi|limiar|soltura|volta[\s-]*à?\s*calma|volta calma|desaquec|pré[\s-]*principal|pre[\s-]*principal|complemento|final|regenerat|poliment|core|seco|dryland|travessia)/i;
 
 function interpretar(txt){
-  const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]};
+  const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]}; let mult=1;
   const notaPref=/^(obs|observ|nota|aten|import|lembr|foco|dica)\b/i;
+  const multLine=/^(\d{1,2})\s*[x×]\s*:?\s*$/i;   /* "2x", "2x:", "3 x" sozinho = o bloco repete N vezes */
   for(const raw of (txt||'').split(/\r?\n/)){
     const l=raw.trim(); if(!l)continue;
     const ehHeader=!notaPref.test(l)&&CABECA.test(l);
     if(ehHeader){
       if(atual.itens.length)blocos.push(atual);
-      atual={id:uid(),titulo:l.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]};
+      atual={id:uid(),titulo:l.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]}; mult=1;  /* novo bloco zera o multiplicador */
       if(!/\d/.test(l.replace(CABECA,'')))continue;
     }
+    const mm=l.match(multLine);
+    if(mm){ mult=Math.min(+mm[1],12)||1; continue; }   /* linha "Nx" define o multiplicador do bloco */
     /* linha que é só descanso/observação vira NOTA (não se perde) */
     const soRest=/^(descanso|pausa|rest|intervalo|recupera)/i.test(l)&&!/\d\s*[x×]\s*\d/.test(l);
     const it=soRest?null:linhaParaItem(l);
-    if(it)atual.itens.push(it);
+    if(it){ if(mult>1){it.rodadas=Math.min((it.rodadas||1)*mult,12); it.vol=(it.rodadas||1)*it.reps*it.dist;} atual.itens.push(it); }
     else if(!ehHeader)atual.itens.push({id:uid(),nota:true,texto:l,vol:0});
   }
   if(atual.itens.length)blocos.push(atual);
@@ -1278,12 +1295,9 @@ function linhaSerie(t,i,at,semCrono){
   const mel=ts.length?Math.min(...ts):null;
   const pct=(!aa&&dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
   const z=zona(pct);
-  /* tiro de verdade → cronometrar; ativação/rodagem → opcional; aquec/soltura → nenhum */
-  const eTiro=/\btiro\b|máxim|maxim|all\s*out|sprint|ritmo de prova|\brp\b|\ba[3-6]\b|9[0-9]\s*%|100\s*%/i.test(i.texto||'');
+  /* "+" para anotar tempo em QUALQUER série; só aquecimento/soltura ficam sem botão */
   const botao=semCrono?''
-    :((eTiro||logged)
-      ?`<button class="sm ghost" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">${logged?'Editar':'Lançar'}</button>`
-      :`<button class="sm ghost" style="opacity:.55;font-size:12px" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">anotar tempo</button>`);
+    :`<button class="sm ghost" style="font-weight:800${logged?'':';color:var(--water)'}" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">${logged?'editar':'+ tempo'}</button>`;
   const chips=aa
     ? (rec.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(rec.ritmo100,true)}</span></div>`:'')
     : multi
@@ -1327,7 +1341,7 @@ function abrirLancamento(itemId,atletaId){
     return;
   }
   const nrd=item.rodadas||1;
-  const rodInfo=`<div class="xs muted" style="margin-top:8px">Aceita 34.5 · 34,50 · 1:07.2 · 1'07"20 — cada tempo é salvo ao tocar no ✓.</div>
+  const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet();render()">Fechar</button>`;
   if(nrd>1){
     if(S.rd==null||S.rd<0||S.rd>=nrd)S.rd=0;
@@ -1350,11 +1364,11 @@ function abrirLancamento(itemId,atletaId){
     ${rodInfo}`);
 }
 /* lê todos os campos digitados na ficha (para não perder nada) */
-function lerCamposLancamento(reps,temParcial){
+function lerCamposLancamento(reps,temParcial,dist){
   const tempos=[],parciais=[];
   for(let k=0;k<reps;k++){
-    const el=document.getElementById('lt'+k); tempos.push(el?parseTempo(el.value):null);
-    if(temParcial){const ep=document.getElementById('lp'+k); parciais.push(ep?parseTempo(ep.value):null);}
+    const el=document.getElementById('lt'+k); tempos.push(el?parseTempoDist(el.value,dist):null);
+    if(temParcial){const ep=document.getElementById('lp'+k); parciais.push(ep?parseTempoDist(ep.value,dist?dist/2:null):null);}
   }
   return {tempos,parciais};
 }
@@ -1377,7 +1391,7 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais){
 /* ✓ verde: grava o tempo daquela linha (e tudo que estiver digitado) na hora */
 async function confTempo(itemId,atletaId,i,rd){
   const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId); if(!item)return;
-  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial);
+  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial,item.dist);
   if(tempos[i]==null)return toast('Digite o tempo da linha '+(i+1)+' antes do ✓');
   await gravarReg(itemId,atletaId,rd==null?null:rd,tempos,parciais);
   toast('Tempo '+(i+1)+' salvo');
@@ -1386,7 +1400,7 @@ async function confTempo(itemId,atletaId,i,rd){
 /* ✕ vermelho: apaga o tempo daquela linha */
 async function delTempo(itemId,atletaId,i,rd){
   const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId); if(!item)return;
-  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial);
+  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial,item.dist);
   tempos[i]=null; if(item.parcial)parciais[i]=null;
   await gravarReg(itemId,atletaId,rd==null?null:rd,tempos,parciais);
   toast('Tempo '+(i+1)+' apagado');
@@ -2844,7 +2858,6 @@ async function salvarSeco(){
   S.pro.seco.unshift({id:uid(),data:val('skData')||hoje(),tipo:document.getElementById('skTipo').value,
     obs:val('skObs'),transcricao:val('skTrans'),rpe:(S.secoDraft&&S.secoDraft.rpe!=null)?S.secoDraft.rpe:null,dur:(S.secoDraft&&S.secoDraft.dur!=null)?S.secoDraft.dur:null,
     exercicios:_pf.itens,cargaEstruturada:_ce,img:FOTO,arquivo:SECOPDF});
-  if(S.pro.seco.length>24)S.pro.seco=S.pro.seco.slice(0,24);
   FOTO=null; SECOPDF=null; S.secoDraft=null; await salvarPro(); toast('Registro salvo'); render();
 }
 async function apagarSeco(id){S.pro.seco=S.pro.seco.filter(x=>x.id!==id);await salvarPro();render()}
@@ -2925,13 +2938,15 @@ function normalizarExercicio(nome){
 /* e-1RM estimado (NÃO é força máxima medida). Epley + Brzycki, 1–10 reps. */
 function estimarE1RM(carga,reps){
   if(carga==null||!(carga>0)||reps==null||reps<1||reps>10)return{valor:null,metodo:null,carga,reps,confianca:0};
-  if(reps===1)return{valor:+(+carga).toFixed(1),metodo:'direto (1RM)',carga,reps,confianca:1};
+  if(reps===1)return{valor:Math.round(carga),metodo:'direto (1RM)',carga,reps,confianca:1};
   const epley=carga*(1+reps/30), brzycki=carga*36/(37-reps);
-  return{valor:+((epley+brzycki)/2).toFixed(1),metodo:'Epley+Brzycki',carga,reps,confianca:reps<=6?0.9:reps<=8?0.8:0.7};
+  return{valor:Math.round((epley+brzycki)/2),metodo:'Epley+Brzycki',carga,reps,confianca:reps<=6?0.9:reps<=8?0.8:0.7}; // apresentação em kg inteiro
 }
-/* Interpreta a ficha de força. Carga só com indicação CONFIÁVEL (kg explícito =
-   alta; número solto = média). Descanso/pausa nunca vira carga. Reps em segundos
-   (prancha) = isométrico → sem carga e tonelagem 0. Mantém campos antigos (ex/ton). */
+/* Interpreta a ficha de força. Carga SÓ entra nos cálculos com unidade explícita
+   de kg. Número solto (ex.: "Supino 4x8 60") vira `cargaAmbigua` e NÃO conta em
+   tonelagem/e-1RM (fica guardado para confirmação futura). Descanso/pausa nunca é
+   carga. Reps em segundos (prancha) = isométrico → sem carga e tonelagem 0.
+   Mantém campos antigos (ex/ton). */
 function parseForca(txt){
   if(!txt)return{itens:[],tonelagem:0};
   const itens=[]; let ton=0;
@@ -2940,17 +2955,17 @@ function parseForca(txt){
     const m=ln.match(/(\d{1,2})\s*[x×]\s*(\d{1,3})/i); if(!m)continue;
     const series=+m[1], reps=+m[2], resto=ln.slice(m.index+m[0].length);
     const tempoReps=/^\s*(s|seg|segundos|"|”)\b/i.test(resto)||/^\s*(s|seg)/i.test(resto);  // reps em segundos → isométrico
-    let carga=null, unidade=null, conf=0;
+    let carga=null, unidade=null, cargaAmbigua=null;
     if(!tempoReps){
       const semSR=ln.replace(m[0],' ');
       const mkg=semSR.match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*kg\b/i);
-      if(mkg){carga=parseFloat(mkg[1].replace(',','.'));unidade='kg';conf=0.9;}
+      if(mkg){carga=parseFloat(mkg[1].replace(',','.'));unidade='kg';}
       else{
         const limpo=semSR
           .replace(/\b(descanso|pausa|desc\.?|rest|intervalo|int\.?|sa[íi]da|pace)\b\D{0,4}\d{1,3}\s*(s|seg|min|'|"|”)?/ig,' ')
           .replace(/\d{1,3}\s*(s|seg|min|'|"|”)\b/ig,' ');   // remove qualquer tempo restante
         const mnum=limpo.match(/(\d{1,3}(?:[.,]\d{1,2})?)/);
-        if(mnum){carga=parseFloat(mnum[1].replace(',','.'));unidade='kg?';conf=0.5;}
+        if(mnum)cargaAmbigua=parseFloat(mnum[1].replace(',','.'));   // guardado, NÃO entra nos cálculos
       }
     }
     const norm=normalizarExercicio(ln.slice(0,m.index));
@@ -2958,7 +2973,7 @@ function parseForca(txt){
     const tonI=(carga!=null&&!tempoReps)?series*reps*carga:0; ton+=tonI;
     const e1=estimarE1RM(carga,reps);
     itens.push({idExercicio:norm.idExercicio,nomeOriginal,nomeCanonico:norm.nomeCanonico,grupoMuscular:norm.grupoMuscular,
-      series,reps,carga,unidade,tonelagem:Math.round(tonI),e1rm:e1.valor,confianca:conf,
+      series,reps,carga,unidade,cargaAmbigua,tonelagem:Math.round(tonI),e1rm:e1.valor,confianca:carga!=null?0.9:0,
       ex:nomeOriginal,ton:Math.round(tonI)});   // compat
   }
   return{itens,tonelagem:Math.round(ton)};
@@ -2982,11 +2997,17 @@ function tonelagem(dias){
   return total>0?{total:Math.round(total),sessoes:n}:null;
 }
 /* ── HISTÓRICO E PROGRESSÃO DE FORÇA (por exercício canônico) ────────────────*/
-function tendenciaSerie(vals){ // vals cronológicos; retorna ↑/→/↓ pela 1ª vs última
-  const v=vals.filter(x=>x!=null); if(v.length<2)return '→';
-  const d=(v[v.length-1]-v[0])/(Math.abs(v[0])||1)*100;
-  return d>3?'↑':d<-3?'↓':'→';
+const med=a=>{const s=[...a].filter(x=>x!=null).sort((x,y)=>x-y),n=s.length;return n?(n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2):null;};
+/* Tendência ROBUSTA pela série temporal: mediana da 1ª metade vs 2ª metade.
+   Precisa de ≥3 sessões, senão "insuficiente". Sem machine learning. */
+function tendenciaForca(vals){
+  const v=vals.filter(x=>x!=null); if(v.length<3)return{dir:'insuficiente',pct:null};
+  const mid=Math.floor(v.length/2);
+  const a=med(v.slice(0,mid)), b=med(v.slice(mid));
+  const pct=a?(b-a)/Math.abs(a)*100:0;
+  return{dir:pct>3?'↑':pct<-3?'↓':'→',pct:+pct.toFixed(1)};
 }
+const confRotulo=n=>n>=5?'alta':n>=3?'média':'baixa';
 function historicoForcaExercicio(pro,idExercicio,dias){
   dias=dias||90; const h0=new Date(hoje()+'T00:00:00');
   const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
@@ -3002,11 +3023,12 @@ function historicoForcaExercicio(pro,idExercicio,dias){
       e1rm:melhor.e1rm!=null?melhor.e1rm:(estimarE1RM(melhor.carga,melhor.reps).valor)});
   }
   if(!sessoes.length)return null;
-  const cargas=sessoes.map(x=>x.carga), e1s=sessoes.map(x=>x.e1rm).filter(x=>x!=null), vols=sessoes.map(x=>x.tonelagem);
+  const cargas=sessoes.map(x=>x.carga), e1s=sessoes.map(x=>x.e1rm).filter(x=>x!=null);
+  const tend=tendenciaForca(sessoes.map(x=>x.e1rm));
   return {exercicio:nome,idExercicio,sessoes,
-    melhorE1RM:e1s.length?Math.max(...e1s):null, melhorCarga:Math.max(...cargas), ultimaCarga:cargas[cargas.length-1],
-    tendenciaE1RM:tendenciaSerie(sessoes.map(x=>x.e1rm)), tendenciaCarga:tendenciaSerie(cargas), tendenciaVolume:tendenciaSerie(vols),
-    confianca:Math.min(1,sessoes.length/4)};
+    melhorE1RM:e1s.length?Math.max(...e1s):null, e1RMRecente:e1s.length?e1s[e1s.length-1]:null,
+    e1RMInicial:e1s.length?e1s[0]:null, melhorCarga:Math.max(...cargas), ultimaCarga:cargas[cargas.length-1],
+    tendencia:tend.dir, tendenciaPct:tend.pct, confianca:Math.min(1,sessoes.length/5), confiancaRotulo:confRotulo(sessoes.length)};
 }
 function progressaoForca(pro,dias){
   dias=dias||90;
@@ -3018,29 +3040,32 @@ function progressaoForca(pro,dias){
   for(const id of ids){
     const h=historicoForcaExercicio(pro,id,dias); if(!h||h.sessoes.length<2)continue;
     const a=h.sessoes[0], b=h.sessoes[h.sessoes.length-1];
-    const pct=(x,y)=>x&&y!=null?+(( y-x)/Math.abs(x)*100).toFixed(1):null;
-    // densidade = tonelagem por minuto, quando a sessão tem duração
-    const dens=s=>{const sec=(pro.seco||[]).find(k=>k.data===s.data); const dur=sec&&sec.dur; return dur?s.tonelagem/dur:null;};
-    exercicios.push({idExercicio:id,nome:h.exercicio,
-      inicio:{data:a.data,carga:a.carga,e1rm:a.e1rm,tonelagem:a.tonelagem},
-      atual:{data:b.data,carga:b.carga,e1rm:b.e1rm,tonelagem:b.tonelagem},
-      delta:{cargaPct:pct(a.carga,b.carga),e1rmPct:pct(a.e1rm,b.e1rm),tonelagemPct:pct(a.tonelagem,b.tonelagem),densidadePct:pct(dens(a),dens(b))},
-      tendencia:h.tendenciaE1RM, nSessoes:h.sessoes.length, confianca:h.confianca});
+    const pct=(x,y)=>x&&y!=null?+((y-x)/Math.abs(x)*100).toFixed(1):null;
+    exercicios.push({idExercicio:id,nome:h.exercicio,nSessoes:h.sessoes.length,
+      inicio:{data:a.data,carga:a.carga,e1rm:a.e1rm}, atual:{data:b.data,carga:b.carga,e1rm:b.e1rm},
+      e1RMInicial:h.e1RMInicial, e1RMRecente:h.e1RMRecente, melhorE1RM:h.melhorE1RM,
+      variacaoPct:pct(h.e1RMInicial,h.e1RMRecente),
+      delta:{cargaPct:pct(a.carga,b.carga),e1rmPct:pct(h.e1RMInicial,h.e1RMRecente),tonelagemPct:pct(a.tonelagem,b.tonelagem)},
+      tendencia:h.tendencia, tendenciaPct:h.tendenciaPct, confianca:h.confianca, confiancaRotulo:h.confiancaRotulo});
   }
-  return {exercicios:exercicios.sort((x,y)=>(y.delta.e1rmPct||-999)-(x.delta.e1rmPct||-999)), dias};
+  return {exercicios:exercicios.sort((x,y)=>(y.variacaoPct||-999)-(x.variacaoPct||-999)), dias};
 }
 function cardEvolucaoForca(pro){
   const p=progressaoForca(pro,90); if(!p.exercicios.length)return'';
-  const linhas=p.exercicios.map(e=>{const d=e.delta.e1rmPct, cor=d>0?'var(--ok)':d<0?'var(--clock)':'var(--ink-2)';
-    const e0=e.inicio.e1rm, e1=e.atual.e1rm;
-    return`<div style="border-top:1px solid var(--line);padding:8px 0">
+  const seta=d=>d==='↑'?'↑':d==='↓'?'↓':d==='→'?'→':'—';
+  const linhas=p.exercicios.map(e=>{const v=e.variacaoPct, cor=v>0?'var(--ok)':v<0?'var(--clock)':'var(--ink-2)';
+    const tcor=e.tendencia==='↑'?'var(--ok)':e.tendencia==='↓'?'var(--clock)':'var(--ink-2)';
+    return`<div style="border-top:1px solid var(--line);padding:9px 0">
       <div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(e.nome)}</b>
-        <span class="n" style="font-weight:700;color:${cor}">${d>0?'+':''}${d!=null?d+'%':'—'}</span></div>
-      <div class="xs muted">e-1RM ${e0!=null?e0:'—'} → ${e1!=null?e1:'—'} kg · carga ${e.inicio.carga}→${e.atual.carga} kg · ${e.nSessoes} sessão(ões)</div></div>`;}).join('');
+        <span class="xs muted">${e.nSessoes} sessão(ões) · ${p.dias} dias</span></div>
+      <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:3px">
+        <span class="n">e-1RM <b>${e.e1RMInicial!=null?e.e1RMInicial:'—'} → ${e.e1RMRecente!=null?e.e1RMRecente:'—'} kg</b> <span class="xs muted">· melhor ${e.melhorE1RM!=null?e.melhorE1RM:'—'} kg</span></span>
+        <span class="n" style="font-weight:700;color:${cor}">${v>0?'+':''}${v!=null?v+'%':'—'}</span></div>
+      <div class="xs muted" style="margin-top:3px">tendência <span style="color:${tcor};font-weight:700">${e.tendencia==='insuficiente'?'insuficiente':seta(e.tendencia)}</span> · confiança ${e.confiancaRotulo}</div></div>`;}).join('');
   return`<div class="card"><div class="eyebrow">evolução de força</div>
-    <div class="small muted" style="margin:4px 0 4px">Progresso por exercício nos últimos ${p.dias} dias (e-1RM = 1RM estimado, não medido). Sem ranking entre exercícios diferentes.</div>
+    <div class="small muted" style="margin:4px 0 4px">Progresso por exercício nos últimos ${p.dias} dias. e-1RM = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.</div>
     ${linhas}
-    <div class="xs muted" style="margin-top:8px">e-1RM estimado por Epley+Brzycki a partir de carga×reps (1–10 reps). Registre a ficha com as cargas para acompanhar a progressão.</div>
+    <div class="xs muted" style="margin-top:8px">Tendência = mediana da 1ª metade vs 2ª metade das sessões (precisa de ≥3). Registre a ficha com as cargas em <b>kg</b> para acompanhar.</div>
   </div>`;
 }
 /* ---------- exames laboratoriais ---------- */
@@ -3232,7 +3257,7 @@ function dadosParaLaudo(motor){
 async function gerarLaudoIA(){
   toast('Gerando laudo por IA… aguarde');
   try{
-    const pro=S.pro||{}, esf=ESF||await coletarEsforcos();
+    const pro=S.pro||{}, esf=ESF||await coletarEsforcos({dias:120});
     const int=esf.filter(x=>!['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
     const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
     const brk=int.filter(x=>x.p1!=null&&x.dist===50).map(x=>({...x,delta:x.tempo-2*x.p1}));
@@ -3862,7 +3887,7 @@ function motorPerformance(pro,comPct,sem,brk){
   const progF=(typeof progressaoForca==='function')?progressaoForca(pro,90):{exercicios:[]};
   const ton90=(typeof tonelagem==='function')?tonelagem(90):null;
   const secForca=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;return x>=0&&x<90&&tonForcaSessao(s)>0;})).length;
-  const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.atual.e1rm,e1rmPct:e.delta.e1rmPct}))};
+  const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.e1RMRecente,e1rmPct:e.variacaoPct,melhorE1RM:e.melhorE1RM,e1RMRecente:e.e1RMRecente,tendencia:e.tendencia,confianca:e.confianca}))};
   return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),forca,inventario:inv,confianca:Math.round(Math.min(100,pts))};
 }
 function cardModelo(m){
@@ -3920,7 +3945,7 @@ function cabecalhoRelatorio(pro,motor){
   </div>`;
 }
 function telaRelatorio(){
-  if(!ESF){coletarEsforcos().then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
+  if(!ESF){coletarEsforcos({dias:120}).then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
   const int=ESF.filter(e=>!tec.includes(e));
@@ -4087,7 +4112,7 @@ function imprimirRelatorio(){
 }
 async function compartilharRelatorio(){
   const pro=S.pro||{};
-  const e=ESF||await coletarEsforcos();
+  const e=ESF||await coletarEsforcos({dias:120});
   const tec=e.filter(x=>['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
   const int=e.filter(x=>!tec.includes(x));
   const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
