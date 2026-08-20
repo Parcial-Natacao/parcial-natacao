@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v35</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v37</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v35';
+const VER='v37';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -902,8 +902,8 @@ function abrirConta(){
         <button class="sm ${S.gestao?'primary':''}" onclick="alternarGestao()">${S.gestao?'Ativada':'Ativar'}</button></div>`:''}
     ${ehDev()?`<div class="sep"></div>
       <div class="row" style="align-items:center;gap:10px">
-        <div class="grow"><b>Desenvolvedor</b><div class="xs muted">Criar equipes e aprovar/gerir os técnicos do app.</div></div>
-        <button class="sm" onclick="abrirDevEquipes()">Equipes</button>
+        <div class="grow"><b>Desenvolvedor</b><div class="xs muted">Gerencie na aba <b>Equipes</b> (na barra inferior). Ou os técnicos aqui.</div></div>
+        <button class="sm" onclick="fecharSheet();irPara('equipes')">Equipes</button>
         <button class="sm" onclick="abrirDevTecnicos()">Técnicos</button></div>`:''}
     <div class="sep"></div>
     <button class="full ghost" onclick="abrirModo()">Dados e backup</button>
@@ -983,6 +983,7 @@ function render(){
       :S.u.podeMarcas
         ?{treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas}
         :{treinos:telaTreinosAtleta,competicao:telaCompAtleta};
+  if(ehDev())mapa.equipes=telaEquipes;   /* aba do desenvolvedor */
   app.innerHTML=(mapa[S.aba]||Object.values(mapa)[0])();
 }
 /* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
@@ -995,6 +996,7 @@ function navBar(){
       :S.u.podeMarcas
         ?[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas']]
         :[['treinos','≡','Treinos'],['competicao','▲','Comp.']];
+  if(ehDev())abas.push(['equipes','▤','Equipes']);
   document.getElementById('nav').classList.remove('hide');
   document.getElementById('navin').innerHTML=abas.map(([k,i,n])=>
     `<button class="${S.aba===k?'on':''}" onclick="irPara('${k}')"><b>${i}</b>${n}</button>`).join('');
@@ -1664,6 +1666,59 @@ async function carregarEquipesDisp(){
   for(const sg of slugs){const eq=await DB.get(kEq(sg)); if(eq)out.push({slug:sg,nome:eq.nome});}
   S.equipesDisp=out.sort((a,b)=>a.nome.localeCompare(b.nome));
 }
+/* ── ABA EQUIPES (desenvolvedor) ─────────────────────────────────────────── */
+async function carregarEquipesDevList(){
+  const slugs=await DB.get('dev_equipes')||[]; const out=[];
+  for(const sg of slugs){const eq=await DB.get(kEq(sg)); if(!eq)continue;
+    const us=await DB.get(kEqUsers(sg))||[]; out.push({slug:sg,nome:eq.nome,tecnicoEmail:eq.tecnicoEmail,membros:us.length});}
+  S.equipesDevList=out.sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+function telaEquipes(){
+  if(!ehDev())return`<div class="empty"><div class="big">Sem acesso</div></div>`;
+  if(S.equipesDevList==null){carregarEquipesDevList().then(()=>render());return`<div class="empty"><div class="big">Carregando equipes…</div></div>`;}
+  const lst=S.equipesDevList, ja=new Set(lst.map(x=>x.slug));
+  const disp=CATALOGO_EQUIPES.filter(e=>!ja.has(slug(e.nome)));
+  const opts=disp.map(e=>`<option value="${esc(e.nome)}">${esc(e.nome)}${e.sigla&&e.sigla!==e.nome?' — '+esc(e.sigla):''}</option>`).join('');
+  return`
+  <div class="row" style="margin:16px 0 6px"><h2>Equipes</h2><div class="grow"></div>
+    <button class="sm ghost" onclick="abrirDevTecnicos()">Técnicos</button></div>
+  <div class="card">
+    <div class="eyebrow">nova equipe</div>
+    <div class="field" style="margin-top:8px"><label>Equipe do catálogo</label>
+      <select id="deqCat" onchange="var w=document.getElementById('deqNomeWrap');if(w)w.style.display=this.value==='__custom__'?'':'none'"><option value="">— escolher da lista —</option>${opts}<option value="__custom__">Outra (digitar)…</option></select></div>
+    <div class="field" id="deqNomeWrap" style="display:none"><label>Nome (fora da lista)</label><input id="deqNome" autocapitalize="words" placeholder="ex.: Time Águia"></div>
+    <button class="primary full" onclick="criarEquipeDevTela()">Criar equipe</button>
+    <div class="xs muted" style="margin-top:6px">A equipe fica <b>apta</b> para o técnico se cadastrar escolhendo-a; depois você libera o técnico em <b>Técnicos</b>. Não precisa do e-mail dele.</div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">equipes criadas (${lst.length})</div>
+    ${lst.length?lst.map(e=>`<div class="lst"><span class="av">▤</span>
+      <span class="grow"><b>${esc(e.nome)}</b><span class="xs muted" style="display:block">${e.tecnicoEmail?('téc: '+esc(e.tecnicoEmail)):'apta — sem técnico ainda'} · ${e.membros} membro(s)</span></span>
+      <button class="sm ghost" style="color:var(--clock)" onclick="apagarEquipeDevTela('${e.slug}')">✕</button></div>`).join(''):'<div class="small muted" style="margin-top:6px">Nenhuma equipe criada ainda. Escolha uma da lista acima.</div>'}
+  </div>
+  <div style="height:20px"></div>`;
+}
+async function criarEquipeDevTela(){
+  if(!ehDev())return;
+  const cat=(document.getElementById('deqCat')||{}).value||'';
+  const nome=(cat&&cat!=='__custom__')?cat:val('deqNome');
+  if(!nome)return toast('Escolha uma equipe da lista ou digite o nome');
+  const sg=slug(nome); if(!sg)return toast('Nome inválido');
+  if(await DB.get(kEq(sg)))return toast('Essa equipe já foi criada');
+  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
+  await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]); await registrarEquipeDev(sg);
+  S.equipesDisp=null; S.equipesDevList=null;
+  toast(`Equipe "${nome.trim()}" criada`); render();
+}
+async function apagarEquipeDevTela(sg){
+  if(!ehDev())return;
+  const eq=await DB.get(kEq(sg));
+  if(!confirm(`Apagar a equipe "${eq?eq.nome:sg}"? Treinos e competições dela serão removidos. As contas dos usuários não são apagadas, mas ficam sem equipe.`))return;
+  for(const k of [kEq(sg),kLib(sg),kEqUsers(sg),kTrIdx(sg),kCIdx(sg)])await apagarChave(k);
+  const idx=(await DB.get('dev_equipes')||[]).filter(x=>x!==sg); await DB.set('dev_equipes',idx);
+  S.equipesDisp=null; S.equipesDevList=null;
+  toast('Equipe apagada'); render();
+}
 async function aprovarTecnico(email){
   if(!ehDev())return;
   const u=await DB.get(kUser(email)); if(!u)return;
@@ -1912,6 +1967,7 @@ function telaCompeticao(){
       <span class="tag ${done===p.inscritos.length&&done>0?'':'o'}">${done}/${p.inscritos.length}</span></button>`}).join(''):
     `<div class="empty"><div class="big">Sem provas</div><p class="small">Carregue o balizamento ou inclua as provas à mão.</p></div>`}
   ${blocoBalizamento()}
+  ${blocoResultados()}
   <div class="card"><div class="eyebrow">incluir prova</div>
     <button class="full" style="margin-top:9px" onclick="abrirNovaProva('ind')">Prova individual</button>
     <button class="full ghost" style="margin-top:8px" onclick="abrirNovaProva('rev')">Revezamento</button></div>
@@ -1994,7 +2050,10 @@ function rosterCard(c){
     <p class="small muted" style="margin:4px 0 8px">Atletas da sua equipe no balizamento e as provas de cada um (com o tempo de inscrição). Toque numa prova para lançar os tempos.</p>
     ${ats.map(a=>`<div style="padding:8px 0;border-top:1px solid var(--line)">
       <div class="row" style="align-items:baseline;gap:6px"><b>${esc(a.nome)}</b>${a.faixa?`<span class="xs muted">${esc(a.faixa)}</span>`:''}${a.atletaId?'<span class="tag" style="border-color:var(--rope);color:var(--rope)">no app</span>':''}</div>
-      <div class="chips" style="margin-top:4px">${a.provas.sort((x,y)=>x.ip-y.ip).map(({p,ip,i})=>`<button class="chip" onclick="push();S.provaSel=${ip};render();window.scrollTo(0,0)">${p.dist} ${p.estilo}${i.inscricao?' · '+fmt(i.inscricao,true):''}</button>`).join('')}</div>
+      <div class="chips" style="margin-top:4px">${a.provas.sort((x,y)=>x.ip-y.ip).map(({p,ip,i})=>{
+        const fin=(i.oficialTempo!=null)?i.oficialTempo:((i.parciais||[]).filter(x=>x!=null).slice(-1)[0]);
+        const txt=fin!=null?fmt(fin,true)+(i.colocacao?' · '+i.colocacao:''):(i.inscricao?'insc '+fmt(i.inscricao,true):'');
+        return`<button class="chip${fin!=null?' best':''}" onclick="push();S.provaSel=${ip};render();window.scrollTo(0,0)">${p.dist} ${p.estilo}${txt?' · '+txt:''}</button>`;}).join('')}</div>
     </div>`).join('')}
   </div>`;
 }
@@ -2072,6 +2131,37 @@ async function lerBalizamento(inp){
     if(st)st.textContent=`${provas.length} prova(s) e ${n} inscrição(ões) da sua equipe importadas.`;
     toast('Balizamento carregado');
   }catch(e){ if(st)st.textContent='Não consegui ler o PDF: '+e.message; }
+}
+/* Resultados oficiais (ABMN) → por prova, os atletas da EQUIPE com colocação, tempo
+   final e parciais. Linha: colocação matr NOME EQUIPE tempo pontos FINA [Xm: split ...].
+   N/C, DQL, DNS ficam sem tempo. */
+function parseResultadosEquipe(txt,alvos){
+  const ESTIL=[[/livre|crawl/i,'livre'],[/costas?/i,'costas'],[/peito/i,'peito'],[/borbol/i,'borboleta'],[/medley/i,'medley']];
+  const AL=(alvos||[]).map(a=>a.toUpperCase()).sort((a,b)=>b.length-a.length);
+  const provas=[]; let cur=null;
+  for(const raw of String(txt||'').split(/\r?\n/)){
+    const l=raw.trim(); if(!l)continue;
+    if(/\bprova\b/i.test(l)&&/metros/i.test(l)){
+      if(/revez|\d\s*x\s*\d/i.test(l)){cur=null;continue;}
+      const md=l.match(/prova\s*[-–:]?\s*(\d{2,4})\s*metros/i), mc=l.match(/(\d+)\s*[º°ªo]\s*prova/i);
+      if(md){let estilo='livre';for(const[re,v]of ESTIL){if(re.test(l)){estilo=v;break;}}
+        const genero=/femin/i.test(l)?'F':/mascul/i.test(l)?'M':'';
+        cur={codigo:mc?mc[1]:null,dist:+md[1],estilo,genero,inscritos:[]}; provas.push(cur);}
+      continue;
+    }
+    if(!cur)continue;
+    const up=l.toUpperCase(); let alvo=null,idx=-1;
+    for(const a of AL){let j=up.indexOf(' '+a+' '); if(j<0&&up.endsWith(' '+a))j=up.length-a.length-1; if(j>=0){alvo=a;idx=j;break;}}
+    if(alvo==null)continue;
+    const antes=l.slice(0,idx).trim(), depois=l.slice(idx+1+alvo.length).trim();
+    const mh=antes.match(/^(\d+\s*[º°ªo]|N\/?C|DQL|DNS|DQ)\s+(\d+)\s+(.+)$/i); if(!mh)continue;
+    const nome=mh[3].replace(/\(.*?\)/g,'').replace(/\s{2,}/g,' ').trim();
+    const mt=depois.match(/^(\d{1,2}:\d{2}[.,]\d{2}|\d{1,3}[.,]\d{2})\b/);
+    const splits=[...depois.matchAll(/(\d{2,4})\s*m:\s*(\d{1,2}:\d{2}[.,]\d{2}|\d{1,3}[.,]\d{2}|S\/T)/gi)]
+      .map(m=>({dist:+m[1],t:/S\/T/i.test(m[2])?null:parseTempo(m[2])}));
+    cur.inscritos.push({matr:mh[2],nome,colocacao:mh[1].replace(/\s/g,''),tempo:mt?parseTempo(mt[1]):null,splits});
+  }
+  return provas.filter(p=>p.inscritos.length);
 }
 /* casa cada linha do balizamento (formato ABMN Competição) com os nomes do Elenco */
 function parseBalizamentoTecnico(txt){
@@ -2162,7 +2252,7 @@ async function incorporar(lista){
   await mutarComp(c=>{
     for(const p of lista){
       c.provas.push({id:uid(),tipo:'ind',codigo:p.codigo||null,dist:+p.dist||50,estilo:p.estilo||'livre',
-        categoria:p.categoria||'',
+        genero:p.genero||'',categoria:p.categoria||'',
         inscritos:(p.inscritos||[]).map(i=>({id:uid(),serie:+i.serie||1,raia:+i.raia||0,nome:i.nome||'',
           matr:i.matr||null,faixa:i.faixa||'',equipe:i.equipe||'',
           inscricao:typeof i.inscricao==='string'?parseTempo(i.inscricao):(i.inscricao||null),
@@ -2175,6 +2265,73 @@ function acharAtleta(nome){
   const n=nome.trim().toLowerCase();
   const a=S.elenco.find(x=>x.nome.toLowerCase()===n)||S.elenco.find(x=>x.nome.toLowerCase().startsWith(n.split(' ')[0]));
   return a?a.id:null;
+}
+/* Resultados oficiais → preenche os tempos/parciais/colocação de cada atleta na
+   competição (casa por matrícula; se não existir, cria o inscrito). */
+async function incorporarResultados(resProvas){
+  await mutarComp(c=>{
+    for(const rp of resProvas){
+      let p=(rp.codigo&&c.provas.find(x=>x.codigo&&String(x.codigo)===String(rp.codigo)))
+          || c.provas.find(x=>+x.dist===+rp.dist&&x.estilo===rp.estilo&&(!x.genero||!rp.genero||x.genero===rp.genero));
+      if(!p){p={id:uid(),tipo:'ind',codigo:rp.codigo||null,dist:+rp.dist,estilo:rp.estilo,genero:rp.genero||'',categoria:'',inscritos:[]};c.provas.push(p);}
+      for(const ri of rp.inscritos){
+        let parc=(ri.splits&&ri.splits.length)?ri.splits.map(s=>s.t):[];
+        if(ri.tempo!=null){ if(!parc.length)parc=[ri.tempo]; else parc[parc.length-1]=ri.tempo; }
+        let ins=p.inscritos.find(x=>x.matr&&ri.matr&&String(x.matr)===String(ri.matr))
+             || p.inscritos.find(x=>(x.nome||'').toLowerCase()===ri.nome.toLowerCase());
+        if(!ins){ins={id:uid(),serie:0,raia:0,nome:ri.nome,matr:ri.matr,faixa:'',equipe:ri.equipe||'',inscricao:null,atletaId:acharAtleta(ri.nome),parciais:[]};p.inscritos.push(ins);}
+        if(ri.tempo!=null)ins.parciais=parc;
+        ins.oficialTempo=ri.tempo; ins.colocacao=ri.colocacao; ins.oficial=true;
+      }
+    }
+  });
+}
+/* consolida no Marcas do PRÓPRIO usuário (só o dono escreve seu pro_) os resultados
+   oficiais desta competição. Cada atleta faz o seu ao abrir a competição. */
+async function consolidarMinhasMarcas(c){
+  if(!S.pro||!c)return;
+  const pis=c.piscina||'SC25'; let n=0;
+  S.pro.pbs=S.pro.pbs||{}; S.pro.resultados=S.pro.resultados||[];
+  for(const p of (c.provas||[]))for(const i of (p.inscritos||[])){
+    if(i.atletaId!==S.u.id)continue;
+    const fin=(i.oficialTempo!=null)?i.oficialTempo:((i.parciais||[]).filter(x=>x!=null).slice(-1)[0]);
+    if(fin==null)continue;
+    const key=pbKey(p.dist,p.estilo,pis);
+    if(!S.pro.pbs[key]||fin<S.pro.pbs[key])S.pro.pbs[key]=fin;
+    const chave=c.id+'|'+p.dist+'|'+p.estilo+'|'+pis;
+    if(!S.pro.resultados.some(r=>r.chave===chave))
+      S.pro.resultados.push({chave,comp:c.nome,data:c.data,piscina:pis,prova:p.dist+'m '+p.estilo,
+        dist:p.dist,estilo:p.estilo,tempo:fin,parciais:(i.parciais||[]).filter(x=>x!=null),inscricao:i.inscricao||null});
+    n++;
+  }
+  if(n){await salvarPro(); toast(`${n} resultado(s) no seu Marcas`); render();}
+  else toast('Não achei suas provas nesta competição (confira se você está vinculado).');
+}
+async function lerResultados(inp){
+  const f=inp.files[0]; if(!f)return;
+  const st=document.getElementById('resStatus');
+  if(f.type!=='application/pdf'){ if(st)st.textContent='Envie os resultados em PDF.'; return; }
+  if(st)st.textContent='Lendo os resultados…';
+  try{
+    const txt=await pdfTexto(f);
+    const provas=parseResultadosEquipe(txt,alvosEquipe());
+    if(!provas.length){ if(st)st.textContent='Não achei resultados da sua equipe no PDF. Confira se a equipe bate com a coluna EQUIPE.'; return; }
+    await incorporarResultados(provas);
+    const n=provas.reduce((s,p)=>s+p.inscritos.filter(i=>i.tempo!=null).length,0);
+    if(st)st.textContent=`${n} resultado(s) oficiais importados. Cada atleta consolida no seu Marcas.`;
+    toast('Resultados carregados');
+    if(S.pro)await consolidarMinhasMarcas(S.comp);
+  }catch(e){ if(st)st.textContent='Não consegui ler o PDF: '+e.message; }
+}
+function blocoResultados(){
+  return`<div class="card noprint">
+    <div class="eyebrow">resultados oficiais</div>
+    <h3 style="margin:4px 0 8px">Puxar os tempos oficiais</h3>
+    <p class="small muted">Suba o <b>PDF de resultados</b> da competição. O app acha os atletas da sua equipe e preenche o <b>tempo oficial e as parciais</b> de cada prova. Depois cada atleta consolida no seu <b>Marcas</b>.</p>
+    <input type="file" id="fRes" accept="application/pdf,.pdf" style="display:none" onchange="lerResultados(this)">
+    <button class="primary full" onclick="document.getElementById('fRes').click()">Importar resultados (PDF)</button>
+    <div id="resStatus" class="small muted" style="margin-top:6px"></div>
+  </div>`;
 }
 
 /* ---------- prova aberta: lançar parciais ---------- */
@@ -2373,7 +2530,7 @@ function telaCompAtleta(){
       ${dif!=null?`<div class="note ${dif<0?'ok':'warn'}" style="margin-top:10px">${dif<0?'Você baixou ':'Ficou '}<b>${fmt(Math.abs(dif),true)}</b> ${dif<0?'em relação à':'acima da'} inscrição de ${fmt(i.inscricao,true)}.</div>`:''}
     </div>`}).join(''):`<div class="empty"><div class="big">Você não está inscrito</div>
       <p class="small">Nenhuma prova desta competição está no seu nome.</p></div>`}
-  ${minhas.length?`<button class="ghost full" onclick="compartilharMinhasProvas()">Compartilhar meus tempos</button><div style="height:20px"></div>`:''}`;
+  ${minhas.length?`${S.pro?`<button class="primary full" onclick="consolidarMinhasMarcas(S.comp)">Consolidar meus tempos no Marcas</button>`:''}<button class="ghost full" style="margin-top:8px" onclick="compartilharMinhasProvas()">Compartilhar meus tempos</button><div style="height:20px"></div>`:''}`;
 }
 function compartilharMinhasProvas(){
   const c=S.comp; let t=`*${c.nome}* — ${brData(c.data)}\n${S.u.nome}\n`;
