@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v32</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v33</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v32';
+const VER='v33';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -201,6 +201,62 @@ const temIA=()=>!!IA_URL;
    ───────────────────────────────────────────────────────────── */
 const DEV_EMAILS=['barbato.bruno@gmail.com'];
 function ehDev(){ return !!(S.u&&DEV_EMAILS.includes((S.u.email||'').toLowerCase())); }
+/* Catálogo de equipes (IV Troféu Brasil Masters — ABMN). O desenvolvedor escolhe
+   daqui para criar; pode também digitar uma equipe fora da lista. */
+const CATALOGO_EQUIPES=[
+  {nome:'CLUBE PAINEIRAS DO MORUMBY',sigla:'PAINEIRAS'},
+  {nome:'FABIOLA MOLINA & CIA LTDA NATAÇÃO',sigla:'FABIOLA MOLINA'},
+  {nome:'GREMIO NAUTICO GAUCHO',sigla:'G. N. GAUCHO'},
+  {nome:'GRÊMIO VILA OLÍMPICA PARAHYBA',sigla:'VILA PARAHYBA'},
+  {nome:'LIMEIRA MASTER-NC/ALMAN',sigla:'LIMEIRA MASTER-NC/ALMAN'},
+  {nome:"MOVIMENTO'S SWIM TEAM",sigla:"MOVIMENTO'S SWIM TEAM"},
+  {nome:'TIJUCA TENIS CLUBE',sigla:'TIJUCA T.C.'},
+  {nome:'UNIVERSIDADE DE BRASÍLIA',sigla:'UNB'},
+  {nome:'VINHAS NATAÇÃO',sigla:'VINHAS NATAÇÃO'},
+  {nome:'ASSEMBLEIA PARAENSE',sigla:'ASSEMBLEIA PARAENSE'},
+  {nome:'AQUATICA M3',sigla:'AQUATICA M3'},
+  {nome:'CLUBE MILITAR/RJ',sigla:'MILITAR/RJ'},
+  {nome:'CLUBE DE TENIS DE CATANDUVA',sigla:'C.T.CATANDUVA'},
+  {nome:'CLUBE DE CAMPO DE PIRACICABA',sigla:'C.C.PIRACICABA'},
+  {nome:'CLUBE CAMPESTRE PREF. MUN. VARGINHA',sigla:'C.CAMPESTRE PREF.MUN.VARGINHA'},
+  {nome:'FÁBRICA DE NADADORES',sigla:'FÁBRICA DE NADADORES'},
+  {nome:'CHIORO SWIM',sigla:'CHIORO SWIM'},
+  {nome:'AQUARIUS/GREGOR MENDEL',sigla:'AQUARIUS/GM'},
+  {nome:'CLUBE CAMPESTRE DE RIO VERDE',sigla:'CC RIO VERDE'},
+  {nome:'CLUBE CURITIBANO',sigla:'CURITIBANO'},
+  {nome:'BARDI SWIMMING TEAM',sigla:'BARDI SWIMMING TEAM'},
+  {nome:'CIRCULO MILITAR DE FORTALEZA',sigla:'CMF'},
+  {nome:'FEDERAÇÃO DE ESPORTES AQUÁTICOS DA PARAÍBA',sigla:'FEAP - PARAIBA MASTER'},
+  {nome:'CLUBE DOS OFICIAIS DA PM/MG',sigla:'COPM/MG'},
+  {nome:'NATAÇÃO RAIA CERTA/BA',sigla:'NATAÇÃO RAIA CERTA/BA'},
+  {nome:'MANTA NATAÇÃO E FORMAÇÃO AQUÁTICA',sigla:'MANTA/RAIA CLUB'},
+  {nome:'POLÍCIA CIVIL DO DISTRITO FEDERAL - PCDF',sigla:'PCDF'},
+  {nome:'PREFEITURA MUNICIPAL DE ILHABELA',sigla:'ILHABELA'},
+  {nome:'ASSOCIAÇÃO LEOPOLDINA JUVENIL',sigla:'A. L. JUVENIL'},
+  {nome:'GRÊMIO NÁUTICO UNIÃO',sigla:'GNU'},
+  {nome:'EQUIPE DENER SILVEIRA/CLUBE OÁSIS',sigla:'DENER SILVEIRA/CLUBE OASIS'},
+  {nome:'CLUBE DE REGATAS DO FLAMENGO',sigla:'CRF'},
+  {nome:'CLUBE DO REMO',sigla:'CLUBE DO REMO'},
+  {nome:'MINAS TENIS CLUBE',sigla:'MINAS T. C.'},
+  {nome:'TNT MASTERS SP',sigla:'TNT SP'},
+  {nome:'ACADEMIA DE NATAÇÃO ÁGUA VIDA',sigla:'ÁGUA VIDA/DF'},
+  {nome:'ASSOCIAÇÃO BRASILEIRA DE MASTERS DE NATAÇÃO',sigla:'ABMN'},
+  {nome:'CLUBE DE ENGENHARIA DE GOIAS',sigla:'CENG'},
+  {nome:'CIA ATHLETICA/DF',sigla:'CIA ATHLETICA/DF'},
+  {nome:'SUPER POWER TEAM',sigla:'SUPER POWER TEAM'},
+  {nome:'TYM',sigla:'TYM'},
+  {nome:'DKM SPORTS/PR',sigla:'DKM SPORTS'},
+  {nome:'NEW WAKE NATAÇÃO',sigla:'NEW WAKE'},
+  {nome:'A3 SWIM TEAM CG/MS',sigla:'A3 SWIM TEAM CG/MS'},
+  {nome:'PRAIA CLUBE UBERLANDIA',sigla:'PRAIA CLUBE'},
+  {nome:'AQUAMARINHO CENTRO DE TREINAMENTO AQUATICO',sigla:'AQUAMARINHO'},
+  {nome:'POLÍCIA MILITAR DO DISTRITO FEDERAL',sigla:'PMDF'},
+  {nome:'LIRA TENIS CLUBE',sigla:'LIRA T. C.'},
+  {nome:'MINAS BRASILIA TENIS CLUBE',sigla:'MBTC'},
+  {nome:'VICTOR SPIRITUS',sigla:'VS'},
+  {nome:'ACADEMIA D STAK',sigla:'D STAK'},
+  {nome:'IATE CLUBE DE BRASILIA',sigla:'IATE BRASILIA'}
+];
 
 /* ---------- armazenamento (nuvem do app, com reserva em memória) ---------- */
 const MEM={};
@@ -764,14 +820,22 @@ function telaReset(){
 function telaCadastro(){
   const p=S.perfilEscolhido;
   const titulo={atleta:'Conta de atleta',pro:'Conta PRO',tecnico:'Conta de técnico'}[p];
+  const precisaLista=(p==='tecnico'||p==='atleta');
+  if(precisaLista&&S.equipesDisp==null){carregarEquipesDisp().then(()=>render());}
+  const campoEquipe=!precisaLista
+    ? `<input id="cdEquipe" autocapitalize="words" placeholder="ex.: A3 Swim Team">
+       <div class="xs muted" style="margin-top:5px">Se a equipe ainda não existir, ela é criada agora e o técnico entra depois com o mesmo nome.</div>`
+    : (S.equipesDisp==null
+        ? `<select id="cdEquipe" disabled><option>carregando equipes…</option></select>`
+        : (S.equipesDisp.length
+            ? `<select id="cdEquipe"><option value="">— escolha a sua equipe —</option>${S.equipesDisp.map(e=>`<option value="${esc(e.nome)}">${esc(e.nome)}</option>`).join('')}</select>
+               <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou.':'Escolha a mesma equipe do seu técnico.'}</div>`
+            : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
   return`
   <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
   <h1>${titulo}</h1>
   <div class="card">
-    <div class="field"><label>Nome da equipe</label>
-      <input id="cdEquipe" autocapitalize="words" placeholder="${p==='atleta'?'exatamente como o técnico informou':'ex.: A3 Swim Team'}">
-      ${p==='atleta'?'<div class="xs muted" style="margin-top:5px">Precisa bater com a equipe já criada pelo técnico.</div>':''}
-      ${p==='pro'?'<div class="xs muted" style="margin-top:5px">Se a equipe ainda não existir, ela é criada agora e o técnico entra depois com o mesmo nome.</div>':''}</div>
+    <div class="field"><label>Equipe</label>${campoEquipe}</div>
     <div class="field"><label>Nome completo</label><input id="cdNome" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label>E-mail</label><input id="cdEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
     <div class="grid2">
@@ -1544,36 +1608,63 @@ async function abrirDevTecnicos(){
 async function abrirDevEquipes(){
   if(!ehDev())return;
   const slugs=await DB.get('dev_equipes')||[];
+  const jaSlugs=new Set(slugs);
   const linhas=[];
   for(const sg of slugs){const eq=await DB.get(kEq(sg)); if(!eq)continue;
     const us=await DB.get(kEqUsers(sg))||[];
     linhas.push(`<div class="lst"><span class="av">▤</span>
-      <span class="grow"><b>${esc(eq.nome)}</b><span class="xs muted" style="display:block">${eq.tecnicoEmail?('téc: '+esc(eq.tecnicoEmail)):'sem técnico ainda'} · ${us.length} membro(s)</span></span></div>`);
+      <span class="grow"><b>${esc(eq.nome)}</b><span class="xs muted" style="display:block">${eq.tecnicoEmail?('téc: '+esc(eq.tecnicoEmail)):'apta — sem técnico ainda'} · ${us.length} membro(s)</span></span>
+      <button class="sm ghost" style="color:var(--clock)" onclick="apagarEquipeDev('${sg}')">✕</button></div>`);
   }
+  /* catálogo: só as que ainda não foram criadas */
+  const disp=CATALOGO_EQUIPES.filter(e=>!jaSlugs.has(slug(e.nome)));
+  const opts=disp.map(e=>`<option value="${esc(e.nome)}">${esc(e.nome)}${e.sigla&&e.sigla!==e.nome?' — '+esc(e.sigla):''}</option>`).join('');
   sheet(`<h2>Equipes</h2>
-    <p class="small muted" style="margin:6px 0 10px">Crie a equipe aqui. Depois o técnico se cadastra como <b>técnico</b> usando exatamente esse nome de equipe e você libera na aba <b>Técnicos</b> (ou pré-aprove pelo e-mail abaixo). O app não cria a senha do técnico — isso ele faz no próprio cadastro.</p>
-    <div class="field"><label>Nome da nova equipe</label><input id="deqNome" autocapitalize="words" placeholder="ex.: Time Águia"></div>
-    <div class="field"><label>E-mail do técnico <span class="xs muted">(opcional — pré-aprova o cadastro dele)</span></label><input id="deqEmail" inputmode="email" autocapitalize="off" placeholder="tecnico@email.com"></div>
+    <p class="small muted" style="margin:6px 0 10px">Escolha uma equipe da lista (Troféu Brasil Masters) e crie — ela fica <b>apta</b> para o técnico se cadastrar e depois os atletas. Você libera o técnico na aba <b>Técnicos</b> (ou pré-aprove pelo e-mail). O app não cria a senha do técnico.</p>
+    <div class="field"><label>Equipe do catálogo</label>
+      <select id="deqCat"><option value="">— escolher da lista —</option>${opts}<option value="__custom__">Outra (digitar)…</option></select></div>
+    <div class="field" id="deqNomeWrap" style="display:none"><label>Nome da equipe (fora da lista)</label><input id="deqNome" autocapitalize="words" placeholder="ex.: Time Águia"></div>
+    <div class="field"><label>E-mail do técnico <span class="xs muted">(opcional — pré-aprova o cadastro)</span></label><input id="deqEmail" inputmode="email" autocapitalize="off" placeholder="tecnico@email.com"></div>
     <button class="primary full" onclick="criarEquipeDev()">Criar equipe</button>
     <div class="sep"></div>
-    <div class="eyebrow">equipes cadastradas</div>
-    ${linhas.length?linhas.join(''):'<div class="small muted" style="margin-top:6px">Nenhuma equipe registrada ainda.</div>'}
+    <div class="eyebrow">equipes criadas (${linhas.length})</div>
+    ${linhas.length?linhas.join(''):'<div class="small muted" style="margin-top:6px">Nenhuma equipe criada ainda.</div>'}
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+  const sel=document.getElementById('deqCat');
+  if(sel)sel.onchange=()=>{const w=document.getElementById('deqNomeWrap'); if(w)w.style.display=sel.value==='__custom__'?'':'none';};
 }
 async function criarEquipeDev(){
   if(!ehDev())return;
-  const nome=val('deqNome'); if(!nome)return toast('Dê um nome à equipe');
+  const cat=(document.getElementById('deqCat')||{}).value||'';
+  const nome=(cat&&cat!=='__custom__')?cat:val('deqNome');
+  if(!nome)return toast('Escolha uma equipe da lista ou digite o nome');
   const sg=slug(nome); if(!sg)return toast('Nome inválido');
-  if(await DB.get(kEq(sg)))return toast('Já existe uma equipe com esse nome');
+  if(await DB.get(kEq(sg)))return toast('Essa equipe já foi criada');
   await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
   await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]);
   await registrarEquipeDev(sg);
   const em=(val('deqEmail')||'').toLowerCase().trim();
   if(em){const pre=await DB.get('dev_pre')||[]; if(!pre.includes(em)){pre.push(em);await DB.set('dev_pre',pre);}}
+  S.equipesDisp=null;   /* invalida o cache do dropdown de cadastro */
   toast(`Equipe "${nome.trim()}" criada`); abrirDevEquipes();
+}
+async function apagarEquipeDev(sg){
+  if(!ehDev())return;
+  const eq=await DB.get(kEq(sg));
+  if(!confirm(`Apagar a equipe "${eq?eq.nome:sg}"? Os treinos e competições dela serão removidos. As contas dos usuários não são apagadas, mas ficam sem equipe.`))return;
+  for(const k of [kEq(sg),kLib(sg),kEqUsers(sg),kTrIdx(sg),kCIdx(sg)])await apagarChave(k);
+  const idx=(await DB.get('dev_equipes')||[]).filter(x=>x!==sg); await DB.set('dev_equipes',idx);
+  S.equipesDisp=null;
+  toast('Equipe apagada'); abrirDevEquipes();
 }
 async function registrarEquipeDev(sg){
   const idx=await DB.get('dev_equipes')||[]; if(!idx.includes(sg)){idx.push(sg);await DB.set('dev_equipes',idx);}
+}
+/* equipes já criadas, para o dropdown do cadastro (técnico/atleta escolhem a sua) */
+async function carregarEquipesDisp(){
+  const slugs=await DB.get('dev_equipes')||[]; const out=[];
+  for(const sg of slugs){const eq=await DB.get(kEq(sg)); if(eq)out.push({slug:sg,nome:eq.nome});}
+  S.equipesDisp=out.sort((a,b)=>a.nome.localeCompare(b.nome));
 }
 async function aprovarTecnico(email){
   if(!ehDev())return;
