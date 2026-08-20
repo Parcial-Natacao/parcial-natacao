@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v33</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v35</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v33';
+const VER='v35';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -1624,8 +1624,8 @@ async function abrirDevEquipes(){
     <div class="field"><label>Equipe do catálogo</label>
       <select id="deqCat"><option value="">— escolher da lista —</option>${opts}<option value="__custom__">Outra (digitar)…</option></select></div>
     <div class="field" id="deqNomeWrap" style="display:none"><label>Nome da equipe (fora da lista)</label><input id="deqNome" autocapitalize="words" placeholder="ex.: Time Águia"></div>
-    <div class="field"><label>E-mail do técnico <span class="xs muted">(opcional — pré-aprova o cadastro)</span></label><input id="deqEmail" inputmode="email" autocapitalize="off" placeholder="tecnico@email.com"></div>
     <button class="primary full" onclick="criarEquipeDev()">Criar equipe</button>
+    <div class="xs muted" style="margin-top:6px">Não precisa do e-mail do técnico. Ele se cadastra escolhendo esta equipe e você libera na aba <b>Técnicos</b>.</div>
     <div class="sep"></div>
     <div class="eyebrow">equipes criadas (${linhas.length})</div>
     ${linhas.length?linhas.join(''):'<div class="small muted" style="margin-top:6px">Nenhuma equipe criada ainda.</div>'}
@@ -1643,8 +1643,6 @@ async function criarEquipeDev(){
   await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
   await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]);
   await registrarEquipeDev(sg);
-  const em=(val('deqEmail')||'').toLowerCase().trim();
-  if(em){const pre=await DB.get('dev_pre')||[]; if(!pre.includes(em)){pre.push(em);await DB.set('dev_pre',pre);}}
   S.equipesDisp=null;   /* invalida o cache do dropdown de cadastro */
   toast(`Equipe "${nome.trim()}" criada`); abrirDevEquipes();
 }
@@ -1903,6 +1901,8 @@ function telaCompeticao(){
     <div class="kpi"><div class="v">${c.provas.reduce((t,p)=>t+p.inscritos.length,0)}</div><div class="l">inscrições</div></div>
     <div class="kpi"><div class="v">${c.provas.reduce((t,p)=>t+p.inscritos.filter(i=>i.parciais?.length).length,0)}</div><div class="l">com tempo</div></div>
   </div>
+  ${rosterCard(c)}
+  ${c.provas.length?`<div class="eyebrow" style="margin-top:14px">provas</div>`:''}
   ${c.provas.length?c.provas.map((p,ip)=>{
     const done=p.inscritos.filter(i=>(i.parciais||[]).length>=nPassagens(p,c.piscina)).length;
     return`<button class="card tight lst" style="border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);margin:9px 0" onclick="push();S.provaSel=${ip};render();window.scrollTo(0,0)">
@@ -1926,9 +1926,9 @@ async function criarComp(){
   await DB.set(kCIdx(S.u.equipe),idx); S.cidx=idx; S.comp=c;
   /* import opcional do balizamento em PDF na própria criação */
   if(window._ccPdf){
-    try{ const txt=await pdfTexto(window._ccPdf); const provas=parseBalizamentoTecnico(txt);
+    try{ const txt=await pdfTexto(window._ccPdf); const provas=parseBalizTec(txt);
       if(provas.length){ await incorporar(provas); toast(`${provas.length} prova(s) importada(s) do PDF`); }
-      else toast('Competição criada. Não achei provas dos seus atletas no PDF.');
+      else toast('Competição criada. Não achei provas da sua equipe no PDF.');
     }catch(e){ toast('Competição criada. Não li o PDF: '+e.message); }
     window._ccPdf=null;
   }
@@ -1980,6 +1980,23 @@ function verCompAtleta(atId,mcId){
     <div class="small muted">Registrada por <b>${esc(a.nome)}</b> · ${brData(mc.data)} · ${mc.piscina}${mc.local?' · '+esc(mc.local):''}</div>
     <div style="margin-top:10px">${provas}</div>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
+/* elenco na competição: cada atleta da equipe e as provas que vai nadar */
+function rosterCard(c){
+  const byAt={};
+  (c.provas||[]).forEach((p,ip)=>(p.inscritos||[]).forEach(i=>{
+    const k=i.matr||i.nome; if(!k)return;
+    (byAt[k]=byAt[k]||{nome:i.nome,faixa:i.faixa,matr:i.matr,atletaId:i.atletaId,provas:[]}).provas.push({p,ip,i});
+  }));
+  const ats=Object.values(byAt).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  if(!ats.length)return'';
+  return`<div class="card"><div class="eyebrow">elenco na competição — ${ats.length} atleta(s)</div>
+    <p class="small muted" style="margin:4px 0 8px">Atletas da sua equipe no balizamento e as provas de cada um (com o tempo de inscrição). Toque numa prova para lançar os tempos.</p>
+    ${ats.map(a=>`<div style="padding:8px 0;border-top:1px solid var(--line)">
+      <div class="row" style="align-items:baseline;gap:6px"><b>${esc(a.nome)}</b>${a.faixa?`<span class="xs muted">${esc(a.faixa)}</span>`:''}${a.atletaId?'<span class="tag" style="border-color:var(--rope);color:var(--rope)">no app</span>':''}</div>
+      <div class="chips" style="margin-top:4px">${a.provas.sort((x,y)=>x.ip-y.ip).map(({p,ip,i})=>`<button class="chip" onclick="push();S.provaSel=${ip};render();window.scrollTo(0,0)">${p.dist} ${p.estilo}${i.inscricao?' · '+fmt(i.inscricao,true):''}</button>`).join('')}</div>
+    </div>`).join('')}
+  </div>`;
 }
 async function abrirComp(id){push();S.comp=await DB.get(kCmp(S.u.equipe,id));S.provaSel=null;render();window.scrollTo(0,0)}
 async function mutarComp(fn){
@@ -2048,11 +2065,11 @@ async function lerBalizamento(inp){
   if(st)st.textContent='Lendo o balizamento…';
   try{
     const txt=await pdfTexto(f);
-    const provas=parseBalizamentoTecnico(txt);
-    if(!provas.length){ if(st)st.textContent='Não achei provas dos seus atletas. Confira os nomes no Elenco (devem bater com o balizamento) ou cole o texto abaixo.'; return; }
+    const provas=parseBalizTec(txt);
+    if(!provas.length){ if(st)st.textContent='Não achei atletas da sua equipe no balizamento. Confira se a equipe bate com a coluna EQUIPE do PDF, ou cole o texto abaixo.'; return; }
     await incorporar(provas);
     const n=provas.reduce((s,p)=>s+p.inscritos.length,0);
-    if(st)st.textContent=`${provas.length} prova(s) e ${n} inscrição(ões) dos seus atletas importadas.`;
+    if(st)st.textContent=`${provas.length} prova(s) e ${n} inscrição(ões) da sua equipe importadas.`;
     toast('Balizamento carregado');
   }catch(e){ if(st)st.textContent='Não consegui ler o PDF: '+e.message; }
 }
@@ -2097,13 +2114,58 @@ async function colarBalizamento(){
   if(!provas.length)return toast('Não reconheci o formato');
   await incorporar(provas); toast(`${provas.length} prova(s) importada(s)`);
 }
+/* identificadores da equipe do técnico (nome + sigla do catálogo) para casar com a
+   coluna EQUIPE do balizamento oficial. */
+/* usa o parser por EQUIPE (todos os atletas do clube no balizamento); se não achar
+   nada, cai para o parser por nomes do Elenco (compat). */
+function parseBalizTec(txt){
+  const porEq=parseBalizamentoEquipe(txt,alvosEquipe());
+  return porEq.length?porEq:parseBalizamentoTecnico(txt);
+}
+function alvosEquipe(){
+  const nome=(S.eq&&S.eq.nome)||S.u.equipeNome||'';
+  const cat=CATALOGO_EQUIPES.find(e=>slug(e.nome)===slug(nome));
+  const arr=[nome]; if(cat){arr.push(cat.nome);arr.push(cat.sigla);}
+  return [...new Set(arr.map(s=>(s||'').trim()).filter(Boolean))];
+}
+/* Balizamento oficial (ABMN) → provas com os atletas da EQUIPE alvo (coluna EQUIPE),
+   mesmo que ainda não sejam usuários do app. Linha: raia matr faixa NOME EQUIPE tempo. */
+function parseBalizamentoEquipe(txt,alvos){
+  const ESTIL=[[/livre|crawl/i,'livre'],[/costas?/i,'costas'],[/peito/i,'peito'],[/borbol/i,'borboleta'],[/medley/i,'medley']];
+  const AL=(alvos||[]).map(a=>a.toUpperCase()).sort((a,b)=>b.length-a.length);   // mais longo primeiro
+  const provas=[]; let cur=null, serie=1;
+  for(const raw of String(txt||'').split(/\r?\n/)){
+    const l=raw.trim(); if(!l)continue;
+    if(/\bprova\b/i.test(l)&&/metros/i.test(l)){
+      if(/revez|\d\s*x\s*\d/i.test(l)){cur=null;continue;}
+      const md=l.match(/prova\s*[-–:]?\s*(\d{2,4})\s*metros/i), mc=l.match(/(\d+)\s*[º°ªo]\s*prova/i);
+      if(md){let estilo='livre';for(const[re,v]of ESTIL){if(re.test(l)){estilo=v;break;}}
+        const genero=/femin/i.test(l)?'F':/mascul/i.test(l)?'M':'';
+        const cat=l.replace(/.*?metros/i,'').replace(/\(.*?\)/g,'').replace(/^\s*[a-zà-ú]+\s*/i,'').trim();
+        cur={codigo:mc?mc[1]:null,dist:+md[1],estilo,genero,categoria:cat,inscritos:[]}; provas.push(cur); serie=1;}
+      continue;
+    }
+    const ms=l.match(/(\d+)\D{0,3}s[ée]rie/i); if(ms&&/s[ée]rie/i.test(l)){serie=+ms[1];continue;}
+    if(!cur)continue;
+    const mt=l.match(/(\d{1,2}:\d{2}[.,]\d{2}|\b\d{1,3}[.,]\d{2})\s*$/);
+    const semT=(mt?l.slice(0,mt.index):l).trim(), up=semT.toUpperCase();
+    const alvo=AL.find(a=>up.endsWith(' '+a)||up===a); if(!alvo)continue;
+    const nomeRaw=semT.slice(0,semT.length-alvo.length).trim();
+    const mh=nomeRaw.match(/^(\d+)\s+(\d+)\s+(\d+\s*\+|PR[ÉE])\s+(.+)$/i); if(!mh)continue;
+    const nome=mh[4].replace(/\(.*?\)/g,'').replace(/\s{2,}/g,' ').trim();
+    cur.inscritos.push({serie,raia:+mh[1],matr:mh[2],faixa:mh[3].replace(/\s+/g,' ').trim(),nome,equipe:alvo,
+      inscricao:mt?parseTempo(mt[1]):null});
+  }
+  return provas.filter(p=>p.inscritos.length);
+}
 async function incorporar(lista){
   await mutarComp(c=>{
     for(const p of lista){
       c.provas.push({id:uid(),tipo:'ind',codigo:p.codigo||null,dist:+p.dist||50,estilo:p.estilo||'livre',
         categoria:p.categoria||'',
         inscritos:(p.inscritos||[]).map(i=>({id:uid(),serie:+i.serie||1,raia:+i.raia||0,nome:i.nome||'',
-          equipe:i.equipe||'',inscricao:typeof i.inscricao==='string'?parseTempo(i.inscricao):(i.inscricao||null),
+          matr:i.matr||null,faixa:i.faixa||'',equipe:i.equipe||'',
+          inscricao:typeof i.inscricao==='string'?parseTempo(i.inscricao):(i.inscricao||null),
           atletaId:acharAtleta(i.nome),parciais:[]})).sort((a,b)=>(a.serie-b.serie)||(a.raia-b.raia))});
     }
   });
