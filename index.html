@@ -157,7 +157,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v31</small></div>
+    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v32</small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -183,7 +183,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v31';
+const VER='v32';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -1269,26 +1269,32 @@ function telaTreinoDetalhe(){
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
   </div></div>`:''}
   ${at?(t.blocos||[]).map(b=>{
-    const semCrono=/aquec|soltur|volta[\s-]*[àa]?\s*calma|desaquec|calma|solto/i.test(b.titulo||'');
+    const blocoSolto=/aquec|soltur|volta[\s-]*[àa]?\s*calma|desaquec|calma|solto/i.test(b.titulo||'');
     return`<div class="blk"><h3>${esc(b.titulo)}</h3><div class="ln"></div><span class="xs muted t">${b.itens.reduce((x,i)=>x+i.vol,0)}m</span></div>
-    ${b.itens.map(i=>linhaSerie(t,i,at,semCrono)).join('')}`;}).join(''):'<div class="empty"><div class="big">Sem atletas neste treino</div></div>'}
+    ${b.itens.map(i=>linhaSerie(t,i,at,blocoSolto)).join('')}`;}).join(''):'<div class="empty"><div class="big">Sem atletas neste treino</div></div>'}
   <div class="row" style="margin:16px 0 30px">
     <button class="ghost full" onclick="compartilharTreino()">Compartilhar treino e tempos</button>
   </div>`;
 }
-/* tempos de um item (achata rodadas se for série dupla) */
+/* nº de rodadas EFETIVO: do interpretador (item.rodadas) OU adicionadas à mão
+   pelo atleta/técnico (rec.nrd). Assim dá para lançar 2ª/3ª rodada em qualquer série. */
+function nRodadas(item,rec){ return Math.max((rec&&rec.nrd)||1,(item&&item.rodadas)||1,1); }
+/* tempos de um item (achata rodadas quando há mais de uma) */
 function temposItem(rec,item){
   if(!rec)return [];
-  if((item.rodadas||1)>1)return (rec.rd||[]).flatMap(r=>(r.tempos||[]).filter(x=>x!=null));
+  if(rec.rd&&nRodadas(item,rec)>1)return (rec.rd||[]).flatMap(r=>(r.tempos||[]).filter(x=>x!=null));
   return (rec.tempos||[]).filter(x=>x!=null);
 }
-function linhaSerie(t,i,at,semCrono){
+function linhaSerie(t,i,at,blocoSolto){
   if(i.nota)return`<div style="margin:2px 0 9px;padding:9px 12px;border-left:3px solid var(--rope);background:var(--deck);border-radius:0 9px 9px 0">
     <span class="small">${esc(i.texto)}</span></div>`;
   const rec=(t.registros?.[at.id]?.[i.id])||{};
   const aa=t.piscina==='AA';
-  const multi=(i.rodadas||1)>1&&!aa;
-  const rds=multi?Array.from({length:i.rodadas},(_,k)=>(rec.rd&&rec.rd[k])||{tempos:[],parciais:[]}):null;
+  const nrd=nRodadas(i,rec), multi=nrd>1&&!aa;
+  const rds=multi?Array.from({length:nrd},(_,k)=>(rec.rd&&rec.rd[k])||{tempos:[],parciais:[]}):null;
+  /* sem botão só em NADO SOLTO (aquecimento/soltura contínuo, 1 repetição);
+     educativos/técnica e qualquer série com repetições ganham "+". */
+  const semCrono=!!blocoSolto&&(i.reps||1)<=1&&(i.rodadas||1)<=1;
   const ts=temposItem(rec,i);
   const logged=aa?(rec.ritmo100!=null):ts.length;
   const dadosPB=at.id===S.u.id?S.pro:null;
@@ -1340,9 +1346,11 @@ function abrirLancamento(itemId,atletaId){
       <button class="primary full" style="margin-top:12px" onclick="salvarRitmoAA('${itemId}','${atletaId}')">Salvar</button>`);
     return;
   }
-  const nrd=item.rodadas||1;
+  const nrd=nRodadas(item,rec);
+  const btnAdd=`<button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>`;
   const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
-    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet();render()">Fechar</button>`;
+    ${btnAdd}
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`;
   if(nrd>1){
     if(S.rd==null||S.rd<0||S.rd>=nrd)S.rd=0;
     const rd=S.rd, rr=(rec.rd&&rec.rd[rd])||{tempos:[],parciais:[]};
@@ -1359,9 +1367,25 @@ function abrirLancamento(itemId,atletaId){
   const r=(rec.tempos?rec:{tempos:[],parciais:[]});
   sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
     <div class="small muted">${esc(at.nome)}${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
-    <div class="xs muted" style="margin-top:6px">Toque no <b style="color:var(--ok)">✓</b> para salvar cada tempo — grava na hora. O <b style="color:var(--clock)">✕</b> apaga.</div>
+    <div class="xs muted" style="margin-top:6px">Toque no <b style="color:var(--ok)">✓</b> para salvar cada tempo — grava na hora. O <b style="color:var(--clock)">✕</b> apaga. Use <b>+ adicionar rodada</b> se a série se repete (ex.: bloco 2×).</div>
     ${tabelaReps(item,r,itemId,atletaId,null)}
     ${rodInfo}`);
+}
+/* adiciona uma rodada à série (para blocos que repetem, ex.: "2x"). Migra o
+   registro simples para rodada 1 e cria a próxima; funciona em qualquer série. */
+async function addRodada(itemId,atletaId){
+  const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
+  const item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId); if(!item)return;
+  t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
+  const prev=t.registros[atletaId][itemId]||{};
+  let rd=(prev.rd&&prev.rd.slice())||[{tempos:prev.tempos||[],parciais:prev.parciais||[]}];
+  const base=Math.max(nRodadas(item,prev),rd.length);
+  while(rd.length<base)rd.push({tempos:[],parciais:[]});
+  rd.push({tempos:[],parciais:[]});
+  const novo={...prev,rd,nrd:rd.length,em:Date.now(),por:S.u.nome}; delete novo.tempos; delete novo.parciais;
+  t.registros[atletaId][itemId]=novo; t.atualizado=Date.now();
+  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  S.rd=rd.length-1; abrirLancamento(itemId,atletaId); toast('Rodada '+rd.length+' adicionada');
 }
 /* lê todos os campos digitados na ficha (para não perder nada) */
 function lerCamposLancamento(reps,temParcial,dist){
@@ -1380,10 +1404,11 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais){
     t.registros[atletaId][itemId]={...prev,tempos,parciais,em:Date.now(),por:S.u.nome};
   }else{
     const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId);
-    const nrd=(item&&item.rodadas)||1, arr=(prev.rd||[]).slice();
-    while(arr.length<nrd)arr.push({tempos:[],parciais:[]});
+    const base=Math.max((item&&item.rodadas)||1,(prev.nrd||0),rd+1), arr=(prev.rd||[]).slice();
+    while(arr.length<base)arr.push({tempos:[],parciais:[]});
     arr[rd]={tempos,parciais};
-    t.registros[atletaId][itemId]={...prev,rd:arr,em:Date.now(),por:S.u.nome};
+    const novo={...prev,rd:arr,nrd:arr.length,em:Date.now(),por:S.u.nome}; delete novo.tempos; delete novo.parciais;
+    t.registros[atletaId][itemId]=novo;
   }
   t.atualizado=Date.now();
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
@@ -2880,7 +2905,7 @@ async function coletarEsforcos(opts){
     if(sj&&sj.rpe!=null&&sj.dur)ses.push({data:t.data,tipo:'natação',load:sj.rpe*sj.dur});
     for(const b of t.blocos||[])for(const i of b.itens){
       const r=t.registros?.[S.u.id]?.[i.id]; if(!r)continue;
-      const series=(i.rodadas||1)>1?(r.rd||[]):[r];
+      const series=r.rd?r.rd:[r];   /* achata rodadas (do interpretador OU manuais) */
       for(const s of series)(s.tempos||[]).forEach((x,k)=>{ if(x==null)return;
         out.push({data:t.data,dist:i.dist,estilo:i.estilo,tags:i.tags,tempo:x,
           p1:i.parcial?(s.parciais?.[k]??null):null,forte:i.forte,vol:i.vol})});
