@@ -1,0 +1,33 @@
+# === Segredos e arquivos pessoais (NUNCA versionar) ===
+github-recovery-codes.txt
+*recovery-code*
+*.pem
+*.key
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json
+.env
+.env.*
+*.secret
+secrets/
+_cofre-pessoal/
+
+# === Dependências / build ===
+node_modules/
+dist/
+build/
+.wrangler/
+
+# === Sistema operacional ===
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# === Editores / IDE ===
+.vscode/
+.idea/
+*.swp
+
+# === Temporários ===
+*.log
+*.tmp

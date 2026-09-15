@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// PARCIAL — regras de segurança do Firestore (Etapa 1, ponte chave-valor).
+// Cole em: Console do Firebase › Firestore Database › aba "Regras" › Publicar.
+//
+// Princípio desta etapa:
+//   • É preciso estar logado para ler ou escrever qualquer coisa.
+//   • Documentos "pro_*" (Garmin, marcas, dados de saúde) são PRIVADOS do
+//     dono — nem o técnico enxerga. Amarrados pelo uid do Firebase.
+//   • O resto (contas, equipe, treinos, competições) é compartilhado entre
+//     as pessoas logadas. A separação fina "só o técnico escreve treino"
+//     fica no app por enquanto; ela vira regra de banco na Etapa 2, quando
+//     migrarmos para tabelas reais (ver supabase/schema.sql como referência
+//     do modelo de permissões-alvo).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /kv/{chave} {
+
+      function logado()  { return request.auth != null; }
+      function ehPro()   { return chave.matches('pro_.*'); }
+      function souDono(rec) { return rec.dono == request.auth.uid; }
+      // Conta de desenvolvedor: acesso de LEITURA total (inclui listar a
+      // coleção e ler pro_* de qualquer atleta). Necessário para as
+      // ferramentas de Diagnóstico/recuperação. A escrita em pro_ continua
+      // restrita ao próprio dono, para não corromper dados privados.
+      function ehDev()   { return logado()
+                           && request.auth.token.email == 'barbato.bruno@gmail.com'; }
+
+      // Leitura: dev lê tudo; senão logado e, se pro_, só o dono.
+      allow read: if ehDev() || ( logado() && ( !ehPro() || souDono(resource.data) ) );
+
+      // Criação: logado. Se pro_, o dono precisa ser você mesmo.
+      allow create: if logado()
+        && ( !ehPro() || request.resource.data.dono == request.auth.uid );
+
+      // Atualização: logado. Se pro_, você já era o dono e continua sendo.
+      allow update: if logado()
+        && ( !ehPro() || ( souDono(resource.data)
+                           && request.resource.data.dono == request.auth.uid ) );
+
+      // Exclusão: logado. Se pro_, só o dono.
+      allow delete: if logado() && ( !ehPro() || souDono(resource.data) );
+    }
+  }
+}
