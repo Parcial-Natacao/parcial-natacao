@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v67';
+const VER='v68';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -1512,8 +1512,11 @@ function linhaSerie(t,i,at,blocoSolto){
   const ts=temposItem(rec,i);
   const logged=aa?(rec.ritmo100!=null):ts.length;
   const dadosPB=at.id===S.u.id?S.pro:null;
-  const mel=ts.length?Math.min(...ts):null;
-  const pct=(!aa&&dadosPB&&mel)?((pbDe(dadosPB,i.dist,i.estilo)||0)/mel*100)||null:null;
+  const mel=ts.length?Math.min(...ts):null;                                  /* só p/ destacar o melhor tiro */
+  const med=ts.length?ts.reduce((a,b)=>a+b,0)/ts.length:null;                /* %PB da SÉRIE = média dos tiros */
+  const pbSerie=dadosPB?(pbDe(dadosPB,i.dist,i.estilo)||0):0;
+  const pct=(!aa&&pbSerie&&med)?(pbSerie/med*100)||null:null;
+  const pctMel=(!aa&&pbSerie&&mel)?(pbSerie/mel*100)||null:null;
   const z=zona(pct);
   /* "+" para anotar tempo em QUALQUER série; só aquecimento/soltura ficam sem botão */
   const botao=semCrono?''
@@ -1531,7 +1534,7 @@ function linhaSerie(t,i,at,blocoSolto){
   return`<div class="item ${logged?'sel':''}">
     <div class="row" style="align-items:baseline;flex-wrap:wrap;gap:6px">
       <span class="grow" style="min-width:58%"><b>${esc(i.texto||((i.rodadas>1?i.rodadas+'x ':'')+(i.reps>1?i.reps+'×':'')+i.dist+' '+i.estilo))}</b></span>
-      ${z?`<span class="z ${z.c}">${pct.toFixed(0)}%</span>`:''}
+      ${z?`<span class="z ${z.c}" title="${pct.toFixed(0)}% do PB — média dos ${ts.length} tiro(s) da série${pctMel?` · melhor tiro ${pctMel.toFixed(0)}%`:''}">${pct.toFixed(0)}%</span>`:''}
       ${botao}
     </div>
     ${chips}
@@ -4307,7 +4310,7 @@ function dadosParaLaudo(motor){
     composicao:motor.composicao,
     cargaTotal28d:motor.cargaTotal,
     baselines:(motor.baselines||[]).map(b=>({indicador:b.nome,agora:+b.atual.toFixed(b.dec),desvioPct:+b.desvio.toFixed(0)})),
-    predicoes:(motor.predicoes||[]).map(p=>({prova:p.prova,faixa:fmt(p.low)+'–'+fmt(p.high),central:fmt(p.central),pb:fmt(p.pb),confianca:p.conf})),
+    predicoes:(motor.predicoes||[]).map(p=>({prova:p.prova,faixa:fmt(p.low)+'–'+fmt(p.high),central:fmt(p.central),pb:fmt(p.pb),banda:p.banda+'%',qualidadeDados:p.qual,calibradoPor:p.calN})),
     fingerprint:(motor.fingerprint||[]).filter(d=>d.score!=null).map(d=>({eixo:d.eixo,score:d.score})),
     mudancas28d:(motor.mudancas&&motor.mudancas.movers||[]).map(x=>({indicador:x.nome,deltaPct:+x.dPct.toFixed(0)})),
     porqueMudou:(motor.mudancas&&motor.mudancas.porque)||[],
@@ -4776,9 +4779,14 @@ function cardBaseline(pro,comPct){
 }
 /* média dos tiros MAIS RÁPIDOS (topo 20%) numa prova, nos últimos `dias` — melhor
    sinal do que a média, porque o treino tem muito nado leve. */
-function melhorTempo(comPct,d,e,dias){
-  const h0=new Date(hoje()+'T00:00:00');
-  const rec=comPct.filter(x=>x.dist===d&&x.estilo===e&&(!dias||(h0-new Date(x.data+'T00:00:00'))/86400000<dias)).map(x=>x.tempo).sort((a,b)=>a-b);
+function melhorTempo(comPct,d,e,dias,ate){
+  const h0=new Date((ate||hoje())+'T00:00:00');
+  const rec=comPct.filter(x=>{
+    if(x.dist!==d||x.estilo!==e)return false;
+    const dt=(h0-new Date(x.data+'T00:00:00'))/86400000;
+    if(ate&&dt<0)return false;   /* autocalibração: só os tiros que existiam ANTES da prova */
+    return !dias||dt<dias;
+  }).map(x=>x.tempo).sort((a,b)=>a-b);
   if(!rec.length)return null; const n=Math.max(1,Math.ceil(rec.length*0.2));
   return rec.slice(0,n).reduce((t,x)=>t+x,0)/n;
 }
@@ -4788,21 +4796,66 @@ function melhorPct(comPct,d,e,dias){
   if(!rec.length)return null; const n=Math.max(1,Math.ceil(rec.length*0.2));
   return rec.slice(0,n).reduce((t,x)=>t+x,0)/n;
 }
-/* ── PREDIÇÃO das provas-alvo (faixa + confiança) ───────────────────────────
-   Estima o tempo de COMPETIÇÃO hoje. Ancora no que mais parece prova: seus tiros
-   mais rápidos e a parcial de 25m montada com o SEU desgaste real (razão entre
-   seus PBs — ex.: seu 100 é PB100/(2×PB50) mais lento que dois 50). Prova é
-   esforço máximo → a faixa é ESTREITA em volta da melhor estimativa; discordância
-   entre métodos baixa a CONFIANÇA (não alarga a faixa). Teto no seu PB. */
-function raceEst(comPct,pbs,d,e){
+/* ── PREDIÇÃO das provas-alvo (faixa + qualidade dos dados) ─────────────────
+   Estima o tempo de COMPETIÇÃO. Três camadas, nesta ordem:
+     1) raceEst  → FORMA DE TREINO: o que seus tiros dizem que você faz HOJE,
+        em condições de treino (saída na borda, dentro da sessão).
+     2) baseProva → converte treino→prova (saída de bloco + taper). O ganho da
+        saída é ABSOLUTO (~0,6 s por prova), por isso pesa ~2% num 50 e ~0,4%
+        num 200 — modelar isso como % era o principal viés lento do modelo.
+     3) calibProva → AUTOCALIBRAÇÃO: aprende, das suas competições passadas,
+        o quanto você de fato rende na prova vs. o que os tiros previam.
+   A FAIXA reflete a evidência (poucos tiros, métodos discordantes ou ausência
+   de histórico de prova ALARGAM a faixa) e nunca exclui o seu PB sem sinal de
+   destreino. O % ao lado é QUALIDADE DOS DADOS, não probabilidade. */
+function raceEst(comPct,pbs,d,e,ate){
   const pbAny=dd=>pbs[`${dd} ${e} SC25`]||pbs[`${dd} ${e} LC50`]||null;
   const fade=dd=>{const cur=pbAny(dd),half=pbAny(dd/2);return (cur&&half)?cur/(2*half):(dd<=50?1.04:dd<=100?1.10:1.11);};
   const cands=[], fat=[];
-  const bt=melhorTempo(comPct,d,e,120);
-  if(bt!=null){const pb=pbAny(d);cands.push(bt*0.97);fat.push(`Melhores tiros de ${d}${pb?` (~${(pb/bt*100).toFixed(0)}% do PB)`:''}`);}
-  if(d>25){const sub=raceEst(comPct,pbs,d/2,e); if(sub){cands.push(sub.est*2*fade(d));fat.push(`${d/2} projetado (${fmt(sub.est,true)}) ×2 c/ seu desgaste`);}}
+  const bt=melhorTempo(comPct,d,e,120,ate);
+  if(bt!=null){const pb=pbAny(d);cands.push(bt);fat.push(`Melhores tiros de ${d}${pb?` (~${(pb/bt*100).toFixed(0)}% do PB)`:''}`);}
+  if(d>25){const sub=raceEst(comPct,pbs,d/2,e,ate); if(sub){cands.push(sub.est*2*fade(d));fat.push(`${d/2} projetado (${fmt(sub.est,true)}) ×2 c/ seu desgaste`);}}
   if(!cands.length)return null;
   return {est:Math.min(...cands),cands,fat};
+}
+/* Treino → prova. Saída de bloco: ganho ABSOLUTO (costas parte da água, ganha
+   menos). Taper/descanso total: ganho relativo. */
+function ganhoSaida(e){ return /costas/i.test(e||'')?250:600; }   /* em ms (unidade interna): 0,25 s / 0,60 s */
+const GANHO_TAPER=0.020;
+function baseProva(estTreino,d,e){
+  if(!(estTreino>0))return null;
+  return Math.max(estTreino*0.70,estTreino-ganhoSaida(e))*(1-GANHO_TAPER);
+}
+/* AUTOCALIBRAÇÃO — o item que impede o erro de se repetir.
+   Para cada competição já registrada em Marcas, recalcula a base usando SÓ os
+   tiros anteriores àquela data e compara com o tempo real. O fator aprendido
+   (média geométrica, encolhida para 1 quando há poucas provas) corrige o viés
+   treino→prova DESTE atleta. Hierarquia: mesma prova+piscina → mesma prova →
+   histórico geral. */
+function calibProva(pro,comPct,d,e,pis){
+  const res=(pro&&pro.resultados)||[], pbs=(pro&&pro.pbs)||{};
+  const colher=filtro=>{
+    const rs=[];
+    for(const r of res){
+      if(!r||r.tempo==null||!r.data||!r.dist||!r.estilo||!filtro(r))continue;
+      const re=raceEst(comPct,pbs,r.dist,r.estilo,r.data); if(!re)continue;
+      const b=baseProva(re.est,r.dist,r.estilo); if(!(b>0))continue;
+      const ratio=r.tempo/b;
+      if(ratio>0.80&&ratio<1.20)rs.push(ratio);   /* descarta prova anulada/erro de digitação */
+    }
+    return rs;
+  };
+  const niveis=[
+    {rs:colher(r=>r.dist===d&&r.estilo===e&&(r.piscina||'SC25')===pis),esc:'nesta prova e piscina'},
+    {rs:colher(r=>r.dist===d&&r.estilo===e),esc:'nesta prova'},
+    {rs:colher(()=>true),esc:'no seu histórico de provas'}
+  ];
+  const nv=niveis.find(x=>x.rs.length>0);
+  if(!nv)return{k:1,n:0,dv:0,esc:null};
+  const logs=nv.rs.map(Math.log), n=logs.length;
+  const m=logs.reduce((a,b)=>a+b,0)/n;
+  const dv=n>1?Math.sqrt(logs.reduce((a,b)=>a+(b-m)*(b-m),0)/(n-1)):0;
+  return{k:Math.exp(m*(n/(n+1))),n,dv,esc:nv.esc};
 }
 function predicao(pro,comPct,est){
   const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[]; if(!alvos.length||!comPct||!comPct.length)return[];
@@ -4812,36 +4865,59 @@ function predicao(pro,comPct,est){
   const out=[];
   for(const a of alvos){
     const re=raceEst(comPct,pbs,a.d,a.e); if(!re)continue;
+    const bp=baseProva(re.est,a.d,a.e); if(!bp)continue;   /* treino → prova (saída + taper) */
     /* os tiros de treino não distinguem piscina; uso a piscina de treino (curta) como
        referência e escalo cada piscina pelo SEU PRÓPRIO PB → longa fica mais lenta. */
     const refPB=pbs[`${a.d} ${a.e} SC25`]||pbs[`${a.d} ${a.e} LC50`];
-    const formRatio=refPB?re.est/refPB:1;
     for(const pis of ['SC25','LC50']){
       const pb=pbs[`${a.d} ${a.e} ${pis}`]; if(!pb)continue;
-      let central=Math.max(pb*formRatio*1.015*(1+aPr+aTend), pb*0.985);   // escala pelo PB DESTA piscina; +1.5% não-afinado; teto no PB
-      const band=(a.d<=50?0.025:a.d<=100?0.035:0.045)+(re.cands.length<2?0.01:0);
-      const low=Math.max(central*(1-band),pb*0.98), high=central*(1+band);
+      const cal=calibProva(pro,comPct,a.d,a.e,pis);
+      let central=bp*(refPB?pb/refPB:1)*cal.k*(1+aPr+aTend);
+      /* ÂNCORA NO PB: você já provou esse tempo. Sem sinal de destreino a projeção
+         não pode ficar muito mais lenta que o seu PB (o erro de 2026-09 foi esse). */
+      const destreino=(tend==='↓')||(pront!=null&&pront<45);
+      central=Math.min(central,pb*(destreino?1.06:1.025));
+      central=Math.max(central,pb*0.95);
+      /* BANDA POR EVIDÊNCIA: antes era fixa e a discordância só baixava um número.
+         Agora tudo que é incerteza real ALARGA a faixa. */
       const disc=re.cands.length>1?Math.abs(Math.max(...re.cands)-Math.min(...re.cands))/central:0;
       const nEff=comPct.filter(x=>x.dist===a.d&&x.estilo===a.e).length;
-      const c=Math.round(Math.min(85, Math.min(35,nEff*7)+(re.cands.length>1?Math.max(4,20-disc*120):8)+(pront!=null?Math.min(18,dias*1.2):0)+12));
-      const fat=[...re.fat]; if(pis==='LC50'&&pbs[`${a.d} ${a.e} SC25`])fat.push('Ajustado p/ piscina longa (seu gap SC↔LC)'); if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
-      out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),conf:c,fatores:fat});
+      let band=(a.d<=50?0.030:a.d<=100?0.035:0.040)
+        +(nEff<3?0.020:nEff<6?0.010:0)
+        +Math.min(0.030,disc*0.5)
+        +(cal.n===0?0.020:cal.n===1?0.010:0)
+        +Math.min(0.020,cal.dv||0);
+      band=Math.min(0.090,band);
+      let low=central*(1-band), high=central*(1+band);
+      if(!destreino&&low>pb)low=pb;                 /* a faixa nunca exclui o seu PB */
+      low=Math.max(low,pb*0.93); high=Math.max(high,low*1.01);
+      const q=Math.round(Math.min(95, Math.min(30,nEff*6)+(re.cands.length>1?Math.max(4,18-disc*120):6)
+        +(pront!=null?Math.min(15,dias*1.2):0)+Math.min(25,cal.n*10)+8));
+      const fat=[...re.fat];
+      fat.push(`Saída de bloco + taper (−${(ganhoSaida(a.e)/1000).toFixed(2)}s, −${(GANHO_TAPER*100).toFixed(0)}%)`);
+      if(cal.n)fat.push(`Calibrado por ${cal.n} prova(s) ${cal.esc} (fator ${cal.k.toFixed(3)})`);
+      else fat.push('Sem prova registrada para calibrar — faixa alargada');
+      if(pis==='LC50'&&pbs[`${a.d} ${a.e} SC25`])fat.push('Ajustado p/ piscina longa (seu gap SC↔LC)');
+      if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
+      out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),
+        qual:q,conf:q,calN:cal.n,calK:+cal.k.toFixed(3),banda:+(band*100).toFixed(1),fatores:fat});
     }
   }
-  return out.sort((x,y)=>y.conf-x.conf||x.d-y.d).slice(0,4);
+  return out.sort((x,y)=>y.qual-x.qual||x.d-y.d).slice(0,4);
 }
 function cardPredicao(pro,comPct,est){
   const ps=predicao(pro,comPct,est); if(!ps.length)return'';
-  const linhas=ps.map(p=>{const cor=p.conf>=60?'var(--ok)':p.conf<35?'var(--clock)':'var(--ink-2)';
+  const semCal=ps.some(p=>!p.calN);
+  const linhas=ps.map(p=>{const cor=p.qual>=60?'var(--ok)':p.qual<35?'var(--clock)':'var(--ink-2)';
     return`<div style="border-top:1px solid var(--line);padding:8px 0">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
-      <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · confiança <span style="color:${cor}">${p.conf}%</span></div>
+      <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · faixa ±${p.banda}% · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div></div>`;}).join('');
   return`<div class="card"><div class="eyebrow">projeção de tempo — provas-alvo</div>
-    <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável hoje, combinando seus <b>melhores tiros</b> (afiados p/ ritmo de prova) com a <b>parcial de 25m</b> (ida+volta). Ajustado por prontidão e tendência. Estimativa de apoio — não é garantia.</div>
+    <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
     ${linhas}
-    <div class="xs muted" style="margin-top:8px">Foca nas provas-alvo (defina em Marcas). Registre seu melhor 25m e faça alguns tiros fortes na prova para a faixa ficar mais precisa. Teto no seu PB.</div>
+    <div class="xs muted" style="margin-top:8px">A <b>largura da faixa</b> é a incerteza: ela aperta conforme você acumula tiros na prova e resultados de competição. <b>Qualidade dos dados</b> mede quanta informação o modelo tem — não é probabilidade.${semCal?' <b>Registre seus resultados em Marcas</b>: sem competição registrada o modelo não sabe o seu ganho real treino→prova e mantém a faixa larga.':''}</div>
   </div>`;
 }
 /* ── O QUE MUDOU EM 28 DIAS + POR QUÊ ───────────────────────────────────────
