@@ -109,7 +109,37 @@ baseline individual por atleta, predição de tempo com intervalo de confiança,
 e um "Performance Fingerprint" (radar) a partir das dimensões que já existem
 (velocidade, manutenção, composição, recuperação, tendência).
 
-## 8. Atualização recente (já implementado — v67)
+## 8. Atualização recente (já implementado — v68)
+
+- **Projeção de tempo: viés corrigido + autocalibração (v68)**. Motivo: numa competição real
+  o app projetou **32.28–33.93** para 50 peito LC50 (PB 31.35) e o atleta nadou **31.00** —
+  erro de 6,8% no centro, com a faixa inteira *mais lenta que o próprio PB*. Causas e correções:
+  1. **A faixa não representava incerteza.** Era fixa (±2,5% no 50) e a discordância entre
+     métodos só baixava um número. Agora a banda é composta por evidência — poucos tiros
+     (`nEff`), discordância entre candidatos, ausência de histórico de prova e dispersão
+     residual da calibração **alargam** a faixa (teto 9%).
+  2. **O "confiança %" não era probabilidade** (é soma de quantidade de dados). Renomeado para
+     **qualidade dos dados** (`p.qual`); a incerteza passou a estar na largura da faixa.
+  3. **O modelo projetava forma de TREINO, não prova.** `raceEst` agora devolve forma de treino
+     pura (removido o `×0.97` embutido) e a conversão treino→prova é explícita e aplicada uma
+     única vez em `baseProva`: **saída de bloco** com ganho ABSOLUTO (`ganhoSaida` = 600 ms;
+     250 ms no costas, que parte da água) + **taper** (`GANHO_TAPER` = 2%). Modelar a saída como
+     % era o principal viés lento. Removida a multa fixa de +1,5% "não afinado".
+  4. **Âncora no PB**: sem sinal de destreino (`tend==='↓'` ou prontidão < 45) o centro não
+     passa de `pb*1.025` (destreinado: `pb*1.06`) e a faixa **nunca exclui o PB**.
+  5. **Autocalibração** (`calibProva`): para cada competição em `pro.resultados`, recalcula a
+     base com **só os tiros anteriores àquela data** (`melhorTempo`/`raceEst` ganharam o
+     parâmetro `ate`) e aprende `real/previsto`. Média geométrica encolhida (`k^(n/(n+1))`),
+     hierarquia prova+piscina → prova → histórico geral. É o que impede o erro de se repetir.
+  Resultado no caso real: antes `32.26–33.91` (não continha 31.00); agora `30.52–33.74` sem
+  calibração e `30.40–32.93` (centro 31.66) após registrar a prova.
+- **%PB da série pela média (v68)**: em `linhaSerie` o badge de zona usava `Math.min(...ts)`
+  (só a repetição mais rápida). Passou a usar a **média dos tiros da série** — representa a
+  qualidade real da série, não o melhor tiro isolado. `mel` continua marcando o melhor tiro
+  (chip `best`) e o tooltip mostra os dois. **Atenção:** os cortes de `zona()` (96/90/84) foram
+  calibrados para "melhor tiro"; com média os %PB caem e podem precisar de reajuste.
+
+### v67
 
 - **Relatório: intensidade em vez de sessão + assinatura/correlações no topo (v67)**:
   removida a "sessão sugerida" (`diag.sessao`/`diag.descanso`) do `cardPlanoAcao` — o app não
