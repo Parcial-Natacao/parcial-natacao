@@ -4873,24 +4873,27 @@ function predicao(pro,comPct,est){
       const pb=pbs[`${a.d} ${a.e} ${pis}`]; if(!pb)continue;
       const cal=calibProva(pro,comPct,a.d,a.e,pis);
       let central=bp*(refPB?pb/refPB:1)*cal.k*(1+aPr+aTend);
-      /* ÂNCORA NO PB: você já provou esse tempo. Sem sinal de destreino a projeção
-         não pode ficar muito mais lenta que o seu PB (o erro de 2026-09 foi esse). */
+      /* ÂNCORA NO PB: o PB é a informação mais forte que existe sobre o atleta.
+         O centro é sempre o PB ajustado pela forma — nunca um número solto. O
+         ajuste é limitado: ninguém "está" 5% melhor que o próprio PB de uma hora
+         para outra, e destreino tem teto maior que ganho. */
       const destreino=(tend==='↓')||(pront!=null&&pront<45);
-      central=Math.min(central,pb*(destreino?1.06:1.025));
-      central=Math.max(central,pb*0.95);
-      /* BANDA POR EVIDÊNCIA: antes era fixa e a discordância só baixava um número.
-         Agora tudo que é incerteza real ALARGA a faixa. */
+      const ajuste=Math.max(-0.025,Math.min(destreino?0.060:0.030,central/pb-1));
+      central=pb*(1+ajuste);
+      /* BANDA ASSIMÉTRICA. Bater o PB é difícil e tem limite físico; nadar mal é
+         fácil e tem muito mais espaço. Banda simétrica larga (a v68 inicial) gerava
+         tempos de RECORDE no lado rápido — ex.: 100 peito SC25 projetando 1:02.57
+         para um PB de 1:07.28. O lado rápido agora é curto e travado no PB. */
       const disc=re.cands.length>1?Math.abs(Math.max(...re.cands)-Math.min(...re.cands))/central:0;
       const nEff=comPct.filter(x=>x.dist===a.d&&x.estilo===a.e).length;
-      let band=(a.d<=50?0.030:a.d<=100?0.035:0.040)
-        +(nEff<3?0.020:nEff<6?0.010:0)
-        +Math.min(0.030,disc*0.5)
-        +(cal.n===0?0.020:cal.n===1?0.010:0)
-        +Math.min(0.020,cal.dv||0);
-      band=Math.min(0.090,band);
-      let low=central*(1-band), high=central*(1+band);
-      if(!destreino&&low>pb)low=pb;                 /* a faixa nunca exclui o seu PB */
-      low=Math.max(low,pb*0.93); high=Math.max(high,low*1.01);
+      const extra=Math.min(0.012,(nEff<3?0.008:nEff<6?0.004:0)+Math.min(0.006,disc*0.15)
+        +(cal.n===0?0.006:0)+Math.min(0.006,cal.dv||0));
+      const bUp=(a.d<=50?0.016:a.d<=100?0.020:0.024)+extra*0.4;   /* lado rápido: pouco */
+      const bDn=(a.d<=50?0.026:a.d<=100?0.028:0.032)+extra;       /* lado lento: mais  */
+      let low=central*(1-bUp), high=central*(1+bDn);
+      low=Math.max(low,pb*0.965);                   /* não se melhora 3,5%+ do PB "hoje" */
+      if(!destreino)low=Math.min(low,pb*1.005);     /* o PB fica sempre à vista */
+      high=Math.max(high,low*1.02);
       const q=Math.round(Math.min(95, Math.min(30,nEff*6)+(re.cands.length>1?Math.max(4,18-disc*120):6)
         +(pront!=null?Math.min(15,dias*1.2):0)+Math.min(25,cal.n*10)+8));
       const fat=[...re.fat];
@@ -4900,7 +4903,7 @@ function predicao(pro,comPct,est){
       if(pis==='LC50'&&pbs[`${a.d} ${a.e} SC25`])fat.push('Ajustado p/ piscina longa (seu gap SC↔LC)');
       if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
       out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),
-        qual:q,conf:q,calN:cal.n,calK:+cal.k.toFixed(3),banda:+(band*100).toFixed(1),fatores:fat});
+        qual:q,conf:q,calN:cal.n,calK:+cal.k.toFixed(3),banda:`−${(bUp*100).toFixed(1)}% / +${(bDn*100).toFixed(1)}%`,fatores:fat});
     }
   }
   return out.sort((x,y)=>y.qual-x.qual||x.d-y.d).slice(0,4);
@@ -4912,7 +4915,7 @@ function cardPredicao(pro,comPct,est){
     return`<div style="border-top:1px solid var(--line);padding:8px 0">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
-      <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · faixa ±${p.banda}% · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
+      <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · faixa ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div></div>`;}).join('');
   return`<div class="card"><div class="eyebrow">projeção de tempo — provas-alvo</div>
     <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
