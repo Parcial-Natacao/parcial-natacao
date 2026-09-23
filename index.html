@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v68';
+const VER='v69';
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -305,6 +305,49 @@ const PFX='parcial_';
 /* Firestore não aceita '/' em id de documento; as chaves do app não têm,
    mas trocamos por precaução. */
 const fkey=k=>k.replace(/\//g,'∕');
+/* ── Campos de segurança espelhados (Fase 1 do P0) ─────────────────────────
+   As regras do Firestore NÃO conseguem ler dentro de `v` (é uma string JSON).
+   Por isso os campos que decidem autorização — dono, equipe, perfil, aprovado —
+   são gravados também como campos REAIS do documento. Só assim a regra pode
+   exigir "você não pode mudar o seu próprio perfil" ou "só o técnico da equipe
+   escreve nos treinos dela". Enquanto as regras novas não são publicadas isto
+   é inócuo: só acrescenta campos. */
+function camposSeguranca(k,v){
+  const o={dono:null,equipe:null,perfil:null,aprovado:null};
+  const val=(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
+  if(k.startsWith('pro_')){ o.dono=k.slice(4)||null; }
+  else if(k.startsWith('u_')){
+    o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
+    o.equipe=val.equipe||null;
+    o.perfil=val.perfil||null;
+    o.aprovado=val.aprovado===true;
+  }
+  else if(k.startsWith('eq_')){ o.equipe=k.split('_')[1]||null; }
+  return o;
+}
+/* ── Trava de tamanho ───────────────────────────────────────────────────────
+   Documento do Firestore tem teto RÍGIDO de 1 MiB. Como a gravação é otimista
+   (a tela atualiza antes da confirmação), estourar o limite fazia o app parar
+   de salvar em silêncio. Agora avisa antes e recusa com mensagem clara. */
+const LIM_DOC=1048576, LIM_SEGURO=900000, LIM_AVISO=650000;
+function bytesDe(s){ try{ return new Blob([s]).size; }catch(_){ return (s||'').length; } }
+function checaTamanho(k,json){
+  const b=bytesDe(json);
+  if(b>LIM_SEGURO){
+    toast(`Não salvei: "${k}" ficou com ${(b/1024).toFixed(0)} KB e o limite por documento é 1024 KB. Remova anexos (fotos/PDFs) das sessões fora d'água.`);
+    console.warn('DB.set BLOQUEADO por tamanho',k,b);
+    return {ok:false,bytes:b};
+  }
+  if(b>LIM_AVISO)toast(`Atenção: "${k}" já está com ${(b/1024).toFixed(0)} KB de 1024 KB. Convém remover anexos antigos.`);
+  return {ok:true,bytes:b};
+}
+/* Medidor usado na tela de Diagnóstico — evita ter que abrir o console. */
+function tamanhoDados(obj){
+  const o=obj||{}, itens=Object.keys(o).map(k=>({secao:k,bytes:bytesDe(JSON.stringify(o[k]||null))}))
+    .sort((a,b)=>b.bytes-a.bytes);
+  const total=bytesDe(JSON.stringify(o));
+  return {total,pct:total/LIM_DOC*100,itens};
+}
 const DB={
   async get(k,sh=true){
     if(FB){
@@ -320,12 +363,12 @@ const DB={
     if(FB){
       if(k==='sessao'){try{localStorage.setItem(PFX+'sessao',JSON.stringify(v));return true}catch(e){return false}}
       try{
-        await fdb.collection('kv').doc(fkey(k)).set({
-          v:JSON.stringify(v),
-          dono:k.startsWith('pro_')?(fauth.currentUser?fauth.currentUser.uid:null):null,
-          equipe:k.startsWith('eq_')?k.split('_')[1]:null,
+        const json=JSON.stringify(v);
+        const chk=checaTamanho(k,json); if(!chk.ok)return false;   /* trava: nunca falhar calado */
+        await fdb.collection('kv').doc(fkey(k)).set(Object.assign({
+          v:json,
           at:firebase.firestore.FieldValue.serverTimestamp()
-        });
+        },camposSeguranca(k,v)));
         return true;
       }catch(e){toast('Falha ao salvar');console.warn('DB.set',k,e.message);return false}
     }
@@ -1929,8 +1972,9 @@ async function abrirDiagnostico(){
   if(!FB)return toast('Diagnóstico disponível só no modo em rede (Firebase).');
   toast('Varrendo o banco…');
   let snap; try{ snap=await fdb.collection('kv').get(); }catch(e){ return toast('Falha ao varrer: '+e.message); }
-  const teams={}, users=[], trDocs={}, meus={}; const myid=S.u.id;
+  const teams={}, users=[], trDocs={}, meus={}; const myid=S.u.id; const pesos=[];
   snap.forEach(doc=>{ const k=doc.id; let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; let m;
+    pesos.push({k,b:bytesDe(doc.data().v||'')});
     if(/^eq_[^_]+$/.test(k)){ const sg=k.slice(3); (teams[sg]=teams[sg]||{}).nome=(v&&v.nome)||sg; }
     else if(m=k.match(/^eq_(.+)_tridx$/)){ (teams[m[1]]=teams[m[1]]||{}).tridx=Array.isArray(v)?v.length:0; }
     else if(m=k.match(/^eq_(.+)_tr_/)){ const sg=m[1]; trDocs[sg]=(trDocs[sg]||0)+1; teams[sg]=teams[sg]||{};
@@ -1942,11 +1986,52 @@ async function abrirDiagnostico(){
       ${sg!==S.u.equipe?`<button class="sm primary" onclick="assumirEquipe('${sg}',${JSON.stringify(t.nome||sg).replace(/"/g,'&quot;')})">assumir</button>`:'<span class="tag">atual</span>'}
       ${(trDocs[sg]||0)>(t.tridx||0)||meus[sg]?`<button class="sm ghost" style="margin-left:4px" onclick="reconstruirTridx('${sg}')">recuperar</button>`:''}</div>`;}).join('');
   const linhasU=users.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(u=>`<div class="xs" style="padding:3px 0;border-top:1px solid var(--line)">${esc(u.nome||'?')} · <b>${esc(u.perfil||'')}</b> · equipe: ${esc(u.equipe||'—')} · ${esc(u.email||'')}</div>`).join('');
+  /* tamanho dos documentos — o Firestore corta em 1 MiB e a gravação é otimista,
+     então um documento perto do teto para de salvar sem avisar. */
+  pesos.sort((a,b)=>b.b-a.b);
+  const kb=b=>(b/1024).toFixed(0)+' KB';
+  const criticos=pesos.filter(p=>p.b>LIM_AVISO).length;
+  const linhasP=pesos.slice(0,8).map(p=>{const pc=p.b/LIM_DOC*100;
+    const cor=p.b>LIM_SEGURO?'var(--clock)':p.b>LIM_AVISO?'var(--warn,#b8860b)':'var(--ink-2)';
+    return`<div class="xs" style="padding:3px 0;border-top:1px solid var(--line);display:flex;gap:8px">
+      <span class="grow" style="word-break:break-all">${esc(p.k)}</span>
+      <b style="color:${cor};white-space:nowrap">${kb(p.b)} · ${pc.toFixed(0)}%</b></div>`;}).join('');
+  const meuPro=pesos.find(p=>p.k==='pro_'+myid);
   sheet(`<h2>Diagnóstico do banco</h2>
     <div class="small muted" style="margin-bottom:6px">Onde estão os treinos. "docs" = treinos gravados; "índice" = o que a equipe lista. Se docs > índice, toque em <b>reconstruir</b>.</div>
     <div class="eyebrow">equipes (${Object.keys(teams).length})</div>${linhasEq||'<div class="small muted">nenhuma</div>'}
     <div class="sep"></div><div class="eyebrow">usuários (${users.length})</div>${linhasU||'<div class="small muted">nenhum</div>'}
+    <div class="sep"></div><div class="eyebrow">tamanho dos documentos (teto 1024 KB)</div>
+    <div class="small muted" style="margin:4px 0 2px">${meuPro?`Os <b>seus</b> dados (<code>pro_</code>) ocupam <b>${kb(meuPro.b)}</b> (${(meuPro.b/LIM_DOC*100).toFixed(0)}% do limite).`:'Seu documento pro_ ainda não existe.'}${criticos?` <b style="color:var(--clock)">${criticos} documento(s) acima de 650 KB.</b>`:' Nenhum documento em zona de risco.'}</div>
+    ${linhasP}
+    <div class="xs muted" style="margin-top:6px">Quem costuma crescer é a sessão <b>fora d'água</b> com foto/PDF anexado. Acima de 900 KB o app passa a recusar a gravação em vez de falhar calado.</div>
+    <div class="sep"></div><div class="eyebrow">segurança (P0)</div>
+    <div class="xs muted" style="margin:4px 0 6px">Prepara o banco para as regras novas: grava <b>dono/equipe/perfil/aprovado</b> como campos reais, que é o que as regras conseguem ler. Não altera os dados. <b>Rode antes de publicar as regras novas.</b></div>
+    <button class="sm ghost full" onclick="migrarCamposSeguranca()">Migrar campos de segurança</button>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
+/* ── Fase 2 do P0: migração dos campos de segurança ─────────────────────────
+   Reescreve dono/equipe/perfil/aprovado como campos REAIS em todos os
+   documentos. Os dados (`v`) não são tocados. Precisa rodar DEPOIS que todos
+   os clientes estiverem na v69+ e ANTES de publicar as regras novas — publicar
+   antes disto tranca todos os usuários para fora do app. */
+async function migrarCamposSeguranca(){
+  if(!ehDev())return;
+  if(!FB)return toast('Migração disponível só no modo em rede (Firebase).');
+  if(!confirm('Reescrever os campos de segurança de TODOS os documentos?\n\nOs dados em si (v) não são alterados. Rode isto ANTES de publicar as regras novas.'))return;
+  toast('Migrando…');
+  let snap; try{ snap=await fdb.collection('kv').get(); }catch(e){ return toast('Falha ao varrer: '+e.message); }
+  const docs=[]; snap.forEach(d=>docs.push(d));
+  let n=0, err=0;
+  for(let i=0;i<docs.length;i+=400){           /* lote do Firestore: máx 500 operações */
+    const lote=fdb.batch();
+    for(const d of docs.slice(i,i+400)){
+      let v=null; try{ v=JSON.parse(d.data().v); }catch(_){}
+      lote.update(d.ref,camposSeguranca(d.id,v)); n++;
+    }
+    try{ await lote.commit(); }catch(e){ err++; console.warn('migração, lote',i,e.message); }
+  }
+  toast(err?`Migrados ${n} documento(s), ${err} lote(s) com erro — veja o console.`:`Migração concluída: ${n} documento(s).`);
 }
 /* reconstrói o índice de treinos (eq_<slug>_tridx) a partir dos docs eq_<slug>_tr_* */
 async function reconstruirTridx(sg){
