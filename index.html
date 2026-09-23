@@ -387,6 +387,16 @@ const DB={
 const EMREDE=!!(FB||NUVEM);
 const MODO=EMREDE?'em rede':(LOCAL?'neste aparelho':'temporário');
 
+/* Recarga forçada: o GitHub Pages serve o index.html com cache agressivo e o
+   usuário fica preso numa versão antiga sem perceber (não há service worker
+   para gerenciar isso). Limpa o cache do que dá e recarrega com um parâmetro
+   novo na URL, que o navegador é obrigado a buscar do servidor. */
+async function recarregarForcado(){
+  try{ if(window.caches){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(_){}
+  const u=new URL(location.href);
+  u.searchParams.set('v',Date.now());
+  location.replace(u.toString());
+}
 function exportarBackup(){
   const dados={};
   if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
@@ -1010,6 +1020,11 @@ function abrirConta(){
     <div class="grid2"><input id="acB" type="password" placeholder="nova"><input id="acC" type="password" placeholder="repita"></div>
     <button class="full" style="margin-top:10px" onclick="trocarSenha()">Salvar nova senha</button>
     ${u.perfil==='tecnico'?`<div class="sep"></div><div class="xs muted">Código da equipe: <b class="t">${esc(S.eq?.codigoPro||'—')}</b></div>`:''}
+    <div class="sep"></div>
+    <div class="row" style="align-items:center;gap:8px">
+      <span class="xs muted grow">Versão do app: <b class="t">${VER}</b></span>
+      <button class="sm ghost" onclick="recarregarForcado()" title="Baixa a versão mais nova, ignorando o cache">Atualizar app</button>
+    </div>
     ${u.perfil==='pro'?`<div class="sep"></div>
       <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
       ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
