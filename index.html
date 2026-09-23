@@ -1990,9 +1990,13 @@ async function abrirDiagnostico(){
   if(!FB)return toast('Diagnóstico disponível só no modo em rede (Firebase).');
   toast('Varrendo o banco…');
   let snap; try{ snap=await fdb.collection('kv').get(); }catch(e){ return toast('Falha ao varrer: '+e.message); }
-  const teams={}, users=[], trDocs={}, meus={}; const myid=S.u.id; const pesos=[];
+  const teams={}, users=[], trDocs={}, meus={}; const myid=S.u.id; const pesos=[]; const antigos=[];
   snap.forEach(doc=>{ const k=doc.id; let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; let m;
     pesos.push({k,b:bytesDe(doc.data().v||'')});
+    /* sentinela: toda gravação da v69+ inclui `donoEmail` (nem que seja null).
+       Se o campo não existe, o documento foi gravado por um cliente ANTIGO —
+       publicar as regras novas com documentos assim tranca esses usuários. */
+    if(!('donoEmail' in doc.data()))antigos.push(k);
     if(/^eq_[^_]+$/.test(k)){ const sg=k.slice(3); (teams[sg]=teams[sg]||{}).nome=(v&&v.nome)||sg; }
     else if(m=k.match(/^eq_(.+)_tridx$/)){ (teams[m[1]]=teams[m[1]]||{}).tridx=Array.isArray(v)?v.length:0; }
     else if(m=k.match(/^eq_(.+)_tr_/)){ const sg=m[1]; trDocs[sg]=(trDocs[sg]||0)+1; teams[sg]=teams[sg]||{};
@@ -2023,8 +2027,11 @@ async function abrirDiagnostico(){
     <div class="small muted" style="margin:4px 0 2px">${meuPro?`Os <b>seus</b> dados (<code>pro_</code>) ocupam <b>${kb(meuPro.b)}</b> (${(meuPro.b/LIM_DOC*100).toFixed(0)}% do limite).`:'Seu documento pro_ ainda não existe.'}${criticos?` <b style="color:var(--clock)">${criticos} documento(s) acima de 650 KB.</b>`:' Nenhum documento em zona de risco.'}</div>
     ${linhasP}
     <div class="xs muted" style="margin-top:6px">Quem costuma crescer é a sessão <b>fora d'água</b> com foto/PDF anexado. Acima de 900 KB o app passa a recusar a gravação em vez de falhar calado.</div>
-    <div class="sep"></div><div class="eyebrow">segurança (P0)</div>
+    <div class="sep"></div><div class="eyebrow">segurança (P0) — versão ${VER}</div>
     <div class="xs muted" style="margin:4px 0 6px">Prepara o banco para as regras novas: grava <b>dono/equipe/perfil/aprovado</b> como campos reais, que é o que as regras conseguem ler. Não altera os dados. <b>Rode antes de publicar as regras novas.</b></div>
+    <div class="note ${antigos.length?'warn':'ok'}" style="margin:6px 0">${antigos.length
+      ? `<b>${antigos.length} documento(s) sem os campos de segurança.</b> Ou a migração ainda não rodou, ou alguém está usando uma versão antiga do app (toda gravação nova grava esses campos). <b>Não publique as regras novas enquanto este número não for zero.</b><div class="xs muted" style="margin-top:4px">Ex.: ${antigos.slice(0,4).map(esc).join(', ')}${antigos.length>4?'…':''}</div>`
+      : '<b>Tudo migrado.</b> Nenhum documento sem campos de segurança — pode publicar as regras novas.'}</div>
     <button class="sm ghost full" onclick="migrarCamposSeguranca()">Migrar campos de segurança</button>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
