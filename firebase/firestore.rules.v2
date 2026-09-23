@@ -1,24 +1,29 @@
 rules_version = '2';
 
-// PARCIAL — regras do Firestore, VERSÃO 2 (correção do P0).
+// PARCIAL — regras do Firestore, VERSÃO 2 (correção do P0). FECHADA.
 //
-// ⚠️ NÃO PUBLIQUE ESTE ARQUIVO AINDA. Ordem obrigatória:
+// ⚠️ ORDEM OBRIGATÓRIA PARA PUBLICAR:
 //   Fase 1 — todos os clientes na v69+ (passam a gravar os campos espelhados).
-//   Fase 2 — Diagnóstico › "Migrar campos de segurança" (preenche os documentos antigos).
-//   Fase 3 — só então publicar este conteúdo.
+//   Fase 2 — Diagnóstico › "Migrar campos de segurança" (preenche os antigos).
+//   Fase 3 — só então colar este conteúdo no Console › Firestore › Regras › Publicar.
 // Publicar antes da Fase 2 TRANCA TODOS OS USUÁRIOS PARA FORA (perfil viria vazio).
-// Rollback: republicar `firestore.rules` (a versão anterior) — leva 30 segundos.
+// Rollback: republicar `firestore.rules` (versão anterior) — leva 30 segundos.
 //
 // O QUE MUDA
 //   Antes: qualquer pessoa logada lia, alterava e APAGAVA tudo que não fosse pro_*.
 //          Como o cadastro é aberto, isso valia para qualquer um na internet.
-//   Agora: o acesso é por DONO e por EQUIPE, e quem não foi aprovado não lê nada.
+//   Agora: acesso por DONO e por EQUIPE. Quem não foi aprovado não lê nada.
 //
 // POR QUE OS CAMPOS ESPELHADOS
 //   O app grava o conteúdo como string JSON em `v`, e as regras não sabem ler
-//   JSON dentro de string. Por isso `dono`, `equipe`, `perfil` e `aprovado`
-//   existem como campos reais do documento (ver camposSeguranca() no index.html).
-//   É o que permite exigir "você não pode mudar o seu próprio perfil".
+//   JSON dentro de string. Por isso `dono`, `donoEmail`, `equipe`, `perfil` e
+//   `aprovado` existem como campos reais (ver camposSeguranca() no index.html).
+//
+// APROVAÇÃO (decisão: opção "a")
+//   Ninguém nasce aprovado. Entrar numa equipe deixa o cadastro PENDENTE; o
+//   técnico libera o atleta e o dev libera o técnico — telas que já existem.
+//   Única exceção: quem CRIA a equipe é dono dela (`donoEmail` no documento da
+//   equipe) e pode se auto-aprovar nela. Entrar na equipe dos outros, não.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -32,26 +37,31 @@ service cloud.firestore {
       function minhaChaveU() { return 'u_' + meuEmail(); }
       function ehMeuU()      { return chave == minhaChaveU(); }
 
-      // Perfil confiável: vem do MEU cadastro, que eu não posso alterar (ver update de u_).
+      // Perfil confiável: vem do MEU cadastro, que eu não posso alterar.
       function meuDoc()   { return get(/databases/$(database)/documents/kv/$(minhaChaveU())).data; }
       function aprovado() { return logado() && meuDoc().aprovado == true; }
       function minhaEq()  { return meuDoc().equipe; }
       function tecnicoDe(eq) {
         return aprovado() && meuDoc().perfil == 'tecnico' && eq != null && meuDoc().equipe == eq;
       }
-      // Dev: ferramentas de diagnóstico/recuperação. Sem acesso a pro_ (dados de saúde).
+      // Dono da equipe: quem a criou. Usado só para a auto-aprovação inicial.
+      function souDonoDaEquipe(eq) {
+        return eq != null
+          && exists(/databases/$(database)/documents/kv/$('eq_' + eq))
+          && get(/databases/$(database)/documents/kv/$('eq_' + eq)).data.donoEmail == meuEmail();
+      }
+      // Dev: diagnóstico e recuperação. SEM acesso a pro_ (dados de saúde).
       function ehDev() { return logado() && meuEmail() == 'barbato.bruno@gmail.com'; }
 
       function ehPro() { return chave.matches('pro_.*'); }
       function ehU()   { return chave.matches('u_.*'); }
       function ehEq()  { return chave.matches('eq_.*'); }
+      function ehOutro() { return !ehPro() && !ehU() && !ehEq(); }
       // Documentos de equipe em que o ATLETA precisa escrever (lança os próprios
       // tempos de treino e de competição). Os demais eq_* são só do técnico.
       function ehEqAtleta() {
         return chave.matches('eq_[^_]+_tr_.*') || chave.matches('eq_[^_]+_cmp_.*');
       }
-
-      // Campos de autorização não podem ser forjados por quem escreve.
       function naoMexeEm(campo) {
         return request.resource.data[campo] == resource.data[campo];
       }
@@ -60,61 +70,57 @@ service cloud.firestore {
       allow read: if
         // dados privados do atleta: só o dono (nem técnico, nem dev)
         ( ehPro() && logado() && resource.data.dono == meuUid() )
-        // cadastro: o próprio, ou o técnico aprovado da equipe dele, ou o dev
+        // cadastro: o próprio, o técnico aprovado da equipe dele, ou o dev
         || ( ehU() && ( ehMeuU() || tecnicoDe(resource.data.equipe) || ehDev() ) )
         // equipe: membros aprovados daquela equipe, ou o dev
         || ( ehEq() && ( ( aprovado() && resource.data.equipe == minhaEq() ) || ehDev() ) )
-        // qualquer outra chave (config global etc.): logado
-        || ( !ehPro() && !ehU() && !ehEq() && logado() );
+        || ( ehOutro() && logado() );
 
       // ──────────────────────── CRIAÇÃO ─────────────────────────
       allow create: if
-        // pro_: só o próprio dono
         ( ehPro() && logado() && request.resource.data.dono == meuUid() )
-        // cadastro: só o meu, já nascendo NÃO aprovado (evita autopromoção)
+        // cadastro: só o meu, e SEMPRE pendente (bloqueia autopromoção)
         || ( ehU() && ehMeuU()
              && request.resource.data.dono == meuUid()
              && request.resource.data.aprovado == false )
-        // documentos de equipe: técnico aprovado da equipe
-        || ( ehEq() && tecnicoDe(request.resource.data.equipe) )
-        || ( !ehPro() && !ehU() && !ehEq() && logado() );
+        // equipe nova: qualquer pessoa logada pode criar a sua (vira dona dela);
+        // documentos DENTRO de uma equipe existente, só o técnico dela.
+        || ( ehEq() && logado()
+             && ( request.resource.data.donoEmail == meuEmail()
+                  || tecnicoDe(request.resource.data.equipe)
+                  || souDonoDaEquipe(request.resource.data.equipe) ) )
+        || ( ehOutro() && logado() );
 
       // ─────────────────────── ATUALIZAÇÃO ──────────────────────
       allow update: if
         ( ehPro() && logado() && resource.data.dono == meuUid()
                               && request.resource.data.dono == meuUid() )
-        // o próprio cadastro: pode editar os dados, MAS perfil e aprovado ficam congelados
-        || ( ehU() && ehMeuU() && naoMexeEm('dono')
-             && naoMexeEm('perfil') && naoMexeEm('aprovado') )
-        // o técnico aprova / inclui / exclui atletas da SUA equipe (não mexe em perfil)
+        // o próprio cadastro: edita os dados, mas NÃO sobe o próprio privilégio.
+        // `aprovado` só pode ficar igual, cair para false, ou subir se eu for
+        // dono da equipe em questão (quem criou a equipe).
+        || ( ehU() && ehMeuU() && naoMexeEm('dono') && naoMexeEm('perfil')
+             && ( naoMexeEm('aprovado')
+                  || request.resource.data.aprovado == false
+                  || souDonoDaEquipe(request.resource.data.equipe) ) )
+        // o técnico aprova / inclui / exclui atletas da SUA equipe
         || ( ehU() && naoMexeEm('dono') && naoMexeEm('perfil')
              && ( tecnicoDe(resource.data.equipe) || tecnicoDe(request.resource.data.equipe) ) )
-        // treino/competição: qualquer membro aprovado da equipe (lança os próprios tempos)
+        // o dev libera técnicos (não mexe em dono nem em perfil)
+        || ( ehU() && ehDev() && naoMexeEm('dono') && naoMexeEm('perfil') )
+        // treino/competição: qualquer membro aprovado da equipe lança os seus tempos
         || ( ehEqAtleta() && aprovado() && resource.data.equipe == minhaEq()
              && naoMexeEm('equipe') )
-        // demais documentos da equipe: só o técnico
-        || ( ehEq() && !ehEqAtleta() && tecnicoDe(resource.data.equipe) && naoMexeEm('equipe') )
-        || ( !ehPro() && !ehU() && !ehEq() && logado() );
+        // demais documentos da equipe: só o técnico (ou o dono da equipe)
+        || ( ehEq() && !ehEqAtleta() && naoMexeEm('equipe')
+             && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
+        || ( ehOutro() && logado() );
 
       // ───────────────────────── EXCLUSÃO ───────────────────────
       allow delete: if
         ( ehPro() && logado() && resource.data.dono == meuUid() )
-        || ( ehU() && ( ehMeuU() || tecnicoDe(resource.data.equipe) ) )
-        || ( ehEq() && tecnicoDe(resource.data.equipe) )
-        || ( !ehPro() && !ehU() && !ehEq() && logado() );
+        || ( ehU() && ( ehMeuU() || tecnicoDe(resource.data.equipe) || ehDev() ) )
+        || ( ehEq() && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
+        || ( ehOutro() && logado() );
     }
   }
 }
-
-// ─────────────────────────── PONTO EM ABERTO ───────────────────────────
-// Hoje o app AUTO-APROVA quem digita o código da equipe (index.html: u.aprovado=true
-// ao entrar numa equipe). As regras acima não permitem isso: o próprio usuário não
-// pode se marcar como aprovado, porque o código da equipe está dentro de `v` e as
-// regras não conseguem conferi-lo.
-// Duas saídas, a decidir com o Bruno:
-//   (a) entrar na equipe passa a deixar `aprovado=false` e o técnico confirma na
-//       tela que já existe ("pendentes"). Mais seguro; um clique a mais para o técnico.
-//   (b) espelhar também o `codigo` da equipe como campo real e deixar a regra
-//       conferir o código enviado. Mantém o fluxo atual, mas expõe o código a quem
-//       ler o documento da equipe.
-// Recomendação: (a).

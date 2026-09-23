@@ -313,7 +313,7 @@ const fkey=k=>k.replace(/\//g,'∕');
    escreve nos treinos dela". Enquanto as regras novas não são publicadas isto
    é inócuo: só acrescenta campos. */
 function camposSeguranca(k,v){
-  const o={dono:null,equipe:null,perfil:null,aprovado:null};
+  const o={dono:null,donoEmail:null,equipe:null,perfil:null,aprovado:null};
   const val=(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
   if(k.startsWith('pro_')){ o.dono=k.slice(4)||null; }
   else if(k.startsWith('u_')){
@@ -322,7 +322,13 @@ function camposSeguranca(k,v){
     o.perfil=val.perfil||null;
     o.aprovado=val.aprovado===true;
   }
-  else if(k.startsWith('eq_')){ o.equipe=k.split('_')[1]||null; }
+  else if(k.startsWith('eq_')){
+    o.equipe=k.split('_')[1]||null;
+    /* só o documento da equipe em si tem tecnicoEmail. É o que permite à regra
+       reconhecer o DONO da equipe — quem cria a própria equipe (técnico ou PRO
+       avulso) pode se auto-aprovar nela; entrar na equipe dos outros, não. */
+    o.donoEmail=val.tecnicoEmail?String(val.tecnicoEmail).toLowerCase():null;
+  }
   return o;
 }
 /* ── Trava de tamanho ───────────────────────────────────────────────────────
@@ -645,14 +651,19 @@ async function cadastrarFB(dados){
     return nova;
   }
 
+  let criouEquipe=false;                 /* só quem CRIA a equipe é dono dela */
   if(perfil==='tecnico'){
-    if(!eq)eq=await criarEquipe(em);
+    if(!eq){eq=await criarEquipe(em);criouEquipe=true;}
+    /* equipe órfã (criada pelo dev): o técnico se vincula, mas quem libera é o
+       dev na aba Técnicos — assumir o e-mail aqui não o torna aprovado. */
     else if(!eq.tecnicoEmail){eq.tecnicoEmail=em;await DB.set(kEq(eqSlug),eq)}
   }else if(perfil==='pro'){
     const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
     const aceito=cod===CODIGO_PRO.toUpperCase()||(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());
     if(!aceito)return abortar('Código PRO inválido');
-    if(!eq)eq=await criarEquipe(null);
+    /* PRO avulso vira DONO da equipe que ele mesmo cria — é o que permite a
+       auto-aprovação pela regra. Entrar numa equipe já existente segue pendente. */
+    if(!eq){eq=await criarEquipe(em);criouEquipe=true;}
     nivelFinal='Master';
   }else{
     /* cadastro livre: não precisa de liberação prévia. Entra pendente e o
@@ -664,12 +675,17 @@ async function cadastrarFB(dados){
 
   /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
      dos dados PRO (só o dono lê pro_<uid>). */
-  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false);
+  /* P0: NINGUÉM nasce aprovado. Entrar na equipe passa a exigir confirmação —
+     do técnico (atleta) ou do dev (técnico). A única auto-aprovação possível é
+     a de quem é DONO da equipe, e ela acontece no passo seguinte, porque a
+     regra do Firestore confere o dono no documento da equipe. */
+  const donoDaEquipe=criouEquipe;
   const u={id:cred.user.uid,perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
-    nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
+    nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:false,criadoEm:Date.now()};
   await DB.set(kUser(u.email),u);
+  if(donoDaEquipe){ u.aprovado=true; await DB.set(kUser(u.email),u); }
   const us=await DB.get(kEqUsers(eqSlug))||[]; if(!us.includes(u.email)){us.push(u.email);await DB.set(kEqUsers(eqSlug),us)}
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   try{ await cred.user.sendEmailVerification(); }catch(_){}   /* confirma o e-mail por link */
@@ -1066,7 +1082,9 @@ function render(){
     app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset}[S.vista]();
     return;
   }
-  if(S.u.aprovado===false&&(S.u.perfil==='atleta'||S.u.perfil==='tecnico')){
+  /* a tela de espera é só para quem está PENDENTE numa equipe. Sem equipe, o
+     atleta vai para a tela de entrar numa equipe (saiu ou foi removido). */
+  if(S.u.aprovado===false&&S.u.equipe&&(S.u.perfil==='atleta'||S.u.perfil==='tecnico')){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
@@ -2353,7 +2371,9 @@ async function sairDaEquipe(){
   if(!confirm(`Sair da equipe ${S.u.equipeNome||''}?\n\nVocê deixa de ver os treinos e competições da equipe. Seu cadastro, marcas e histórico continuam salvos. Para voltar, escolha uma equipe aqui ou peça ao técnico para te incluir.`))return;
   const sg=S.u.equipe;
   const us=(await DB.get(kEqUsers(sg))||[]).filter(e=>e!==S.u.email); await DB.set(kEqUsers(sg),us);
-  S.u.equipe=null; S.u.equipeNome=null; S.u.aprovado=true; await DB.set(kUser(S.u.email),S.u);
+  /* sair da equipe REBAIXA a aprovação (a regra só deixa o próprio usuário
+     baixar, nunca subir). Sem equipe, a tela de entrar numa equipe aparece. */
+  S.u.equipe=null; S.u.equipeNome=null; S.u.aprovado=false; await DB.set(kUser(S.u.email),S.u);
   S.eq=null; fecharSheet(); await carregarDados(); toast('Você saiu da equipe'); render();
 }
 function telaSemEquipe(){
