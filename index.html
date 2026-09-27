@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v72';
+const VER='v73';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -912,9 +912,33 @@ setInterval(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},12000);
    pessoa recarrega os dados aqui em ~0,3s. Ignora os ecos das próprias
    gravações. Fica ligada uma vez, após o login. */
 let _fbSnap=null,_fbTimer=null;
+/* ── Varredura segura da coleção kv ────────────────────────────────────────
+   As regras novas impedem ler o pro_ de OUTRAS pessoas (dados de saúde), e no
+   Firestore uma consulta à coleção inteira é negada POR INTEIRO quando um só
+   documento do resultado é ilegível — não vem "filtrada". Ou seja, um
+   `collection('kv').get()` passaria a falhar para todo mundo, derrubando o
+   Diagnóstico, a recuperação de equipes e a sincronia.
+   Solução: varrer por FAIXAS de id (dev_, eq_, u_) e ler só o NOSSO pro_.
+   Devolve algo com forEach/docs/size, para as telas não precisarem mudar. */
+async function varrerKv(){
+  const docs=[], FP=firebase.firestore.FieldPath.documentId();
+  for(const pref of ['dev_','eq_','u_']){
+    try{
+      const s=await fdb.collection('kv').orderBy(FP).startAt(pref).endAt(pref+'').get();
+      s.forEach(d=>docs.push(d));
+    }catch(e){ console.warn('varrerKv',pref,e.message); }
+  }
+  const meu=(S.u&&S.u.id)||'';
+  if(meu)try{ const d=await fdb.collection('kv').doc('pro_'+meu).get(); if(d.exists)docs.push(d); }catch(_){}
+  return { docs, size:docs.length, forEach:f=>docs.forEach(f) };
+}
 function ligarSincronia(){
   if(!FB||_fbSnap)return;
-  _fbSnap=fdb.collection('kv').onSnapshot(s=>{
+  /* escutar a coleção inteira seria negado pelas regras novas; escutamos a
+     faixa eq_*, que é onde estão as mudanças feitas por OUTRAS pessoas
+     (treinos, competições, elenco). O resto entra pela sincronia de 12s. */
+  const FP=firebase.firestore.FieldPath.documentId();
+  _fbSnap=fdb.collection('kv').orderBy(FP).startAt('eq_').endAt('eq_').onSnapshot(s=>{
     if(s.metadata.hasPendingWrites||usuarioDigitando())return;
     clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},350);
   },e=>console.warn('sync',e.message));
@@ -2066,7 +2090,7 @@ async function registrarEquipeDev(sg){
 async function scanEquipes(){
   const out=[];
   if(FB){
-    try{ const snap=await fdb.collection('kv').get();
+    try{ const snap=await varrerKv();
       snap.forEach(doc=>{ const k=doc.id; if(/^eq_[^_]+$/.test(k)){ let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; if(v&&v.nome)out.push({slug:k.slice(3),nome:v.nome,tecnicoEmail:v.tecnicoEmail||null}); } });
     }catch(e){ console.warn('scanEquipes',e.message); }
   }
@@ -2091,7 +2115,7 @@ async function abrirDiagnostico(){
   if(!ehDev())return;
   if(!FB)return toast('Diagnóstico disponível só no modo em rede (Firebase).');
   toast('Varrendo o banco…');
-  let snap; try{ snap=await fdb.collection('kv').get(); }catch(e){ return toast('Falha ao varrer: '+e.message); }
+  let snap; try{ snap=await varrerKv(); }catch(e){ return toast('Falha ao varrer: '+e.message); }
   const teams={}, users=[], trDocs={}, meus={}; const myid=S.u.id; const pesos=[]; const antigos=[];
   snap.forEach(doc=>{ const k=doc.id; let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; let m;
     pesos.push({k,b:bytesDe(doc.data().v||'')});
@@ -2159,7 +2183,7 @@ async function migrarCamposSeguranca(){
   if(!FB)return diz('Disponível só no modo em rede (Firebase).','warn');
   diz('Varrendo o banco…');
   let snap;
-  try{ snap=await fdb.collection('kv').get(); }
+  try{ snap=await varrerKv(); }
   catch(e){ return diz('Falha ao varrer: '+esc(e.message||String(e)),'warn'); }
   const todos=[]; snap.forEach(d=>todos.push(d));
   if(!todos.length)return diz('Nenhum documento encontrado.','warn');
@@ -2198,7 +2222,7 @@ async function migrarCamposSeguranca(){
 async function reconstruirTridx(sg){
   if(!ehDev())return; if(!FB)return;
   toast('Reconstruindo índice…');
-  const snap=await fdb.collection('kv').get();
+  const snap=await varrerKv();
   const re=new RegExp('^eq_'+sg.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\$&')+'_tr_(.+)$');
   const idx=[];
   snap.forEach(doc=>{ const m=doc.id.match(re); if(!m)return; let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; if(!v)return;
@@ -2229,7 +2253,7 @@ async function mesclarEquipe(orig,dest){
   const nomeD=eqD.nome;
   if(!confirm(`Fundir "${eqO?eqO.nome:orig}" → "${nomeD}"?\n\nAtletas, treinos, competições e liberações passam para "${nomeD}". A origem NÃO é apagada agora — você confere e apaga depois.`))return;
   toast('Fundindo equipes…');
-  const snap=await fdb.collection('kv').get();
+  const snap=await varrerKv();
   const esc2=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const reTr=new RegExp('^eq_'+esc2(orig)+'_tr_(.+)$');
   const reCm=new RegExp('^eq_'+esc2(orig)+'_cmp_(.+)$');
