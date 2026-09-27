@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v75';
+const VER='v76';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -922,24 +922,43 @@ let _fbSnap=null,_fbTimer=null;
    Solução: varrer por FAIXAS de id (dev_, eq_, u_) e ler só o NOSSO pro_.
    Devolve algo com forEach/docs/size, para as telas não precisarem mudar. */
 async function varrerKv(){
-  const docs=[], FP=firebase.firestore.FieldPath.documentId();
-  for(const pref of ['dev_','eq_','u_']){
-    try{
-      const s=await fdb.collection('kv').orderBy(FP).startAt(pref).endAt(pref+'').get();
-      s.forEach(d=>docs.push(d));
-    }catch(e){ console.warn('varrerKv',pref,e.message); }
+  const docs=[], vistos=new Set(), FP=firebase.firestore.FieldPath.documentId();
+  /* Uma consulta de coleção é negada POR INTEIRO quando um só documento do
+     resultado é ilegível. Então cada faixa pedida tem que caber exatamente no
+     que as regras liberam para ESTE usuário: pedir 'eq_' inteiro (todas as
+     equipes) ou 'u_' inteiro (todos os cadastros) derruba tudo para quem não
+     é dev — foi o que derrubou a sincronia e o varrerKv. */
+  const faixa=async (a,b)=>{ try{
+      const s=await fdb.collection('kv').orderBy(FP).startAt(a).endAt(b).get();
+      s.forEach(d=>{ if(!vistos.has(d.id)){vistos.add(d.id);docs.push(d);} });
+    }catch(e){ console.warn('varrerKv',a,e.message); } };
+  const um=async id=>{ if(!id||vistos.has(id))return; try{
+      const d=await fdb.collection('kv').doc(id).get();
+      if(d.exists){vistos.add(d.id);docs.push(d);} }catch(_){} };
+
+  await faixa('dev_','dev_');                 /* liberado a qualquer logado */
+  const eq=(S.u&&S.u.equipe)||'';
+  if(ehDev()){                                       /* dev lê tudo, menos pro_ alheio */
+    await faixa('eq_','eq_'); await faixa('u_','u_');
+  }else{
+    if(eq)await faixa('eq_'+eq,'eq_'+eq+'');   /* só a MINHA equipe */
+    await um('u_'+String((S.u&&S.u.email)||'').toLowerCase());
+    /* gestor lê os cadastros da equipe um a um (a lista está em _users) */
+    if(ehGestor()&&eq){ try{ for(const em of (await DB.get(kEqUsers(eq))||[]))
+      await um('u_'+String(em).toLowerCase()); }catch(_){} }
   }
-  const meu=(S.u&&S.u.id)||'';
-  if(meu)try{ const d=await fdb.collection('kv').doc('pro_'+meu).get(); if(d.exists)docs.push(d); }catch(_){}
+  await um('pro_'+((S.u&&S.u.id)||''));
   return { docs, size:docs.length, forEach:f=>docs.forEach(f) };
 }
 function ligarSincronia(){
   if(!FB||_fbSnap)return;
-  /* escutar a coleção inteira seria negado pelas regras novas; escutamos a
-     faixa eq_*, que é onde estão as mudanças feitas por OUTRAS pessoas
-     (treinos, competições, elenco). O resto entra pela sincronia de 12s. */
+  /* Escutamos APENAS a faixa da própria equipe. A faixa 'eq_' inteira inclui
+     as outras equipes, que as regras não liberam — e basta um documento
+     ilegível para a escuta inteira ser negada (era o "sync Missing or
+     insufficient permissions"). Sem equipe, não há o que escutar. */
+  const eq=(S.u&&S.u.equipe)||''; if(!eq)return;
   const FP=firebase.firestore.FieldPath.documentId();
-  _fbSnap=fdb.collection('kv').orderBy(FP).startAt('eq_').endAt('eq_').onSnapshot(s=>{
+  _fbSnap=fdb.collection('kv').orderBy(FP).startAt('eq_'+eq).endAt('eq_'+eq+'').onSnapshot(s=>{
     if(s.metadata.hasPendingWrites||usuarioDigitando())return;
     clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},350);
   },e=>console.warn('sync',e.message));
