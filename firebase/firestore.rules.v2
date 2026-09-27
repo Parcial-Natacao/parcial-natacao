@@ -44,9 +44,16 @@ service cloud.firestore {
       function meuDoc()    { return get(/databases/$(database)/documents/kv/$(minhaChaveU())).data; }
       function aprovado()  { return temMeuDoc() && meuDoc().aprovado == true; }
       function minhaEq()   { return temMeuDoc() ? meuDoc().equipe : null; }
-      function tecnicoDe(eq) {
-        return aprovado() && eq != null && meuDoc().perfil == 'tecnico' && meuDoc().equipe == eq;
+      // Quem administra a equipe. ATENÇÃO: no app isso não é só o perfil
+      // 'tecnico' — um atleta PRO com "Gestão de equipe" ativada faz o mesmo
+      // papel (ehGestor() no index.html). A gestão é um botão no cliente, que a
+      // regra não enxerga; o que dá para exigir é perfil PRO, aprovado e da
+      // MESMA equipe. Sem isso, o PRO em gestão perde a equipe inteira.
+      function gestorDe(eq) {
+        return aprovado() && eq != null && meuDoc().equipe == eq
+          && ( meuDoc().perfil == 'tecnico' || meuDoc().perfil == 'pro' );
       }
+      function tecnicoDe(eq) { return gestorDe(eq); }
       // Dono da equipe: quem a criou. Só para a auto-aprovação inicial.
       function souDonoDaEquipe(eq) {
         return eq != null
