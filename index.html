@@ -164,7 +164,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px">v67</small></div>
+    <div class="brand">PAR<span>CIAL</span><small id="verTag" style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px"></small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -191,6 +191,10 @@ svg.chart{width:100%;height:auto;display:block}
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
 const VER='v69';
+/* O cabeçalho já existe no HTML acima deste script, então dá para preencher
+   aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
+   várias versões — o usuário achava que o app não estava atualizando. */
+try{ const _vt=document.getElementById('verTag'); if(_vt)_vt.textContent=VER; }catch(_){}
 /* ─────────────────────────────────────────────────────────────
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
@@ -387,6 +391,16 @@ const DB={
 const EMREDE=!!(FB||NUVEM);
 const MODO=EMREDE?'em rede':(LOCAL?'neste aparelho':'temporário');
 
+/* Recarga forçada: o GitHub Pages serve o index.html com cache agressivo e o
+   usuário fica preso numa versão antiga sem perceber (não há service worker
+   para gerenciar isso). Limpa o cache do que dá e recarrega com um parâmetro
+   novo na URL, que o navegador é obrigado a buscar do servidor. */
+async function recarregarForcado(){
+  try{ if(window.caches){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(_){}
+  const u=new URL(location.href);
+  u.searchParams.set('v',Date.now());
+  location.replace(u.toString());
+}
 function exportarBackup(){
   const dados={};
   if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
@@ -854,12 +868,15 @@ async function carregarDados(){
 }
 async function sincronizar(sil){
   if(!S.u)return;
-  /* não interrompe quem está escrevendo treino ou com uma folha aberta */
-  if(sil&&(S.sub==='novo'||S.escrevendo||document.getElementById('sheet')?.classList.contains('on')))return;
+  /* A sincronia SILENCIOSA nunca interrompe quem está preenchendo algo: nem
+     escrevendo treino, nem com uma folha aberta, nem com qualquer campo em
+     edição ou alterado e ainda não salvo (usuarioDigitando). Ela volta a
+     rodar sozinha em 12s, então nada fica desatualizado por muito tempo. */
+  if(sil&&(S.sub==='novo'||usuarioDigitando()||document.getElementById('sheet')?.classList.contains('on')))return;
   const u=await DB.get(kUser(S.u.email)); if(u)S.u=u;
   await carregarDados(); if(!sil)toast('Atualizado'); render();
 }
-setInterval(()=>{if(S.u&&!S.escrevendo)sincronizar(true)},12000);
+setInterval(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},12000);
 
 /* Sincronia instantânea (Firebase): qualquer alteração feita por outra
    pessoa recarrega os dados aqui em ~0,3s. Ignora os ecos das próprias
@@ -868,12 +885,15 @@ let _fbSnap=null,_fbTimer=null;
 function ligarSincronia(){
   if(!FB||_fbSnap)return;
   _fbSnap=fdb.collection('kv').onSnapshot(s=>{
-    if(s.metadata.hasPendingWrites||S.escrevendo)return;
-    clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!S.escrevendo)sincronizar(true)},350);
+    if(s.metadata.hasPendingWrites||usuarioDigitando())return;
+    clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},350);
   },e=>console.warn('sync',e.message));
 }
 async function salvarPro(){
   if(!(S.u&&temPro()))return;
+  /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
+     senão o formulário se repreenche sozinho no render seguinte. */
+  limparRascunhos();
   await DB.set(kPro(S.u.id),S.pro);
   /* snapshot visível ao técnico (desempenho + carga + composição p/ a assinatura de sprint;
      SEM Saúde: Garmin (VFC/sono) e exames laboratoriais ficam só no pro_ privado) */
@@ -1010,6 +1030,11 @@ function abrirConta(){
     <div class="grid2"><input id="acB" type="password" placeholder="nova"><input id="acC" type="password" placeholder="repita"></div>
     <button class="full" style="margin-top:10px" onclick="trocarSenha()">Salvar nova senha</button>
     ${u.perfil==='tecnico'?`<div class="sep"></div><div class="xs muted">Código da equipe: <b class="t">${esc(S.eq?.codigoPro||'—')}</b></div>`:''}
+    <div class="sep"></div>
+    <div class="row" style="align-items:center;gap:8px">
+      <span class="xs muted grow">Versão do app: <b class="t">${VER}</b></span>
+      <button class="sm ghost" onclick="recarregarForcado()" title="Baixa a versão mais nova, ignorando o cache">Atualizar app</button>
+    </div>
     ${u.perfil==='pro'?`<div class="sep"></div>
       <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
       ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
@@ -1074,7 +1099,54 @@ async function trocarSenha(){
 /* =====================================================================
    NAVEGAÇÃO
    ===================================================================== */
+/* ── Preservação do que o usuário digitou ──────────────────────────────────
+   render() reconstrói #app inteiro via innerHTML. Como a sincronia silenciosa
+   roda a cada 12s (e também ao eco de uma gravação de outra pessoa), qualquer
+   campo digitado e ainda NÃO salvo era apagado no meio do preenchimento. Havia
+   uma proteção (S.escrevendo), mas escrita à mão em apenas 4 textareas — todo
+   o resto do app ficava desprotegido (Saúde "lançar à mão", marcas, etc.).
+
+   Duas camadas, de propósito:
+   1) a sincronia automática NÃO interrompe quem está digitando;
+   2) se um render acontecer mesmo assim, os campos alterados e a posição do
+      cursor são restaurados. Trocar de tela descarta os rascunhos. */
+const _sujos=new Map(); let _rota='';
+const _ehCampo=el=>!!el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)&&el.type!=='file'&&el.type!=='button';
+function _rotaAtual(){ return [S.vista,S.aba,S.sub,S.provaSel,S.atletaSel].join('|'); }
+document.addEventListener('input',e=>{
+  const el=e.target; if(!_ehCampo(el)||!el.id)return;
+  _sujos.set(el.id,(el.type==='checkbox'||el.type==='radio')?el.checked:el.value);
+},true);
+/* usado pela sincronia: há algo em edição que não pode ser perdido? */
+function usuarioDigitando(){
+  return S.escrevendo || _ehCampo(document.activeElement) || _sujos.size>0;
+}
+function _capturaFoco(){
+  const a=document.activeElement;
+  if(!a||!a.id||!/^(INPUT|TEXTAREA)$/.test(a.tagName))return null;
+  let s=null,e=null; try{ s=a.selectionStart; e=a.selectionEnd; }catch(_){}
+  return {id:a.id,s,e};
+}
+function _restauraCampos(foco){
+  for(const [id,val] of _sujos){
+    const el=document.getElementById(id); if(!_ehCampo(el))continue;
+    if(el.type==='checkbox'||el.type==='radio'){ if(el.checked!==val)el.checked=val; }
+    else if(el.value!==val)el.value=val;
+  }
+  if(foco){
+    const el=document.getElementById(foco.id);
+    if(el)try{ el.focus(); if(foco.s!=null&&el.setSelectionRange)el.setSelectionRange(foco.s,foco.e); }catch(_){}
+  }
+}
+/* limpa os rascunhos após salvar — chame depois de gravar um formulário */
+function limparRascunhos(){ _sujos.clear(); }
 function render(){
+  const foco=_capturaFoco(), rota=_rotaAtual(), mudouDeTela=(rota!==_rota);
+  renderInterno();
+  _rota=rota;
+  if(mudouDeTela)_sujos.clear(); else _restauraCampos(foco);
+}
+function renderInterno(){
   const app=document.getElementById('app'),hdr=document.getElementById('hdr'),nav=document.getElementById('nav');
   document.body.classList.remove('t-escura'); document.body.style.background='';
   if(!S.u){
@@ -3399,6 +3471,33 @@ async function removerAlvo(k){
   S.pro=S.pro||{pbs:{}}; const set=new Set((S.pro.alvos&&S.pro.alvos.length)?S.pro.alvos:provasAlvo(S.pro).map(a=>a.d+' '+a.e));
   set.delete(k); S.pro.alvos=[...set]; await salvarPro(); render();
 }
+/* Faixa de destaques do Marcas: como tudo ali vive dentro de sanfonas, a tela
+   abria "vazia". Aqui os melhores tempos aparecem de cara, em cartões grandes,
+   com as provas-alvo destacadas. Quebra em várias linhas no celular. */
+function destaquesMarcas(pro){
+  const pbs=pro.pbs||{}, chaves=Object.keys(pbs);
+  if(!chaves.length)return'';
+  const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[];
+  const ehAlvo=(d,e)=>alvos.some(a=>a.d===d&&a.e===e);
+  const ord=chaves.slice().sort((a,b)=>{
+    const [da,ea]=a.split(' '), [db,eb]=b.split(' ');
+    return (ehAlvo(+da,ea)?0:1)-(ehAlvo(+db,eb)?0:1) || (+da)-(+db) || a.localeCompare(b);
+  }).slice(0,6);
+  const res=pro.resultados||[];
+  const tiles=ord.map(k=>{
+    const p=k.split(' '), d=+p[0], e=p.slice(1,-1).join(' '), pool=p[p.length-1], t=pbs[k];
+    const r=res.find(x=>x.dist===d&&x.estilo===e&&(x.piscina||'SC25')===pool&&x.tempo===t);
+    const alvo=ehAlvo(d,e);
+    return`<div style="flex:1 1 150px;min-width:142px;border:1px solid ${alvo?'var(--rope)':'var(--line)'};border-radius:12px;padding:10px 12px;background:var(--deck)">
+      <div class="xs muted" style="display:flex;justify-content:space-between;gap:6px;align-items:baseline">
+        <span>${d}m ${esc(e)}</span><b style="opacity:.75">${pool==='LC50'?'50m':'25m'}</b></div>
+      <div class="n" style="font-size:23px;font-weight:800;letter-spacing:-.5px;margin:1px 0">${fmt(t,true)}</div>
+      <div class="xs muted">${r?brData(r.data):'melhor tempo'}${alvo?' · <b style="color:var(--rope)">alvo</b>':''}</div>
+    </div>`;}).join('');
+  return`<div class="card"><div class="eyebrow">melhores tempos</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${tiles}</div>
+    <div class="xs muted" style="margin-top:8px">Borda destacada = prova-alvo. Os detalhes de cada piscina ficam logo abaixo.</div></div>`;
+}
 function telaMarcas(){
   const pro=S.pro||{pbs:{},resultados:[]};
   const res=[...(pro.resultados||[])].sort((a,b)=>b.data.localeCompare(a.data));
@@ -3430,6 +3529,7 @@ function telaMarcas(){
   return`
   <div class="row" style="margin:16px 0 10px"><h2>Marcas</h2><div class="grow"></div>
     <button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button></div>
+  ${destaquesMarcas(pro)}
   ${acc('mk_abmn','Importar da ABMN','currículo On-Line em PDF',`
     <p class="small muted" style="margin:2px 0 8px">Importe seus melhores tempos e o histórico de competições de uma vez — cada resultado entra no quadro de evolução.</p>
     <input type="file" id="abmnFile" accept="application/pdf,.pdf" style="display:none" onchange="importarABMN(this)">
