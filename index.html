@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v76';
+const VER='v77';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -952,16 +952,26 @@ async function varrerKv(){
 }
 function ligarSincronia(){
   if(!FB||_fbSnap)return;
-  /* Escutamos APENAS a faixa da própria equipe. A faixa 'eq_' inteira inclui
-     as outras equipes, que as regras não liberam — e basta um documento
-     ilegível para a escuta inteira ser negada (era o "sync Missing or
-     insufficient permissions"). Sem equipe, não há o que escutar. */
-  const eq=(S.u&&S.u.equipe)||''; if(!eq)return;
-  const FP=firebase.firestore.FieldPath.documentId();
-  _fbSnap=fdb.collection('kv').orderBy(FP).startAt('eq_'+eq).endAt('eq_'+eq+'').onSnapshot(s=>{
+  const eq=(S.u&&S.u.equipe)||''; if(!eq)return;   /* sem equipe, nada a escutar */
+  /* NAO usar consulta aqui. Numa CONSULTA o Firestore exige que os filtros
+     PROVEM de antemao que todo resultado e legivel — ele nao avalia documento
+     a documento. Uma faixa por id nao prova isso, entao a escuta inteira era
+     negada ("sync Missing or insufficient permissions"), mesmo restrita a
+     propria equipe e mesmo para o dev.
+     Escutamos entao DOCUMENTOS especificos: no doc a regra e avaliada
+     individualmente. Estes tres mudam sempre que alguem mexe em treino,
+     competicao ou elenco — que e o que justifica a sincronia instantanea. O
+     resto continua entrando pela sincronia de 12s. */
+  const bateu=s=>{
     if(s.metadata.hasPendingWrites||usuarioDigitando())return;
     clearTimeout(_fbTimer); _fbTimer=setTimeout(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},350);
-  },e=>console.warn('sync',e.message));
+  };
+  const erro=e=>console.warn('sync',e.message);
+  const offs=[];
+  for(const k of [kTrIdx(eq),kCIdx(eq),kEqUsers(eq)]){
+    try{ offs.push(fdb.collection('kv').doc(fkey(k)).onSnapshot(bateu,erro)); }catch(e){ erro(e); }
+  }
+  _fbSnap=()=>offs.forEach(f=>{try{f()}catch(_){}});
 }
 async function salvarPro(){
   if(!(S.u&&temPro()))return;
@@ -2506,7 +2516,8 @@ function telaAtletaDetalhe(){
   ${cardFadigaAtleta(a)}
   <div class="card">
     <div class="eyebrow">currículo ABMN do atleta</div>
-    <p class="xs muted" style="margin:4px 0 8px">Importe o <b>Currículo On-Line</b> (PDF) e o app registra as marcas dele. Os melhores tempos são os da <b>faixa etária atual</b> — não os da vida inteira, que um master dificilmente repete.${a.abmnEm?`<br><b>Enviado em ${brData(String(a.abmnEm).slice(0,10))}.</b> Entra nas marcas dele quando abrir o app.`:''}</p>
+    <p class="xs muted" style="margin:4px 0 8px">Importe o <b>Currículo On-Line</b> (PDF) e o app registra as marcas dele. Os melhores tempos são os da <b>faixa etária atual</b> — não os da vida inteira, que um master dificilmente repete.</p>
+    ${a.abmnEm?`<div class="note" style="margin:0 0 8px"><b>Currículo enviado em ${brData(new Date(a.abmnEm).toISOString().slice(0,10))}.</b> Aguardando ${esc(prim(a.nome))} <b>abrir o app</b> — só o próprio atleta grava nos dados dele, então as marcas aparecem para você depois que ele entrar. Se estiver demorando, peça para ele abrir o app.</div>`:''}
     <input type="file" id="abmnAt" accept="application/pdf,.pdf" style="display:none" onchange="importarABMNAtleta(this,'${a.id}')">
     <button class="full" onclick="document.getElementById('abmnAt').click()">Enviar currículo ABMN (PDF)</button>
     <div id="abmnAtSt" class="xs muted" style="margin-top:6px"></div>
