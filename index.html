@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v73';
+const VER='v74';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -894,6 +894,7 @@ async function carregarDados(){
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
 async function sincronizar(sil){
@@ -1318,9 +1319,16 @@ function navBar(){
 function irPara(a){_limparLaudo();if(a!==S.aba)push();S.aba=a;S.sub=null;S.provaSel=null;S.atletaSel=null;S.comp=null;S.minhaComp=null;render();window.scrollTo(0,0)}
 /* seção recolhível (acordeão): título + seta; abre/fecha ao clicar. Guarda o estado em S.acc. */
 function toggleAcc(id){ S.acc=S.acc||{}; S.acc[id]=!S.acc[id]; render(); }
+/* clicar num tempo em destaque abre o histórico daquela prova (resultados +
+   gráfico de evolução) e rola até ele */
+function abrirHistProva(id){
+  S.acc=S.acc||{}; S.acc[id]=true; render();
+  setTimeout(()=>{ const el=document.getElementById('acc-'+id);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'}); },80);
+}
 function acc(id,titulo,sub,conteudo){
   const open=!!(S.acc&&S.acc[id]);
-  return`<div class="card" style="padding:0;overflow:hidden">
+  return`<div class="card" id="acc-${id}" style="padding:0;overflow:hidden">
     <div class="acc-h" onclick="toggleAcc('${id}')">
       <span class="grow"><span class="tit">${titulo}</span>${sub?`<span class="xs muted" style="display:block;margin-top:2px">${sub}</span>`:''}</span>
       <span class="acc-chev" style="transform:rotate(${open?90:0}deg)">›</span>
@@ -2451,6 +2459,13 @@ function telaAtletaDetalhe(){
     </tbody></table>
   </div>
   ${cardFadigaAtleta(a)}
+  <div class="card">
+    <div class="eyebrow">currículo ABMN do atleta</div>
+    <p class="xs muted" style="margin:4px 0 8px">Importe o <b>Currículo On-Line</b> (PDF) e o app registra as marcas dele. Os melhores tempos são os da <b>faixa etária atual</b> — não os da vida inteira, que um master dificilmente repete.${a.abmnEm?`<br><b>Enviado em ${brData(String(a.abmnEm).slice(0,10))}.</b> Entra nas marcas dele quando abrir o app.`:''}</p>
+    <input type="file" id="abmnAt" accept="application/pdf,.pdf" style="display:none" onchange="importarABMNAtleta(this,'${a.id}')">
+    <button class="full" onclick="document.getElementById('abmnAt').click()">Enviar currículo ABMN (PDF)</button>
+    <div id="abmnAtSt" class="xs muted" style="margin-top:6px"></div>
+  </div>
   <button class="primary full" style="margin:2px 0 4px" onclick="abrirLaudoAtleta('${a.id}')">Ver relatório completo</button>
   <div class="xs muted" style="margin-bottom:6px">Desempenho, projeções e carga do atleta. A aba Saúde (VFC, exames) é privada e não aparece aqui.</div>
   ${a.telefone?`<a class="btnlink zap" href="https://wa.me/${telWa(a.telefone)}" target="_blank" rel="noopener">Conversar no WhatsApp</a>`:''}
@@ -3572,19 +3587,23 @@ function destaquesMarcas(pro){
     return (ehAlvo(+da,ea)?0:1)-(ehAlvo(+db,eb)?0:1) || (+da)-(+db) || a.localeCompare(b);
   }).slice(0,6);
   const res=pro.resultados||[];
+  const temHist=new Set(res.map(r=>pbKey(r.dist,r.estilo,r.piscina)));
   const tiles=ord.map(k=>{
     const p=k.split(' '), d=+p[0], e=p.slice(1,-1).join(' '), pool=p[p.length-1], t=pbs[k];
     const r=res.find(x=>x.dist===d&&x.estilo===e&&(x.piscina||'SC25')===pool&&x.tempo===t);
-    const alvo=ehAlvo(d,e);
-    return`<div style="flex:1 1 150px;min-width:142px;border:1px solid ${alvo?'var(--rope)':'var(--line)'};border-radius:12px;padding:10px 12px;background:var(--deck)">
+    const alvo=ehAlvo(d,e), hist=temHist.has(k), accId='mk_h_'+k.replace(/\W+/g,'_');
+    /* faixa etária a que esse tempo pertence — num master, o tempo da faixa
+       atual é o que importa; o da juventude não se repete. */
+    const fx=r&&r.faixa?` · ${r.faixa}+`:'';
+    return`<div ${hist?`onclick="abrirHistProva('${accId}')" style="cursor:pointer;`:'style="'}flex:1 1 150px;min-width:142px;border:1px solid ${alvo?'var(--rope)':'var(--line)'};border-radius:12px;padding:10px 12px;background:var(--deck)"${hist?' title="ver evolução desta prova"':''}>
       <div class="xs muted" style="display:flex;justify-content:space-between;gap:6px;align-items:baseline">
-        <span>${d}m ${esc(e)}</span><b style="opacity:.75">${pool==='LC50'?'50m':'25m'}</b></div>
+        <span>${d}m ${esc(e)}</span><b style="opacity:.75">${pool==='LC50'?'LC50m':'SC25m'}</b></div>
       <div class="n" style="font-size:23px;font-weight:800;letter-spacing:-.5px;margin:1px 0">${fmt(t,true)}</div>
-      <div class="xs muted">${r?brData(r.data):'melhor tempo'}${alvo?' · <b style="color:var(--rope)">alvo</b>':''}</div>
+      <div class="xs muted">${r?brData(r.data):'melhor tempo'}${fx}${alvo?' · <b style="color:var(--rope)">alvo</b>':''}${hist?' <span style="opacity:.6">›</span>':''}</div>
     </div>`;}).join('');
   return`<div class="card"><div class="eyebrow">melhores tempos</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${tiles}</div>
-    <div class="xs muted" style="margin-top:8px">Borda destacada = prova-alvo. Os detalhes de cada piscina ficam logo abaixo.</div></div>`;
+    <div class="xs muted" style="margin-top:8px">Toque num tempo para ver a <b>evolução</b> da prova. Borda destacada = prova-alvo. <b>SC25m</b> = piscina curta · <b>LC50m</b> = piscina longa.</div></div>`;
 }
 function telaMarcas(){
   const pro=S.pro||{pbs:{},resultados:[]};
@@ -3699,43 +3718,125 @@ async function pdfTexto(file){
   return out;
 }
 /* extrai resultados do currículo On-Line da ABMN (histórico por competição) */
+/* ── Currículo ABMN ────────────────────────────────────────────────────────
+   O PDF traz DUAS listas: "all-time" e "por faixa" (etária). Para um master, a
+   segunda é a que vale: quem tem 50+ dificilmente repete o tempo que fez aos
+   25 — no currículo do Tiaen, o 50 peito SC25 é 31.40 (25+, 2002) contra 34.71
+   na faixa atual, 3,3 s de diferença. Projetar em cima do tempo de 2002 daria
+   um alvo irreal. Lemos a faixa atual do cabeçalho ("Faixa em 2026: 50 +").
+
+   Cuidados de formato: o nome do evento QUEBRA LINHA (a data cai na linha
+   seguinte), e a segunda faixa de uma prova vem sem repetir o nome da prova.
+   Por isso o casamento é feito sobre o texto inteiro, não linha a linha.
+   (O parser antigo exigia ':' no tempo e perdia TODOS os tempos de 50 m.) */
 function parseABMN(txt){
   const ESTIL={LIVRE:'livre',PEITO:'peito',COSTAS:'costas',BORBOLETA:'borboleta',MEDLEY:'medley'};
-  let comp='',pool='SC25'; const out=[];
-  for(const raw of txt.split(/\r?\n/)){
-    const l=raw.trim(); if(!l)continue;
-    const mh=l.match(/^(.*?[A-Za-zÀ-ÿ].*?)\s*[-–]\s*(25|50)\s*METROS\s*$/i);
-    if(mh&&!/melhores tempos|resultados por prova/i.test(mh[1])){ comp=mh[1].trim(); pool=mh[2]==='50'?'LC50':'SC25'; continue; }
-    if(/melhores tempos/i.test(l)&&/(25|50)\s*metros/i.test(l)){ pool=/50\s*metros/i.test(l)?'LC50':'SC25'; continue; }
-    if(/\d\s*[xX]\s*\d/.test(l))continue;                    // pula revezamentos
-    const mp=l.match(/(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+MASC/i);
-    const mt=l.match(/\b(\d{1,2}:\d{2}\.\d{2})\b/);
-    const md=l.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
-    if(mp&&mt&&md){
-      const dist=+mp[1],estilo=ESTIL[mp[2].toUpperCase()]||'livre',tempo=parseTempo(mt[1]);
-      if(tempo)out.push({comp,data:`${md[3]}-${md[2]}-${md[1]}`,piscina:pool,prova:`${dist}m ${estilo}`,dist,estilo,tempo,parciais:[],inscricao:null});
+  const t=String(txt||'').replace(/\r/g,'');
+  const mF=t.match(/Faixa\s+em\s*\d{4}\s*:\s*(\d{2})\s*\+/i);
+  const faixaAtual=mF?+mF[1]:null;
+  const mM=t.match(/Matr[íi]cula\s+ABMN:\s*(\d+)/i);
+  const itens=[];
+  const secRe=/Melhores\s+tempos\s+por\s+faixa\s*[-–]\s*(25|50)\s*METROS([\s\S]*?)(?=Melhores\s+tempos|Resultados\s+por\s+prova|$)/gi;
+  let s;
+  while((s=secRe.exec(t))){
+    const pool=s[1]==='50'?'LC50':'SC25';
+    const corpo=s[2].split('\n').filter(l=>!/revez/i.test(l)&&!/\d\s*[xX]\s*\d{2,}/.test(l)).join('\n');
+    /* prova (opcional, só na 1ª linha do grupo) + faixa + tempo + evento + data */
+    const re=/(?:(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(MASC|FEM)\s+)?(\d{2})\s*\+\s+(\d{1,3}:\d{2}\.\d{2}|\d{1,2}\.\d{2})\s+([\s\S]*?)(\d{2}\/\d{2}\/\d{4})/g;
+    let m, dist=null, estilo=null, genero=null;
+    while((m=re.exec(corpo))){
+      if(m[1]){ dist=+m[1]; estilo=ESTIL[m[2].toUpperCase()]||'livre'; genero=m[3].toUpperCase(); }
+      if(dist==null)continue;
+      const tempo=parseTempo(m[5]); if(!tempo)continue;
+      const d=m[7].split('/');
+      itens.push({dist,estilo,genero,faixa:+m[4],piscina:pool,tempo,
+        comp:m[6].replace(/\s+/g,' ').trim().slice(0,90),
+        data:`${d[2]}-${d[1]}-${d[0]}`,prova:`${dist}m ${estilo}`,parciais:[],inscricao:null});
     }
   }
+  return {faixaAtual,matricula:mM?mM[1]:null,itens};
+}
+/* Melhor tempo POR PROVA na faixa atual. Sem registro na faixa atual, cai para
+   a faixa mais recente que o atleta tem — nunca para a da juventude. */
+function pbsDaFaixa(itens,faixaAtual){
+  const g={};
+  for(const r of itens){ const k=pbKey(r.dist,r.estilo,r.piscina); (g[k]=g[k]||[]).push(r); }
+  const out={};
+  for(const k in g){
+    const arr=g[k];
+    const elegiveis=(faixaAtual!=null)?arr.filter(r=>r.faixa<=faixaAtual):arr;
+    const base=elegiveis.length?elegiveis:arr;
+    const maxF=Math.max(...base.map(r=>r.faixa));
+    out[k]=base.filter(r=>r.faixa===maxF).reduce((a,b)=>b.tempo<a.tempo?b:a);
+  }
   return out;
+}
+/* Aplica um currículo ABMN já lido sobre um objeto `pro`. Devolve o resumo,
+   para servir tanto ao próprio atleta quanto ao técnico em Gestão de Equipe. */
+function aplicarABMN(pro,cur){
+  pro.pbs=pro.pbs||{}; pro.resultados=pro.resultados||[];
+  if(cur.faixaAtual)pro.faixa=cur.faixaAtual;
+  if(cur.matricula)pro.matricula=cur.matricula;
+  const existe=new Set(pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
+  let add=0;
+  for(const r of cur.itens){
+    const k=`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`;
+    if(existe.has(k))continue; existe.add(k);
+    pro.resultados.push(Object.assign({chave:'abmn_'+k.replace(/\|/g,'_')},r)); add++;
+  }
+  /* PB = melhor tempo NA FAIXA ATUAL (não o da vida inteira) */
+  const melhores=pbsDaFaixa(cur.itens,cur.faixaAtual);
+  let ajust=0;
+  for(const pk in melhores){
+    const r=melhores[pk];
+    if(pro.pbs[pk]!==r.tempo){ pro.pbs[pk]=r.tempo; ajust++; }
+  }
+  return {add,ajust,faixa:cur.faixaAtual,provas:Object.keys(melhores).length};
+}
+/* ── Currículo enviado pelo TÉCNICO ────────────────────────────────────────
+   O técnico não escreve (nem deve) no pro_ do atleta: dados pessoais têm dono.
+   Então ele deposita o currículo numa caixa de entrada da equipe
+   (eq_<slug>_abmn_<id>, que a regra permite ao técnico escrever e ao atleta
+   ler) e o app do próprio atleta incorpora na primeira vez que abrir. */
+const kAbmn=(eq,id)=>`eq_${eq}_abmn_${id}`;
+async function importarABMNAtleta(inp,atletaId){
+  const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
+  const st=document.getElementById('abmnAtSt');
+  const diz=(t,c)=>{ if(st){st.className='xs '+(c||'muted');st.innerHTML=t;} };
+  if(!ehGestor())return diz('Só o técnico (ou PRO em gestão) pode enviar.','muted');
+  const a=S.elenco.find(x=>x.id===atletaId); if(!a)return;
+  diz('Lendo o PDF…');
+  let txt; try{ txt=await pdfTexto(f); }catch(e){ return diz('Não consegui ler: '+esc(e.message),'muted'); }
+  const cur=parseABMN(txt);
+  if(!cur.itens.length)return diz('Nenhum tempo por faixa encontrado. Confira se é o Currículo On-Line da ABMN.','muted');
+  const ok=await DB.set(kAbmn(S.u.equipe,atletaId),{em:Date.now(),por:S.u.nome,cur});
+  if(!ok)return diz('Falha ao enviar.','muted');
+  a.abmnEm=Date.now(); await DB.set(kUser(a.email),a);
+  diz(`<b>${cur.itens.length} tempo(s) enviados</b>${cur.faixaAtual?` · faixa ${cur.faixaAtual}+`:''}. Entram nas marcas de ${esc(prim(a.nome))} quando ele abrir o app.`,'muted');
+  toast('Currículo enviado ao atleta');
+}
+/* lado do atleta: incorpora o que o técnico deixou, uma única vez */
+async function receberABMNdoTecnico(){
+  if(!(S.u&&S.u.equipe&&temPro()&&S.pro))return;
+  let cx; try{ cx=await DB.get(kAbmn(S.u.equipe,S.u.id)); }catch(_){ return; }
+  if(!cx||!cx.cur||!cx.cur.itens||!cx.cur.itens.length)return;
+  if(S.pro.abmnEm&&S.pro.abmnEm>=cx.em)return;              /* já incorporado */
+  const r=aplicarABMN(S.pro,cx.cur);
+  S.pro.abmnEm=cx.em;
+  await salvarPro();
+  toast(`Currículo ABMN recebido do técnico: ${r.add} resultado(s)${r.faixa?` · faixa ${r.faixa}+`:''}`);
 }
 async function importarABMN(inp){
   const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
   toast('Lendo o PDF…');
   let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
-  const novos=parseABMN(txt);
-  if(!novos.length)return toast('Nenhum resultado ABMN encontrado neste PDF.');
+  const cur=parseABMN(txt);
+  if(!cur.itens.length)return toast('Nenhum tempo por faixa encontrado neste PDF. Confira se é o Currículo On-Line da ABMN.');
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
-  S.pro.resultados=S.pro.resultados||[];
-  const existe=new Set(S.pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
-  let add=0;
-  for(const r of novos){
-    const k=`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`;
-    if(existe.has(k))continue; existe.add(k);
-    r.chave='abmn_'+k.replace(/\|/g,'_'); S.pro.resultados.push(r); add++;
-    const pk=pbKey(r.dist,r.estilo,r.piscina);
-    if(!S.pro.pbs[pk]||r.tempo<S.pro.pbs[pk])S.pro.pbs[pk]=r.tempo;
-  }
-  await salvarPro(); toast(add?`${add} resultado(s) importado(s) da ABMN`:'Tudo já estava importado'); render();
+  const r=aplicarABMN(S.pro,cur);
+  await salvarPro();
+  toast(`${r.add} resultado(s) importado(s)${r.faixa?` · marcas na faixa ${r.faixa}+`:''}`);
+  render();
 }
 
 /* agrupa os resultados de competição por prova+piscina para a linha do tempo */
