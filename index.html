@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v74';
+const VER='v75';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1258,6 +1258,7 @@ function renderInterno(){
     if(S.u.podeRelatorio)mapa.relatorio=telaRelatorio; }
   if(ehDev())mapa.equipes=telaEquipes;   /* aba do desenvolvedor */
   app.innerHTML=bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  _irAteHoje();
 }
 /* cor determinística por equipe (fundo suave) + destaque */
 /* cores oficiais fixas por equipe (chave = nome normalizado). Se não houver, gera pela hash. */
@@ -1449,11 +1450,35 @@ const ZONAS_INFO='Zonas por velocidade (%PB): A1 base aeróbica (leve) · A2 rit
    TREINOS — TÉCNICO
    ===================================================================== */
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+/* rola até o treino de hoje na primeira montagem da lista */
+let _rolarHoje=false;
+function _irAteHoje(){
+  if(!_rolarHoje)return; _rolarHoje=false;
+  setTimeout(()=>{
+    const h=hoje();
+    let el=document.querySelector(`[data-dia="${h}"]`);
+    if(!el){ /* sem treino hoje: vai para o mais próximo já passado */
+      const todos=[...document.querySelectorAll('[data-dia]')].filter(x=>x.dataset.dia&&x.dataset.dia<=h);
+      el=todos[0];
+    }
+    if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+  },90);
+}
 /* agrupa treinos por Ano → Mês, com mês recolhível (o mais recente já aberto) */
 function grupoTreinos(lista,cardFn){
   if(!lista.length)return'';
   const ord=[...lista].sort((a,b)=>(b.data||'').localeCompare(a.data||''));
-  if(S.mesAberto==null)S.mesAberto={[(ord[0].data||'').slice(0,7)]:true};
+  /* Abre no MÊS DE HOJE, não no do treino mais recente: como os treinos são
+     lançados com antecedência, o app abria num mês futuro (ex.: outubro no dia
+     27/09). Sem treino no mês atual, cai no mês mais recente ATÉ hoje. */
+  if(S.mesAberto==null){
+    const h=hoje(), mesHoje=h.slice(0,7);
+    const temNoMes=ord.some(t=>(t.data||'').slice(0,7)===mesHoje);
+    const passado=ord.find(t=>(t.data||'')<=h);
+    const alvo=temNoMes?mesHoje:((passado&&passado.data.slice(0,7))||(ord[0].data||'').slice(0,7));
+    S.mesAberto={[alvo]:true};
+    if(temNoMes)_rolarHoje=true;         /* e leva até o dia de hoje */
+  }
   const anos={};
   for(const t of ord){ const y=(t.data||'').slice(0,4)||'—',m=(t.data||'').slice(5,7)||'--';
     (anos[y]=anos[y]||{}); (anos[y][m]=anos[y][m]||[]).push(t); }
@@ -1465,7 +1490,7 @@ function grupoTreinos(lista,cardFn){
       html+=`<button class="card tight lst" style="width:100%;border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--deck)" onclick="S.mesAberto=Object.assign({},S.mesAberto,{'${key}':${!aberto}});render()">
         <span class="grow" style="text-align:left"><b style="text-transform:capitalize">${MESES[+m-1]||m}</b> <span class="xs muted">· ${arr.length} treino${arr.length>1?'s':''}</span></span>
         <span class="tag o">${aberto?'▲ recolher':'▼ ver'}</span></button>`;
-      if(aberto)html+=arr.map(cardFn).join('');
+      if(aberto)html+=arr.map(t=>`<div data-dia="${t.data||''}">${cardFn(t)}</div>`).join('');
     }
   }
   return html;
@@ -1980,7 +2005,8 @@ function telaAguardando(){
   <button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="sair()">Sair</button>`;
 }
 function telaElenco(){
-  if(S.laudoAtleta)return telaRelatorio();   /* técnico vendo o relatório completo de um atleta */
+  /* técnico no "modo espelho": vê o relatório ou as marcas do atleta */
+  if(S.laudoAtleta)return S.laudoVista==='marcas'?telaMarcas():telaRelatorio();
   if(S.atletaSel)return telaAtletaDetalhe();
   const pend=S.elenco.filter(a=>a.aprovado===false);
   return`
@@ -2467,6 +2493,7 @@ function telaAtletaDetalhe(){
     <div id="abmnAtSt" class="xs muted" style="margin-top:6px"></div>
   </div>
   <button class="primary full" style="margin:2px 0 4px" onclick="abrirLaudoAtleta('${a.id}')">Ver relatório completo</button>
+  <button class="full" style="margin:0 0 4px" onclick="abrirMarcasAtleta('${a.id}')">Ver as marcas como o atleta vê</button>
   <div class="xs muted" style="margin-bottom:6px">Desempenho, projeções e carga do atleta. A aba Saúde (VFC, exames) é privada e não aparece aqui.</div>
   ${a.telefone?`<a class="btnlink zap" href="https://wa.me/${telWa(a.telefone)}" target="_blank" rel="noopener">Conversar no WhatsApp</a>`:''}
   <div class="card">
@@ -2534,15 +2561,21 @@ async function abrirLaudoAtleta(id){
   if(!ehGestor())return;
   const a=S.elenco.find(x=>x.id===id);
   const snap=await DB.get(kPerf(S.u.equipe,id));
-  S.laudoAtleta=id; S.laudoNome=a?a.nome:((snap&&snap.nome)||'Atleta');
+  S.laudoAtleta=id; S.laudoNome=a?a.nome:((snap&&snap.nome)||'Atleta'); S.laudoVista='relatorio';
   S._proBak=S.pro;
   S.pro={pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
     alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:[],exames:[]};
   ESF=null; push(); render(); window.scrollTo(0,0);
 }
+/* mesma troca de contexto, mas abrindo as MARCAS — o técnico vê exatamente a
+   tela que o atleta vê (inclusive o currículo da ABMN que ele enviou). */
+async function abrirMarcasAtleta(id){
+  await abrirLaudoAtleta(id);
+  if(S.laudoAtleta){ S.laudoVista='marcas'; render(); window.scrollTo(0,0); }
+}
 function _limparLaudo(){
   if(!S.laudoAtleta)return;
-  S.pro=S._proBak; S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; ESF=null;
+  S.pro=S._proBak; S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; S.laudoVista=null; ESF=null;
 }
 function voltarLaudo(){ _limparLaudo(); voltar(); }
 /* nome do sujeito do relatório (atleta quando o técnico está vendo; senão o próprio usuário) */
@@ -3633,11 +3666,15 @@ function telaMarcas(){
       <div class="xs muted" style="margin-top:6px">Cada ponto é uma competição em ordem cronológica. Linha para baixo = tempo menor = melhorando.</div>`:'';
     return acc('mk_h_'+k.replace(/\W+/g,'_'),`${dist}m ${estilo}`,`${poolL} · ${arr.length} resultado(s) · melhor ${fmt(melhor,true)}`,linhas+grafico);
   }).join('');
+  /* modo espelho: o técnico vendo as marcas do atleta (só leitura) */
+  const espelho=!!S.laudoAtleta;
   return`
-  <div class="row" style="margin:16px 0 10px"><h2>Marcas</h2><div class="grow"></div>
-    <button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button></div>
+  ${espelho?`<div class="row noprint" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltarLaudo()">‹ Equipe</button></div>`:''}
+  <div class="row" style="margin:${espelho?'2px':'16px'} 0 10px"><h2>${espelho?'Marcas · '+esc(prim(S.laudoNome||'')):'Marcas'}</h2><div class="grow"></div>
+    ${espelho?'<span class="tag o">como o atleta vê</span>':'<button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button>'}</div>
+  ${espelho?'<div class="xs muted" style="margin:-4px 0 10px">Esta é a tela do atleta. Você não edita as marcas dele daqui — para enviar o currículo da ABMN, use o card na ficha dele.</div>':''}
   ${destaquesMarcas(pro)}
-  ${acc('mk_abmn','Importar da ABMN','currículo On-Line em PDF',`
+  ${espelho?'':acc('mk_abmn','Importar da ABMN','currículo On-Line em PDF',`
     <p class="small muted" style="margin:2px 0 8px">Importe seus melhores tempos e o histórico de competições de uma vez — cada resultado entra no quadro de evolução.</p>
     <input type="file" id="abmnFile" accept="application/pdf,.pdf" style="display:none" onchange="importarABMN(this)">
     <button class="primary full" onclick="document.getElementById('abmnFile').click()">Importar currículo ABMN (PDF)</button>`)}
