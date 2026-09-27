@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v70';
+const VER='v71';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2068,7 +2068,9 @@ async function abrirDiagnostico(){
     /* sentinela: toda gravação da v69+ inclui `donoEmail` (nem que seja null).
        Se o campo não existe, o documento foi gravado por um cliente ANTIGO —
        publicar as regras novas com documentos assim tranca esses usuários. */
-    if(!('donoEmail' in doc.data()))antigos.push(k);
+    /* pro_ de outro atleta não conta: o dev não pode (nem deve) escrever nele,
+       e ele já tem `dono`, que é o que as regras novas exigem. */
+    if(!('donoEmail' in doc.data())&&!(k.startsWith('pro_')&&k.slice(4)!==myid))antigos.push(k);
     if(/^eq_[^_]+$/.test(k)){ const sg=k.slice(3); (teams[sg]=teams[sg]||{}).nome=(v&&v.nome)||sg; }
     else if(m=k.match(/^eq_(.+)_tridx$/)){ (teams[m[1]]=teams[m[1]]||{}).tridx=Array.isArray(v)?v.length:0; }
     else if(m=k.match(/^eq_(.+)_tr_/)){ const sg=m[1]; trDocs[sg]=(trDocs[sg]||0)+1; teams[sg]=teams[sg]||{};
@@ -2129,23 +2131,38 @@ async function migrarCamposSeguranca(){
   let snap;
   try{ snap=await fdb.collection('kv').get(); }
   catch(e){ return diz('Falha ao varrer: '+esc(e.message||String(e)),'warn'); }
-  const docs=[]; snap.forEach(d=>docs.push(d));
-  if(!docs.length)return diz('Nenhum documento encontrado.','warn');
-  let n=0, err=0, ultimo='';
-  for(let i=0;i<docs.length;i+=200){           /* lote do Firestore: máx 500 operações */
-    const parte=docs.slice(i,i+200);
+  const todos=[]; snap.forEach(d=>todos.push(d));
+  if(!todos.length)return diz('Nenhum documento encontrado.','warn');
+  /* pro_ de OUTRA pessoa é intocável — por desenho, só o dono escreve nos
+     próprios dados de saúde (nem o dev). E não precisa migrar: esses
+     documentos já têm `dono`, que é o único campo que as regras novas exigem
+     deles; o resto o próprio atleta preenche na gravação seguinte. Como o lote
+     do Firestore é ATÔMICO, uma única escrita negada derrubava tudo. */
+  const meu=(S.u&&S.u.id)||'';
+  const docs=todos.filter(d=>!(d.id.startsWith('pro_')&&d.id.slice(4)!==meu));
+  const pulados=todos.length-docs.length;
+  let n=0, falhas=[];
+  const campos=d=>{ let v=null; try{ v=JSON.parse(d.data().v); }catch(_){} return camposSeguranca(d.id,v); };
+  for(let i=0;i<docs.length;i+=150){
+    const parte=docs.slice(i,i+150);
     diz(`Migrando… ${i} de ${docs.length}`);
     const lote=fdb.batch();
-    for(const d of parte){
-      let v=null; try{ v=JSON.parse(d.data().v); }catch(_){}
-      lote.update(d.ref,camposSeguranca(d.id,v));
-    }
+    for(const d of parte)lote.update(d.ref,campos(d));
     try{ await lote.commit(); n+=parte.length; }
-    catch(e){ err++; ultimo=e.message||String(e); console.warn('migração, lote',i,ultimo); }
+    catch(e){
+      /* lote é tudo-ou-nada: se falhou, refaz um a um para isolar o culpado
+         em vez de perder os 149 documentos que estavam bons. */
+      diz(`Um lote falhou — refazendo um a um (${i} de ${docs.length})…`);
+      for(const d of parte){
+        try{ await d.ref.update(campos(d)); n++; }
+        catch(e2){ falhas.push(d.id+': '+(e2.message||e2)); }
+      }
+    }
   }
-  if(err)diz(`Migrados ${n} de ${docs.length}. <b>${err} lote(s) falharam:</b> ${esc(ultimo)}`,'warn');
-  else{ diz(`<b>Migração concluída: ${n} documento(s).</b> Recarregando o diagnóstico…`,'ok');
-        setTimeout(()=>abrirDiagnostico(),1200); }
+  const nota=pulados?` ${pulados} documento(s) privados de outros atletas foram preservados (só o dono pode escrever neles, e não precisam de migração).`:'';
+  if(falhas.length)diz(`Migrados ${n} de ${docs.length}.${nota} <b>${falhas.length} falharam:</b> ${esc(falhas.slice(0,3).join(' · '))}`,'warn');
+  else{ diz(`<b>Migração concluída: ${n} documento(s).</b>${nota} Recarregando o diagnóstico…`,'ok');
+        setTimeout(()=>abrirDiagnostico(),1400); }
 }
 /* reconstrói o índice de treinos (eq_<slug>_tridx) a partir dos docs eq_<slug>_tr_* */
 async function reconstruirTridx(sg){
