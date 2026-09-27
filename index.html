@@ -2105,6 +2105,7 @@ async function abrirDiagnostico(){
       ? `<b>${antigos.length} documento(s) sem os campos de segurança.</b> Ou a migração ainda não rodou, ou alguém está usando uma versão antiga do app (toda gravação nova grava esses campos). <b>Não publique as regras novas enquanto este número não for zero.</b><div class="xs muted" style="margin-top:4px">Ex.: ${antigos.slice(0,4).map(esc).join(', ')}${antigos.length>4?'…':''}</div>`
       : '<b>Tudo migrado.</b> Nenhum documento sem campos de segurança — pode publicar as regras novas.'}</div>
     <button class="sm ghost full" onclick="migrarCamposSeguranca()">Migrar campos de segurança</button>
+    <div id="migStatus" class="xs muted" style="margin-top:6px">Toque no botão acima. O andamento aparece aqui.</div>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 /* ── Fase 2 do P0: migração dos campos de segurança ─────────────────────────
@@ -2113,22 +2114,38 @@ async function abrirDiagnostico(){
    os clientes estiverem na v69+ e ANTES de publicar as regras novas — publicar
    antes disto tranca todos os usuários para fora do app. */
 async function migrarCamposSeguranca(){
-  if(!ehDev())return;
-  if(!FB)return toast('Migração disponível só no modo em rede (Firebase).');
-  if(!confirm('Reescrever os campos de segurança de TODOS os documentos?\n\nOs dados em si (v) não são alterados. Rode isto ANTES de publicar as regras novas.'))return;
-  toast('Migrando…');
-  let snap; try{ snap=await fdb.collection('kv').get(); }catch(e){ return toast('Falha ao varrer: '+e.message); }
+  /* Sem confirm(): em app instalado na tela de início (standalone) essa janela
+     costuma ser suprimida e a função encerrava em silêncio. A operação só
+     ACRESCENTA campos e é repetível, então não precisa de confirmação.
+     O progresso vai dentro da própria folha — o toast fica atrás dela. */
+  const diz=(txt,cor)=>{
+    const el=document.getElementById('migStatus');
+    if(el){ el.className='note '+(cor||''); el.innerHTML=txt; }
+    try{ console.log('[migração]',String(txt).replace(/<[^>]+>/g,'')); }catch(_){}
+  };
+  if(!ehDev())return diz('Só o desenvolvedor pode rodar a migração.','warn');
+  if(!FB)return diz('Disponível só no modo em rede (Firebase).','warn');
+  diz('Varrendo o banco…');
+  let snap;
+  try{ snap=await fdb.collection('kv').get(); }
+  catch(e){ return diz('Falha ao varrer: '+esc(e.message||String(e)),'warn'); }
   const docs=[]; snap.forEach(d=>docs.push(d));
-  let n=0, err=0;
-  for(let i=0;i<docs.length;i+=400){           /* lote do Firestore: máx 500 operações */
+  if(!docs.length)return diz('Nenhum documento encontrado.','warn');
+  let n=0, err=0, ultimo='';
+  for(let i=0;i<docs.length;i+=200){           /* lote do Firestore: máx 500 operações */
+    const parte=docs.slice(i,i+200);
+    diz(`Migrando… ${i} de ${docs.length}`);
     const lote=fdb.batch();
-    for(const d of docs.slice(i,i+400)){
+    for(const d of parte){
       let v=null; try{ v=JSON.parse(d.data().v); }catch(_){}
-      lote.update(d.ref,camposSeguranca(d.id,v)); n++;
+      lote.update(d.ref,camposSeguranca(d.id,v));
     }
-    try{ await lote.commit(); }catch(e){ err++; console.warn('migração, lote',i,e.message); }
+    try{ await lote.commit(); n+=parte.length; }
+    catch(e){ err++; ultimo=e.message||String(e); console.warn('migração, lote',i,ultimo); }
   }
-  toast(err?`Migrados ${n} documento(s), ${err} lote(s) com erro — veja o console.`:`Migração concluída: ${n} documento(s).`);
+  if(err)diz(`Migrados ${n} de ${docs.length}. <b>${err} lote(s) falharam:</b> ${esc(ultimo)}`,'warn');
+  else{ diz(`<b>Migração concluída: ${n} documento(s).</b> Recarregando o diagnóstico…`,'ok');
+        setTimeout(()=>abrirDiagnostico(),1200); }
 }
 /* reconstrói o índice de treinos (eq_<slug>_tridx) a partir dos docs eq_<slug>_tr_* */
 async function reconstruirTridx(sg){
