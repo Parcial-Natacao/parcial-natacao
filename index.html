@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v78';
+const VER='v79';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2597,8 +2597,15 @@ async function abrirLaudoAtleta(id){
   const snap=await DB.get(kPerf(S.u.equipe,id));
   S.laudoAtleta=id; S.laudoNome=a?a.nome:((snap&&snap.nome)||'Atleta'); S.laudoVista='relatorio';
   S._proBak=S.pro;
+  /* _pront: só o PLACAR de prontidão do atleta. Os dados de Saúde (VFC, sono,
+     exames) continuam fora daqui — mas sem o placar a "Recuperação" da
+     assinatura de sprint ficava vazia para o técnico. */
+  const _p=(snap&&snap.prontidao&&snap.prontidao.media!=null)
+    ? {score:snap.prontidao.media,dias:snap.prontidao.n||0,fonte:'check-in'}
+    : ((snap&&snap.prontidaoGar&&snap.prontidaoGar.score!=null)
+        ? {score:snap.prontidaoGar.score,dias:snap.prontidaoGar.dias||0,fonte:'Garmin'} : null);
   S.pro={pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
-    alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:[],exames:[]};
+    alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:[],exames:[],_pront:_p};
   ESF=null; push(); render(); window.scrollTo(0,0);
 }
 /* mesma troca de contexto, mas abrindo as MARCAS — o técnico vê exatamente a
@@ -4221,6 +4228,19 @@ async function importarGarmin(raw,silencioso){
     if(o.deepSleepSeconds!=null&&o.sleepTimeSeconds==null)g.sono=+((o.deepSleepSeconds+(o.lightSleepSeconds||0)+(o.remSleepSeconds||0))/3600).toFixed(1);
     if((o.activityType==='lap_swimming'||o.activityType==='open_water_swimming')&&o.distance!=null)
       g.nado=(g.nado||0)+Math.round(o.distance/100);
+    /* DURAÇÃO e FC MÉDIA da atividade: o relógio não tem RPE (é subjetivo),
+       mas com estes dois dá para estimar o esforço e salvar a carga dos dias
+       em que o atleta não preencheu nada. Acumula o dia inteiro. */
+    const durB=o.duration??o.movingDuration??o.elapsedDuration;
+    const fcAt=o.averageHR??o.avgHr??o.averageHeartRate;
+    if(durB!=null&&o.activityType){
+      const min=durB>100000?durB/60000:durB/60;          /* aceita ms ou s */
+      if(min>3&&min<600){
+        g.ativDur=Math.round((g.ativDur||0)+min);
+        if(fcAt!=null){ g._fcMin=(g._fcMin||0)+fcAt*min; g._min=(g._min||0)+min;
+          g.ativFc=Math.round(g._fcMin/g._min); }
+      }
+    }
     mapa[dia]=g;n++;
   });
   S.pro.garmin=Object.values(mapa);
@@ -4368,9 +4388,16 @@ function cargaTotal(dias){
   let nNat=0,nNatCom=0;
   for(const t of (S.tridx||[]))if(dentro(t.data)){nNat++;}
   nNatCom=(SESSOES||[]).filter(s=>dentro(s.data)).length;
-  const total=natacao+forca;
+  /* estimativa do relógio para os dias sem nada informado */
+  let estimado=0,nEst=0;
+  const jaTem=diasComCargaInformada(), id=idadeDoUsuario();
+  for(const g of ((S.pro&&S.pro.garmin)||[])){
+    if(jaTem[g.data]||!dentro(g.data))continue;
+    const e=loadGarminDia(g,id); if(e){estimado+=e.load;nEst++;}
+  }
+  const total=natacao+forca+estimado;
   return total>0?{natacao:Math.round(natacao),forca:Math.round(forca),total:Math.round(total),
-    nSeco,nNat,nNatCom}:null;
+    estimado:Math.round(estimado),nEst,nSeco,nNat,nNatCom}:null;
 }
 function cardCargaTotal(){
   const c=cargaTotal(28); if(!c)return'';
@@ -4382,7 +4409,8 @@ function cardCargaTotal(){
       <div class="kpi"><div class="v">${c.forca}</div><div class="l">fora d'água ${100-pN}%</div></div>
     </div>
     <div class="xs muted" style="margin-top:8px">Carga da sessão = <b>duração × RPE</b> (UA). Põe natação e treinos fora d'água (musculação, bike, corrida…) na mesma escala.</div>
-    ${(c.nNat&&c.nNatCom<c.nNat)?`<div class="note warn" style="margin-top:8px"><b>Atenção: a natação está subestimada.</b> Só <b>${c.nNatCom} de ${c.nNat}</b> treinos de natação dos últimos 28 dias têm <b>RPE e duração</b> preenchidos — os outros ${c.nNat-c.nNatCom} entram como <b>zero</b>. É por isso que o fora d'água (${c.nSeco} sessão(ões), todas com os dois campos) aparece com fatia tão maior. Preencha RPE e duração ao marcar o treino como feito e a proporção se corrige.</div>`
+    ${c.nEst?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>${c.estimado.toLocaleString('pt-BR')} UA</b> vieram de <b>${c.nEst} dia(s) estimados pelo relógio</b> (duração × RPE deduzido da FC média e da sua FC de repouso) — dias em que você não preencheu nada. Dado informado sempre tem prioridade sobre o estimado.</div>`:''}
+    ${(c.nNat&&c.nNatCom<c.nNat)?`<div class="note warn" style="margin-top:8px"><b>Atenção: a natação está subestimada.</b> Só <b>${c.nNatCom} de ${c.nNat}</b> treinos de natação dos últimos 28 dias têm <b>RPE e duração</b> preenchidos — os outros ${c.nNat-c.nNatCom} entram como <b>zero</b>${c.nEst?' (a estimativa do relógio cobre parte deles)':''}. É por isso que o fora d'água (${c.nSeco} sessão(ões), todas com os dois campos) aparece com fatia tão maior. Preencha RPE e duração ao marcar o treino como feito e a proporção se corrige.</div>`
       :`<div class="xs muted" style="margin-top:4px">Cobertura: ${c.nNatCom} de ${c.nNat||c.nNatCom} treino(s) de natação e ${c.nSeco} fora d'água com RPE e duração.</div>`}
     ${(()=>{const t=tonelagem(28);return t?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>Tonelagem de força (28d):</b> ~${t.total.toLocaleString('pt-BR')} kg em ${t.sessoes} sessão(ões) — volume real de musculação (séries×reps×carga), quando a ficha traz as cargas.</div>`:'';})()}
   </div>`;
@@ -4394,8 +4422,44 @@ function loadDiario(dias){
   const dia={}; const push=(d,v)=>{const k=dd(d); if(k>=0&&k<dias)dia[k]=(dia[k]||0)+v;};
   for(const s of (SESSOES||[]))push(s.data,s.load||0);
   for(const s of ((S.pro&&S.pro.seco)||[]))if(s.rpe!=null&&s.dur)push(s.data,s.rpe*s.dur);
+  /* completa com a estimativa do relógio os dias sem nada informado — senão
+     ACWR, monotonia e a recomendação de intensidade saem de uma carga que
+     ignora a maior parte dos treinos. */
+  const jaTem=diasComCargaInformada(), id=idadeDoUsuario();
+  for(const g of ((S.pro&&S.pro.garmin)||[])){
+    if(jaTem[g.data])continue;
+    const e=loadGarminDia(g,id); if(e)push(g.data,e.load);
+  }
   return dia;
 }
+/* ── Carga estimada pelo relógio ───────────────────────────────────────────
+   O Garmin não tem RPE (é subjetivo), mas tem DURAÇÃO e FC MÉDIA. Com a FC de
+   repouso (que o app já importa) e a idade, estima-se o esforço pela RESERVA
+   de frequência cardíaca (Karvonen) e converte-se em RPE 0–10.
+   Usada SÓ nos dias em que o atleta não preencheu RPE e duração: dado medido
+   tem prioridade sobre dado estimado, sempre. */
+function rpeDeFC(fcMedia,fcRepouso,idade){
+  if(fcMedia==null)return null;
+  const fcMax=208-0.7*(idade||40);                 /* Tanaka */
+  const rep=(fcRepouso!=null&&fcRepouso>30)?fcRepouso:60;
+  const reserva=fcMax-rep; if(reserva<=0)return null;
+  const pct=(fcMedia-rep)/reserva;
+  return Math.max(1,Math.min(10,Math.round(pct*100)/10));
+}
+function loadGarminDia(g,idade){
+  if(!g||!g.ativDur)return null;
+  const rpe=rpeDeFC(g.ativFc,g.fc,idade);
+  if(rpe==null)return null;
+  return {load:Math.round(g.ativDur*rpe),dur:g.ativDur,rpe,fc:g.ativFc};
+}
+/* dias que já têm carga informada pelo atleta (RPE + duração) */
+function diasComCargaInformada(){
+  const m={};
+  for(const s of (SESSOES||[]))m[s.data]=true;
+  for(const s of ((S.pro&&S.pro.seco)||[]))if(s.rpe!=null&&s.dur)m[s.data]=true;
+  return m;
+}
+function idadeDoUsuario(){ try{ return (typeof anos==='function'&&S.u)?anos(S.u):null; }catch(_){ return null; } }
 /* fadiga: aguda(7d) × crônica(28d/sem) = relação a/c; monotonia = média/desvio (7d) */
 function fadigaCarga(){
   const dia=loadDiario(42), soma=(a,b)=>{let t=0;for(let i=a;i<b;i++)t+=dia[i]||0;return t;};
@@ -5070,8 +5134,19 @@ function estadoPerformance(pro,comPct,sem){
   const md=(a,k)=>a.reduce((t,x)=>t+x[k],0)/Math.max(1,a.length);
   const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
   /* Prontidão 0–100 (VFC/FC repouso/sono/carga) — extraída para prontidaoGarmin,
-     porque o snapshot do técnico também precisa dela. */
-  const pr=prontidaoGarmin(pro,sem);
+     porque o snapshot do técnico também precisa dela.
+     Fallbacks, nesta ordem: (1) Garmin do próprio atleta; (2) placar que veio
+     no snapshot (é o caso do TÉCNICO: ele não recebe os dados de Saúde, só o
+     número — sem isso a dimensão "Recuperação" da assinatura de sprint saía
+     como "s/ dado", justamente o que ele mais precisa para montar a semana);
+     (3) check-in subjetivo, para quem não usa relógio. */
+  let pr=prontidaoGarmin(pro,sem);
+  if(!pr&&pro&&pro._pront&&pro._pront.score!=null)
+    pr={score:pro._pront.score,mot:[],dias:pro._pront.dias||0,fonte:pro._pront.fonte||null};
+  if(!pr&&!S.laudoAtleta&&typeof prontidaoSubj==='function'){
+    const p=prontidaoSubj(7);
+    if(p&&p.media!=null)pr={score:p.media,mot:[],dias:p.n||0,fonte:'check-in'};
+  }
   /* Capacidade: quão perto do melhor tempo os tiros recentes estão saindo */
   let cap=null;
   if(comPct.length){const a=comPct.slice(-15);cap={score:Math.round(cl(md(a,'pct'),0,100)),n:a.length};}
