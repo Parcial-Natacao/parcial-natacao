@@ -32,6 +32,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#F2EFE9">
 <title>PARCIAL — natação</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icone-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="./icone-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -219,7 +222,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v85';
+const VER='v86';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -455,6 +458,26 @@ async function checarVersaoNova(){
 }
 setTimeout(checarVersaoNova,4000);          /* logo ao abrir: pega quem está preso no cache */
 setInterval(checarVersaoNova,15*60*1000);   /* e de tempos em tempos, para quem deixa aberto */
+/* ── Service worker ────────────────────────────────────────────────────────
+   Dá instalação de verdade (ícone, tela cheia), funcionamento sem internet —
+   útil à beira da piscina — e resolve o cache do GitHub Pages: o sw.js busca
+   o HTML pela REDE PRIMEIRO, então versão nova chega na hora.
+   Quando o navegador encontra um sw.js diferente, avisamos com a mesma faixa
+   de "versão disponível", em vez de trocar por baixo dos panos. */
+if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js').then(reg=>{
+      reg.addEventListener('updatefound',()=>{
+        const novo=reg.installing; if(!novo)return;
+        novo.addEventListener('statechange',()=>{
+          /* só avisa se JÁ havia um controlador: na 1ª instalação não há
+             novidade nenhuma a anunciar */
+          if(novo.state==='installed'&&navigator.serviceWorker.controller)checarVersaoNova();
+        });
+      });
+    }).catch(e=>console.warn('sw',e.message));
+  });
+}
 async function recarregarForcado(){
   try{ if(window.caches){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(_){}
   const u=new URL(location.href);
