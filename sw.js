@@ -23,14 +23,14 @@
    O nome do cache deriva dela; sem incrementar, o cache antigo continua sendo
    servido e o arquivo novo nunca chega. Aconteceu na v86: o ícone foi trocado,
    a VERSAO não, e o app seguiu mostrando o ícone velho. */
-const VERSAO = 'v88';
+const VERSAO = 'v89';
 const CACHE  = 'parcial-' + VERSAO;
 /* Os ícones têm NOME versionado (app-icone-*) em vez de `?v=`: para o ícone da
    tela de início o iOS às vezes ignora a query e guarda por caminho, e o ícone
    antigo continuava aparecendo mesmo com tudo certo no servidor. Trocar o nome
    do arquivo é o único jeito que funciona sempre. */
 const ESSENCIAIS = ['./', './index.html', './manifest.webmanifest',
-                    './app-icone-192.png', './app-icone-512.png', './app-icone-180.png'];
+                    './icone-r2-192.png', './icone-r2-512.png', './icone-r2-180.png'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();                       /* versão nova assume sem esperar */
