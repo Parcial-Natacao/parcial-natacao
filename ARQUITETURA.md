@@ -109,7 +109,114 @@ baseline individual por atleta, predição de tempo com intervalo de confiança,
 e um "Performance Fingerprint" (radar) a partir das dimensões que já existem
 (velocidade, manutenção, composição, recuperação, tendência).
 
-## 8. Atualização recente (já implementado — v68)
+## 8. Atualização recente (já implementado — v79)
+
+### v69–v72 — Segurança (P0): o app deixa de decidir permissão sozinho
+
+Auditoria externa apontou que **qualquer usuário autenticado lia, alterava e
+apagava todo documento que não começasse com `pro_`** — e, como o cadastro é
+aberto, isso valia para qualquer pessoa na internet.
+
+**O obstáculo que mudou o plano:** as regras do Firestore **não parseiam JSON
+dentro de string**, e o app grava todo o conteúdo em `v`. Então `perfil` e
+`aprovado` eram invisíveis para as regras, e `dono` só existia em `pro_`.
+Corrigir exigiu três fases, nesta ordem (publicar fora de ordem tranca todos
+os usuários para fora):
+
+1. **`camposSeguranca(k,v)`** — toda escrita passa a gravar `dono`, `donoEmail`,
+   `equipe`, `perfil` e `aprovado` como **campos reais** do documento.
+2. **`migrarCamposSeguranca()`** — botão no Diagnóstico que reescreve os
+   documentos antigos em lotes. Pula o `pro_` de terceiros (só o dono escreve,
+   por desenho) e, se um lote falha, refaz um a um para isolar o culpado.
+   Um contador sentinela (documento sem `donoEmail` = gravado por versão antiga)
+   diz quando é seguro publicar.
+3. **`firestore.rules.v2`** — acesso por dono e por equipe; quem não é
+   `aprovado` não lê a equipe; `perfil`/`dono` congelados no auto-update;
+   `aprovado` só cai ou é elevado pelo dono da equipe; **o dev perdeu a leitura
+   de `pro_*`**. `kUser` é `u_<email>`, então a regra usa
+   `request.auth.token.email`.
+
+**Papel de gestor:** `ehGestor()` inclui atleta PRO com "Gestão de equipe", não
+só `perfil == 'tecnico'` — a regra precisa cobrir os dois, senão o PRO em
+gestão perde a própria equipe.
+
+**Trava de tamanho** (`checaTamanho`): documento do Firestore tem teto rígido de
+1 MiB e a gravação é otimista, então estourar fazia o app **parar de salvar em
+silêncio**. Avisa em 650 KB, recusa em 900 KB; o Diagnóstico lista os maiores
+documentos. Risco real: cada sessão fora d'água carrega foto (~50–90 KB) ou PDF
+(até 500 KB) dentro do `pro_` único.
+
+### v73, v76–v77 — Consultas compatíveis com as regras
+
+**Numa consulta de coleção o Firestore exige que os filtros PROVEM que todo
+resultado é legível — ele não filtra nem avalia documento a documento.** Um só
+documento ilegível nega a consulta inteira. Isso derrubaria seis pontos do app
+(Diagnóstico, migração, `scanEquipes`, reconstrução de índice, fusão de equipes)
+e a sincronia.
+
+- **`varrerKv()`** substitui `collection('kv').get()`: varre por faixas de
+  `documentId` compatíveis com o perfil (dev varre tudo; os demais só a própria
+  equipe) e lê o próprio `pro_` direto. Devolve `forEach/docs/size`.
+- **`ligarSincronia()`** deixou de usar consulta: escuta **três documentos**
+  (`_tridx`, `_cidx`, `_users`), onde a regra é avaliada individualmente.
+
+### v69 e v72 — Versão visível e atualização forçada
+
+O número no cabeçalho era **texto fixo** no HTML (`v67`), não `VER` — ficou
+desatualizado por versões e gerou a impressão de que o app não publicava.
+Agora é dinâmico. Como o GitHub Pages serve com `Cache-Control: max-age=600` e
+não há service worker, `checarVersaoNova()` lê os primeiros 20 KB do próprio
+arquivo (Range), compara com `VER` e oferece **Atualizar**
+(`recarregarForcado`, que limpa caches e recarrega com `?v=<timestamp>`).
+
+### v69 — Fim da perda do que o usuário digita
+
+`render()` reconstrói `#app` via `innerHTML`, e a sincronia silenciosa dispara
+a cada 12s — apagando campos ainda não salvos. A proteção existia, mas escrita
+à mão em **4 textareas**; todo o resto perdia dados no meio do preenchimento.
+Agora `render()` é envelope de `renderInterno()`; `_sujos` (Map alimentado por
+listener global de `input`) e `usuarioDigitando()` fazem a sincronia esperar, e
+um render que aconteça mesmo assim restaura valores, foco e cursor. Trocar de
+tela e `salvarPro()` descartam os rascunhos.
+
+### v74–v75 — ABMN por faixa etária, Marcas e navegação
+
+- **`parseABMN`/`pbsDaFaixa`**: o currículo traz "all-time" e "por faixa". Para
+  um master vale a segunda — no currículo do Tiaen o 50 peito SC25 é 31.40
+  (25+, 2002) contra 34.71 na faixa atual. O PB passa a vir da **faixa atual**
+  (lida de "Faixa em 2026: 50 +") e, na falta dela, da faixa **mais recente**.
+  O parser antigo exigia `:` no tempo e **perdia todos os tempos de 50 m**.
+- **Técnico envia o currículo do atleta** via caixa de entrada
+  `eq_<slug>_abmn_<id>` — o técnico não escreve no `pro_` alheio; o app do
+  atleta incorpora na primeira abertura (`receberABMNdoTecnico`, marcado por
+  `pro.abmnEm`).
+- **Marcas**: `destaquesMarcas` no topo; tocar num tempo abre o histórico com o
+  gráfico; rótulos `SC25m`/`LC50m`.
+- **`grupoTreinos`** abre no **mês de hoje** (abria no do treino mais recente,
+  que com treinos lançados com antecedência caía num mês futuro) e rola até o dia.
+- **Modo espelho** (`S.laudoVista`): o técnico vê relatório **ou** marcas do
+  atleta, em leitura.
+
+### v78–v79 — Carga honesta e prontidão para o técnico
+
+- **A carga estava subestimada e o app não avisava.** A sessão de natação só
+  entra quando RPE **e** duração foram preenchidos; sem isso vale zero. Como o
+  formulário fora d'água sempre pede os dois, a comparação dava ~10% natação ×
+  90% fora d'água. `cargaTotal` agora devolve a **cobertura** e o card avisa.
+  Isso enviesava ACWR, monotonia e a recomendação de intensidade.
+- **Garmin passa a alimentar a carga.** O import só guardava VFC, FC de repouso,
+  sono e distância. Agora captura **duração e FC média** das atividades;
+  `rpeDeFC()` deduz o esforço pela reserva de frequência cardíaca (Karvonen,
+  FCmax por Tanaka) e `loadGarminDia()` cobre os dias sem registro. **Dado
+  informado sempre tem prioridade sobre o estimado.**
+- **`prontidaoGarmin(pro,sem)`** foi extraída de `estadoPerformance` para que o
+  snapshot do técnico também a use. O técnico recebe **só o placar** (0–100) e a
+  origem; VFC, sono, exames e respostas do check-in continuam privados. Sem isso,
+  a dimensão **Recuperação** da assinatura de sprint saía "s/ dado" justamente
+  para quem monta a semana. Cadeia: Garmin do atleta → placar do snapshot →
+  check-in subjetivo.
+
+### v68
 
 - **Projeção de tempo: viés corrigido + autocalibração (v68)**. Motivo: numa competição real
   o app projetou **32.28–33.93** para 50 peito LC50 (PB 31.35) e o atleta nadou **31.00** —
