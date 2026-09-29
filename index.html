@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v89';
+const VER='v90';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -235,7 +235,32 @@ try{ const _vt=document.getElementById('verTag'); if(_vt)_vt.textContent=VER; }c
    CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
    o acesso ou liberar para outra pessoa. Independe do técnico.
    ───────────────────────────────────────────────────────────── */
-const CODIGO_PRO='BARBATO-PRO-2026';
+/* Cada equipe tem o SEU código, sorteado na criação. Antes havia um código
+   único embutido aqui (publico no codigo-fonte), e ele valia para TODAS as
+   equipes: quem lesse o fonte entrava como PRO em qualquer uma.
+   Alfabeto sem I, O, 0 e 1 para nao confundir na hora de ditar. */
+function novoCodigoPro(){
+  const abc='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', a=new Uint8Array(8);
+  try{ crypto.getRandomValues(a); }catch(_){ for(let i=0;i<8;i++)a[i]=Math.floor(Math.random()*256); }
+  let s=''; for(let i=0;i<8;i++){ s+=abc[a[i]%abc.length]; if(i===3)s+='-'; }
+  return s;
+}
+const CODIGO_PRO_ANTIGO='BARBATO-PRO-2026';   /* so para avisar quem ainda usa */
+/* Troca o código da equipe. Necessário para quem foi criado antes da v90: o
+   código antigo é o mesmo em todas as equipes e está no fonte público. */
+async function trocarCodigoEquipe(){
+  if(!ehGestor()||!S.u.equipe)return;
+  if(!confirm('Gerar um código novo para a equipe?\n\nQuem já está na equipe continua normalmente. Só quem for se cadastrar como PRO daqui em diante precisará do código novo.'))return;
+  const novo=novoCodigoPro();
+  const ok=await transacao(kEq(S.u.equipe),eq=>{ eq=eq||{slug:S.u.equipe}; eq.codigoPro=novo; return eq; });
+  if(!ok)return toast('Não consegui trocar o código');
+  S.eq=ok; toast('Código novo: '+novo); render();
+}
+async function reenviarConfirmacao(){
+  try{ await fauth.currentUser.sendEmailVerification();
+       toast('Enviei o link. Confira a caixa de entrada e o spam.'); }
+  catch(e){ toast('Não consegui enviar: '+(e.message||e)); }
+}
 /* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
    Worker — veja backend/BACKEND-IA.md. Vazio = recurso desligado. */
 const IA_URL='';
@@ -843,7 +868,7 @@ async function cadastrarFB(dados){
   let eq=await DB.get(kEq(eqSlug));
   let nivelFinal=nivel||'Master';
   async function criarEquipe(dono){
-    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:CODIGO_PRO};
+    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:novoCodigoPro()};
     await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
     await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
     if(typeof registrarEquipeDev==='function')await registrarEquipeDev(eqSlug);
@@ -858,8 +883,8 @@ async function cadastrarFB(dados){
     else if(!eq.tecnicoEmail){eq.tecnicoEmail=em;await DB.set(kEq(eqSlug),eq)}
   }else if(perfil==='pro'){
     const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
-    const aceito=cod===CODIGO_PRO.toUpperCase()||(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());
-    if(!aceito)return abortar('Código PRO inválido');
+    const aceito=!!(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());   /* so o codigo DAQUELA equipe */
+    if(!aceito)return abortar('Código PRO inválido. Peça ao técnico o código DESTA equipe — ele aparece na tela de Conta dele.');
     /* PRO avulso vira DONO da equipe que ele mesmo cria — é o que permite a
        auto-aprovação pela regra. Entrar numa equipe já existente segue pendente. */
     if(!eq){eq=await criarEquipe(em);criouEquipe=true;}
@@ -925,7 +950,7 @@ async function cadastrar(dados){
   let nivelFinal=nivel||'Master';
 
   async function criarEquipe(dono){
-    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:CODIGO_PRO};
+    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:novoCodigoPro()};
     await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
     await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
     if(typeof registrarEquipeDev==='function')await registrarEquipeDev(eqSlug);
@@ -938,8 +963,8 @@ async function cadastrar(dados){
   }else if(perfil==='pro'){
     /* O PRO não depende de liberação do técnico: a tranca é o código mestre. */
     const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
-    const aceito=cod===CODIGO_PRO.toUpperCase()||(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());
-    if(!aceito)return toast('Código PRO inválido');
+    const aceito=!!(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());   /* so o codigo DAQUELA equipe */
+    if(!aceito)return toast('Código PRO inválido. Peça ao técnico o código DESTA equipe.');
     if(!eq)eq=await criarEquipe(null);   /* equipe nasce sem técnico; ele entra depois */
     nivelFinal='Master';
   }else{
@@ -1272,7 +1297,14 @@ function abrirConta(){
     <div class="field"><label>Trocar senha</label><input id="acA" type="password" placeholder="senha atual"></div>
     <div class="grid2"><input id="acB" type="password" placeholder="nova"><input id="acC" type="password" placeholder="repita"></div>
     <button class="full" style="margin-top:10px" onclick="trocarSenha()">Salvar nova senha</button>
-    ${u.perfil==='tecnico'?`<div class="sep"></div><div class="xs muted">Código da equipe: <b class="t">${esc(S.eq?.codigoPro||'—')}</b></div>`:''}
+    ${ehGestor()?(()=>{const cod=S.eq?.codigoPro||'', publico=cod===CODIGO_PRO_ANTIGO;
+      return `<div class="sep"></div>
+      <div class="xs muted">Código da equipe: <b class="t">${esc(cod||'—')}</b> — é o que o atleta PRO digita ao se cadastrar. Passe só a quem deve entrar.</div>
+      ${publico?`<div class="note warn" style="margin:6px 0"><b>Este código está no código-fonte do app</b>, que é público: qualquer pessoa consegue lê-lo e entrar como PRO na sua equipe. Gere um novo agora.</div>`:''}
+      <button class="sm ${publico?'primary':'ghost'} full" onclick="trocarCodigoEquipe()">Gerar novo código da equipe</button>`;})():''}
+    ${(FB&&fauth&&fauth.currentUser&&!fauth.currentUser.emailVerified)?`<div class="sep"></div>
+      <div class="note warn"><b>E-mail ainda não confirmado.</b> Confirmar protege a sua conta e é o que permite recuperar a senha se você esquecê-la.</div>
+      <button class="sm ghost full" onclick="reenviarConfirmacao()">Reenviar e-mail de confirmação</button>`:''}
     <div class="sep"></div>
     <div class="row" style="align-items:center;gap:8px">
       <span class="xs muted grow">Versão do app: <b class="t">${VER}</b></span>
@@ -2317,7 +2349,7 @@ async function criarEquipeDev(){
   if(!nome)return toast('Escolha uma equipe da lista ou digite o nome');
   const sg=slug(nome); if(!sg)return toast('Nome inválido');
   if(await DB.get(kEq(sg)))return toast('Essa equipe já foi criada');
-  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
+  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:novoCodigoPro()});
   await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]);
   await registrarEquipeDev(sg);
   S.equipesDisp=null;   /* invalida o cache do dropdown de cadastro */
@@ -2487,7 +2519,7 @@ async function reconstruirTridx(sg){
   /* lista de atletas: reconstrói a partir das contas que apontam para esta equipe */
   const us=[]; snap.forEach(doc=>{ if(/^u_/.test(doc.id)){ let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; if(v&&v.equipe===sg&&v.email)us.push(v.email); } });
   if(us.length){ const cur=await DB.get(kEqUsers(sg))||[]; await DB.set(kEqUsers(sg),[...new Set([...cur,...us])]); }
-  if(!(await DB.get(kEq(sg))))await DB.set(kEq(sg),{slug:sg,nome:sg,criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
+  if(!(await DB.get(kEq(sg))))await DB.set(kEq(sg),{slug:sg,nome:sg,criadoEm:Date.now(),tecnicoEmail:null,codigoPro:novoCodigoPro()});
   await registrarEquipeDev(sg);
   if(sg===S.u.equipe)await carregarDados();
   S.equipesDevList=null; toast(`Recuperado: ${idx.length} treino(s), ${cidx.length} competição(ões), ${us.length} atleta(s)`); abrirDiagnostico();
@@ -2620,7 +2652,7 @@ async function criarEquipeDevTela(){
   if(!nome)return toast('Escolha uma equipe da lista ou digite o nome');
   const sg=slug(nome); if(!sg)return toast('Nome inválido');
   if(await DB.get(kEq(sg)))return toast('Essa equipe já foi criada');
-  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:CODIGO_PRO});
+  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:novoCodigoPro()});
   await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]); await registrarEquipeDev(sg);
   S.equipesDisp=null; S.equipesDevList=null;
   toast(`Equipe "${nome.trim()}" criada`); render();

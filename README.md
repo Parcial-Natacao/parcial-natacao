@@ -120,7 +120,9 @@ documentos específicos, nunca a coleção toda.
    concorrentes podem se sobrescrever.
 7. **Sem manifest e sem service worker** — não é PWA completa (não instala nem
    funciona offline de verdade).
-8. **Sem suíte de testes** — validação é manual.
+8. **Sem suíte automatizada de testes** — a validação é manual. Os casos que
+   precisam passar estão em [](firebase/TESTES-DE-REGRAS.md),
+   com um caminho sem instalar nada (Rules Playground) e o esqueleto da suíte.
 9. **CSP com `'unsafe-inline'`** — o app é um arquivo único com handlers
    inline, então a CSP não bloqueia script injetado no próprio HTML. Quem
    cobre esse lado é `esc()` e `urlSegura()`. Resolver de vez exigiria tirar
