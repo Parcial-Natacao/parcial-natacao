@@ -184,13 +184,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
 
 <script>
 /* =====================================================================
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v80';
+const VER='v81';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -289,11 +290,12 @@ const FB_CONFIG={
   messagingSenderId:'612432062815',
   appId:'1:612432062815:web:f4fca1e40b64ab823f2eea'
 };
-let FB=null, fdb=null, fauth=null;
+let FB=null, fdb=null, fauth=null, fst=null;
 try{
   if(FB_CONFIG.apiKey && typeof firebase!=='undefined'){
     firebase.initializeApp(FB_CONFIG);
     fdb=firebase.firestore(); fauth=firebase.auth();
+    try{ fst=firebase.storage(); }catch(_){ fst=null; }   /* anexos fora do documento */
     /* PERSISTÊNCIA OFFLINE: a gravação confirma localmente NA HORA (sem esperar a rede)
        e sincroniza em segundo plano. Some o "lapso" entre salvar e ver salvo, e funciona
        sem internet. Precisa vir antes de qualquer uso do Firestore. */
@@ -530,6 +532,81 @@ const URL_OK=/^(?:data:application\/pdf;base64,|data:image\/(?:png|jpeg|jpg|webp
 function urlSegura(u){
   const s=String(u??'').trim().replace(/[\u0000-\u001F\u007F]/g,'');
   return URL_OK.test(s)?esc(s):'';
+}
+/* ── Anexos no Firebase Storage ────────────────────────────────────────────
+   Fotos e PDFs iam em base64 DENTRO do documento, que tem teto rígido de
+   1 MiB: duas sessões fora d'água com PDF já estouravam, e a gravação passava
+   a falhar. Agora o arquivo vai para o Storage e o documento guarda só a URL
+   (algumas centenas de bytes).
+   Compatibilidade: o que já está gravado como data: continua sendo exibido —
+   `urlSegura` aceita os dois formatos. A migração do que é antigo é separada. */
+const ehDataURL=u=>/^data:/i.test(String(u||''));
+function dataURLparaBlob(u){
+  const m=/^data:([^;,]+)(;base64)?,(.*)$/i.exec(String(u||'')); if(!m)return null;
+  const mime=m[1], dados=m[3];
+  if(m[2]){ const bin=atob(dados), a=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
+    return new Blob([a],{type:mime}); }
+  return new Blob([decodeURIComponent(dados)],{type:mime});
+}
+/* sobe e devolve a URL de download; em caso de falha devolve null e QUEM CHAMA
+   decide — nunca perdemos o anexo em silêncio. */
+async function subirAnexo(caminho,dataURL){
+  if(!fst||!ehDataURL(dataURL))return null;
+  const b=dataURLparaBlob(dataURL); if(!b)return null;
+  try{
+    const ref=fst.ref().child(caminho);
+    await ref.put(b,{contentType:b.type||'application/octet-stream'});
+    return await ref.getDownloadURL();
+  }catch(e){ console.warn('subirAnexo',caminho,e.message); return null; }
+}
+async function apagarAnexo(url){
+  if(!fst||!url||ehDataURL(url))return;
+  try{ await fst.refFromURL(url).delete(); }catch(e){ console.warn('apagarAnexo',e.message); }
+}
+const anexoPro=(uid,id,mime)=>`pro/${uid}/seco/${id}.${/pdf/i.test(mime||'')?'pdf':'jpg'}`;
+const anexoTreino=(eq,id)=>`eq/${eq}/tr/${id}.pdf`;
+/* quantos anexos ainda estão em base64 dentro do meu documento */
+function anexosPendentes(){
+  let n=0;
+  for(const s of ((S.pro&&S.pro.seco)||[])){ if(ehDataURL(s.img))n++; if(ehDataURL(s.arquivo))n++; }
+  return n;
+}
+/* Move o que já está gravado em base64 para o Storage. Idempotente: roda de
+   novo sem duplicar, porque só toca no que ainda é data:. */
+async function migrarAnexos(){
+  const st=document.getElementById('migAnexoSt');
+  const diz=(t,c)=>{ if(st){st.className='xs '+(c||'muted'); st.innerHTML=t;} };
+  if(!fst)return diz('Armazenamento de arquivos indisponível neste modo.','muted');
+  if(!S.u)return;
+  let n=0, falhas=0, nt=0;
+  const total=anexosPendentes();
+  for(const s of ((S.pro&&S.pro.seco)||[])){
+    for(const campo of ['img','arquivo']){
+      if(!ehDataURL(s[campo]))continue;
+      diz(`Movendo… ${n+falhas+1} de ${total}`);
+      const u=await subirAnexo(anexoPro(S.u.id,s.id,campo==='img'?'image/jpeg':'application/pdf'),s[campo]);
+      if(u){ s[campo]=u; n++; } else falhas++;
+    }
+  }
+  if(n)await salvarPro();
+  /* PDFs de treino da equipe: só quem pode escrever neles */
+  if(ehGestor()&&S.u.equipe){
+    for(const meta of (S.tridx||[])){
+      let t; try{ t=await DB.get(kTr(S.u.equipe,meta.id)); }catch(_){ continue; }
+      if(!t||!ehDataURL(t.pdf))continue;
+      diz(`Movendo PDFs de treino… ${nt+1}`);
+      const u=await subirAnexo(anexoTreino(S.u.equipe,t.id),t.pdf);
+      if(u){ t.pdf=u; await DB.set(kTr(S.u.equipe,t.id),t); nt++; } else falhas++;
+    }
+  }
+  const partes=[];
+  if(n)partes.push(`${n} anexo(s) seus`);
+  if(nt)partes.push(`${nt} PDF(s) de treino`);
+  diz(falhas?`Movidos ${partes.join(' e ')||'nenhum'}. <b>${falhas} falharam</b> — tente de novo; nada foi perdido.`
+    :(partes.length?`<b>Pronto: ${partes.join(' e ')} movidos.</b> O espaço do documento foi liberado.`
+      :'Nada a mover.'),falhas?'warn':'muted');
+  render();
 }
 const slug=s=>(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const iniciais=n=>(n||'').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
@@ -1133,6 +1210,12 @@ function abrirConta(){
       <span class="xs muted grow">Versão do app: <b class="t">${VER}</b></span>
       <button class="sm ghost" onclick="recarregarForcado()" title="Baixa a versão mais nova, ignorando o cache">Atualizar app</button>
     </div>
+    ${(fst&&anexosPendentes()>0)?`<div class="sep"></div>
+      <div class="note warn"><b>${anexosPendentes()} anexo(s) guardados dentro do seu cadastro.</b>
+      Fotos e PDFs em base64 ocupam o documento, que tem teto de 1 MB — passando dele, o app para de salvar.
+      Mover para o armazenamento de arquivos libera esse espaço e não perde nada.</div>
+      <button class="full" onclick="migrarAnexos()">Mover anexos para o armazenamento</button>
+      <div id="migAnexoSt" class="xs muted" style="margin-top:6px"></div>`:''}
     ${u.perfil==='pro'?`<div class="sep"></div>
       <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
       ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
@@ -1681,7 +1764,11 @@ async function salvarTreino(){
   const id=editando?S.treino.id:uid();
   const blocos=interpretar(texto);
   aplicarParciais(blocos,piscina,parcial25);
-  const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,pdf,para:[...S.selMulti],
+  /* PDF do treino vai para o Storage: em base64 ele ocupava até 600 KB do
+     documento do treino, que também guarda os registros de TODOS os atletas. */
+  let pdfRef=pdf;
+  if(fst&&ehDataURL(pdf)){ const u=await subirAnexo(anexoTreino(S.u.equipe,id),pdf); if(u)pdfRef=u; }
+  const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,pdf:pdfRef,para:[...S.selMulti],
     registros:editando?(S.treino.registros||{}):{},autor:S.u.nome,
     criadoPor:editando?(S.treino.criadoPor||null):S.u.id,atualizado:Date.now()};
   await DB.set(kTr(S.u.equipe,id),t);
@@ -4347,12 +4434,25 @@ async function salvarSeco(){
     rpe:d.rpe!=null?d.rpe:null, dur:durMin(durTxt), durTxt:durTxt||null,
     fc:d.fc!=null?d.fc:null, calorias:d.calorias!=null?d.calorias:null,
     exercicios:_pf.itens, cargaEstruturada:_ce, img:FOTO, arquivo:SECOPDF};
+  /* anexo NÃO vai mais dentro do documento: sobe para o Storage e guardamos a
+     URL. Se o upload falhar, mantemos o base64 (melhor um documento grande do
+     que perder o anexo do usuário) — a trava de tamanho avisa se for o caso. */
+  if(fst&&S.u){
+    if(ehDataURL(reg.img)){ const u=await subirAnexo(anexoPro(S.u.id,reg.id,'image/jpeg'),reg.img); if(u)reg.img=u; }
+    if(ehDataURL(reg.arquivo)){ const u=await subirAnexo(anexoPro(S.u.id,reg.id,'application/pdf'),reg.arquivo); if(u)reg.arquivo=u; }
+  }
   if(S.secoEdit){ const i=S.pro.seco.findIndex(x=>x.id===S.secoEdit); if(i>=0)S.pro.seco[i]={...S.pro.seco[i],...reg}; else S.pro.seco.unshift(reg); }
   else S.pro.seco.unshift(reg);
   FOTO=null; SECOPDF=null; S.secoDraft=null; S.secoEdit=null;
   await salvarPro(); fecharSheet(); toast('Treino salvo'); render();
 }
-async function apagarSeco(id){S.pro.seco=S.pro.seco.filter(x=>x.id!==id);await salvarPro();render()}
+async function apagarSeco(id){
+  /* apaga também o arquivo no Storage — senão vira lixo pago e dado pessoal
+     que continua existindo depois de o usuário ter mandado excluir. */
+  const s=(S.pro.seco||[]).find(x=>x.id===id);
+  if(s){ await apagarAnexo(s.img); await apagarAnexo(s.arquivo); }
+  S.pro.seco=S.pro.seco.filter(x=>x.id!==id); await salvarPro(); render();
+}
 
 /* =====================================================================
    PRO — RELATÓRIO DE PERFORMANCE
