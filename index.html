@@ -219,7 +219,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v83';
+const VER='v84';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4061,7 +4061,15 @@ async function importarABMN(inp){
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const r=aplicarABMN(S.pro,cur);
   await salvarPro();
-  toast(`${r.add} resultado(s) importado(s)${r.faixa?` · marcas na faixa ${r.faixa}+`:''}`);
+  /* A mensagem antiga dizia só "0 resultado(s) importado(s)" quando o currículo
+     já tinha sido importado — e o usuário não tinha como saber se aquilo era
+     sucesso (deduplicação) ou falha. Pior: escondia o que de fato aconteceu,
+     que é o recálculo dos melhores tempos pela FAIXA ATUAL. */
+  const p=[`${cur.itens.length} tempo(s) lido(s) do currículo`];
+  p.push(r.add?`${r.add} novo(s)`:'nenhum novo — já estavam aqui');
+  if(r.faixa)p.push(`melhores tempos pela sua faixa (${r.faixa}+)`);
+  if(r.ajust)p.push(`${r.ajust} marca(s) atualizada(s)`);
+  toast(p.join(' · '));
   render();
 }
 
