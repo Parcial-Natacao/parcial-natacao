@@ -1,6 +1,34 @@
 <meta charset="utf-8">
+<!-- ── Política de Segurança de Conteúdo (CSP) ────────────────────────────
+     Limita de ONDE o navegador pode carregar código e PARA ONDE pode enviar
+     dados. Com ela, um script injetado não consegue mandar dados de atleta
+     para um servidor de terceiros, nem carregar código de outro domínio.
+
+     LIMITE CONHECIDO E ACEITO: o app é um arquivo único com handlers inline
+     (onclick) e estilos inline, então 'unsafe-inline' é obrigatório em script
+     e style — a CSP NÃO bloqueia script injetado no próprio HTML. Quem cobre
+     esse lado é o escape (esc) e a validação de URL (urlSegura). O ganho aqui
+     é impedir origem externa, exfiltração, <base>, <object> e envio de forms.
+
+     Se for adicionar um serviço novo, inclua o domínio aqui — senão ele é
+     bloqueado silenciosamente e só aparece no console. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src https://fonts.gstatic.com data:;
+  img-src 'self' data: blob: https://firebasestorage.googleapis.com https://*.googleapis.com;
+  media-src 'self' data: blob:;
+  worker-src 'self' blob:;
+  connect-src 'self' blob: https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://firebasestorage.googleapis.com https://cdnjs.cloudflare.com https://*.workers.dev;
+  frame-src 'none';
+  object-src 'none';
+  base-uri 'none';
+  form-action 'none';
+">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#F2EFE9">
 <title>PARCIAL — natação</title>
@@ -181,17 +209,17 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- Firebase (SDK "compat" — funciona em <script> comum, sem build).
      Só entra em ação quando FB_CONFIG estiver preenchido lá embaixo. -->
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js" integrity="sha384-mLD+wdwynYnAhgHAkdPP5hroWJXJTNy5C2OhPKM55zuiV2vjzFD1LtBohaHq2Ex8" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js" integrity="sha384-NiuRnBs5Z0OgJ12kYJLSeWxANeJN369zH3+Zn0TGVPaCH/TKmbPFqfOmmLtrj+wg" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
 <script>
 /* =====================================================================
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v82';
+const VER='v83';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3891,8 +3919,12 @@ function carregarPdfJs(){
     if(window.pdfjsLib){res(window.pdfjsLib);return;}
     const s=document.createElement('script');
     s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    /* SRI: se o CDN for comprometido e servir outro arquivo, o navegador
+       recusa em vez de executar. Exige crossOrigin anônimo. */
+    s.integrity='sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e';
+    s.crossOrigin='anonymous';
     s.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';res(window.pdfjsLib)}catch(e){rej(e)}};
-    s.onerror=()=>rej(new Error('sem conexão para o leitor de PDF'));
+    s.onerror=()=>rej(new Error('não consegui carregar o leitor de PDF (sem conexão ou arquivo alterado no CDN)'));
     document.head.appendChild(s);
   });
   return _pdfjs;
