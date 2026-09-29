@@ -190,7 +190,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v79';
+const VER='v80';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -521,6 +521,16 @@ const hoje=()=>new Date().toISOString().slice(0,10);
 const brData=d=>d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'';
 const brCurta=d=>d?d.slice(8,10)+'/'+d.slice(5,7):'';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* ── URL vinda do banco ────────────────────────────────────────────────────
+   Anexos (PDF do treino, foto da sessão) são gravados por OUTRA pessoa e
+   depois viram href/src. `esc()` não basta: ele deixa passar `javascript:` e
+   `data:text/html`, que executam script no navegador de quem abre. Aqui só
+   passam os tipos que o app realmente usa; qualquer outra coisa vira vazio. */
+const URL_OK=/^(?:data:application\/pdf;base64,|data:image\/(?:png|jpeg|jpg|webp|gif);base64,|blob:|https:\/\/)/i;
+function urlSegura(u){
+  const s=String(u??'').trim().replace(/[\u0000-\u001F\u007F]/g,'');
+  return URL_OK.test(s)?esc(s):'';
+}
 const slug=s=>(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const iniciais=n=>(n||'').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
 const prim=n=>(n||'').trim().split(/\s+/)[0];
@@ -1718,7 +1728,8 @@ function telaTreinoDetalhe(){
     <div class="grow"></div>
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
-  ${t.pdf?`<a class="btnlink" href="${t.pdf}" target="_blank" rel="noopener" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`:''}
+  ${(()=>{const u=urlSegura(t.pdf); return u?`<a class="btnlink" href="${u}" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`
+    :(t.pdf?`<div class="note warn" style="margin:8px 0">Anexo ignorado: o formato do arquivo deste treino não é aceito (só PDF ou imagem).</div>`:'');})()}
   ${at?(function(){const fz=treinoFeito(t,at.id),s=(t.sessao&&t.sessao[at.id])||{};return`<div class="card tight" style="margin-top:8px">
     <div class="row"><span class="grow"><b>${fz?'Treino feito':'Marcar como feito'}</b><div class="xs muted">${fz?'consolidado no relatório de performance':'marque quando terminar — só então entra no relatório'}</div></span>
       <button class="sm" style="${fz?'background:var(--ok);color:#fff;font-weight:800':''}" onclick="toggleFeito('${t.id}','${at.id}')">${fz?'✓ Feito':'Feito'}</button></div>
@@ -4275,7 +4286,7 @@ function fotoSeco(inp){
       cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
       FOTO=cv.toDataURL('image/jpeg',.6);
       const p=document.getElementById('skPrev');
-      if(p)p.innerHTML=`<img src="${FOTO}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">`;
+      if(p)p.innerHTML=`<img src="${urlSegura(FOTO)}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">`;
     };
     img.src=r.result;
   };
@@ -4318,7 +4329,7 @@ function formTreinoExtra(){
     <div class="field"><label>Observação</label><input id="skObs" autocapitalize="sentences" value="${esc(d.obs||'')}" oninput="secoDraft('obs',this.value)" placeholder="ex.: puxada + tríceps"></div>
     <div class="field"><label>Transcrição <span class="xs muted">(exercícios/cargas, opcional)</span></label>
       <textarea id="skTrans" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" oninput="secoDraft('trans',this.value)" placeholder="ex.:&#10;Supino 4x8 60kg&#10;Agachamento 3x5 100kg">${esc(d.trans||'')}</textarea></div>
-    <div id="skPrev" class="small muted">${FOTO?`<img src="${FOTO}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">`:SECOPDF?'PDF anexado ✓':''}</div>
+    <div id="skPrev" class="small muted">${FOTO?`<img src="${urlSegura(FOTO)}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">`:SECOPDF?'PDF anexado ✓':''}</div>
     <button class="primary full" style="margin-top:10px" onclick="salvarSeco()">Salvar treino</button>
     ${S.secoEdit?`<button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="apagarSeco('${S.secoEdit}');fecharSheet()">Apagar treino</button>`:''}`;
 }
@@ -4824,7 +4835,13 @@ function arquivoParaIA(file){
   });
 }
 async function chamarIA(payload){
-  const r=await fetch(IA_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  /* O Worker exige o ID token do Firebase: é ele que prova QUEM está chamando.
+     Só o cabeçalho Origin não serve — fora do navegador qualquer um o forja e
+     gastaria a chave da Anthropic. */
+  const h={'Content-Type':'application/json'};
+  try{ if(FB&&fauth&&fauth.currentUser){ const t=await fauth.currentUser.getIdToken(); if(t)h['Authorization']='Bearer '+t; } }catch(_){}
+  if(!h['Authorization'])throw new Error('faça login para usar a leitura por IA');
+  const r=await fetch(IA_URL,{method:'POST',headers:h,body:JSON.stringify(payload)});
   let d; try{ d=await r.json(); }catch{ throw new Error('resposta inválida do servidor'); }
   if(!r.ok||d.erro)throw new Error(d.erro||('erro '+r.status));
   return d;

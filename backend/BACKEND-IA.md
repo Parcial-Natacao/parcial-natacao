@@ -69,6 +69,36 @@ Tempo total: ~15 minutos.
    - **Value:** cole a chave `sk-ant-...` da Parte 1.3.
 4. **Save** / **Deploy**.
 
+### 2.4-b Segurança do Worker (obrigatório antes de publicar)
+
+O Worker não aceita mais qualquer chamada. Ele **verifica o ID token do
+Firebase** (assinatura, emissor, validade) antes de gastar a chave da
+Anthropic. Só conferir o cabeçalho `Origin` não bastava: fora do navegador
+qualquer um forja esse valor e usa a sua chave.
+
+**Variável obrigatória** (mesmo lugar da 2.4, mas do tipo **Text**, não Secret):
+
+- **Name:** `FIREBASE_PROJECT` · **Value:** `parcial-cdb0e`
+
+**Quota por usuário (recomendado).** Sem ela, uma conta legítima comprometida
+pode gerar custo ilimitado. Precisa de um namespace KV:
+
+1. No painel da Cloudflare: **Storage & Databases → KV → Create namespace**.
+   Nome: `parcial-quota`.
+2. Volte ao Worker → **Settings → Bindings → Add → KV namespace**.
+   - **Variable name:** `QUOTA` (exatamente assim)
+   - **KV namespace:** `parcial-quota`
+3. (Opcional) Variável **Text** `LIMITE_DIA` com o número de leituras por
+   usuário por dia. Padrão: `40`.
+
+> Sem o binding `QUOTA` o Worker continua funcionando, mas **a quota não é
+> aplicada** — ele devolve um aviso na resposta para não dar falsa sensação
+> de proteção.
+
+**Limites já embutidos no código:** corpo de até 8 MB, arquivo de até ~3,5 MB
+em base64, payload do laudo de até 256 KB, e só estes tipos: PDF, JPEG, PNG e
+WEBP.
+
 ### 2.5 Copiar a URL do Worker
 No topo da página do Worker aparece o endereço, algo como:
 
