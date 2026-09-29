@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v90';
+const VER='v91';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4296,22 +4296,26 @@ function telaGarmin(){
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
   const cImportar=`
     <p class="small muted" style="margin-top:2px">Aceita a exportação do Garmin Connect: <b>TrainingReadinessDTO</b> (VFC), <b>UDSFile</b> (FC repouso), <b>sleepData</b> e <b>summarizedActivities</b> (nados).</p>
-    <div class="field"><input type="file" id="fGar" accept=".json,application/json" multiple onchange="arquivoGarmin(this)"></div>
-    <div class="field"><label>Ou cole o JSON</label>
+    <input type="file" id="fGar" accept=".json,application/json" multiple style="display:none" onchange="arquivoGarmin(this)">
+    <button class="primary full" style="margin-top:8px" onclick="document.getElementById('fGar').click()">Escolher arquivos do Garmin</button>
+    <button class="sm ghost full" style="margin-top:6px" onclick="S.colarJson=!S.colarJson;render()">${S.colarJson?'Cancelar':'Ou colar o JSON'}</button>
+    ${S.colarJson?`<div class="field" style="margin-top:8px">
       <textarea id="txGar" style="min-height:100px" onfocus="S.escrevendo=true" onblur="S.escrevendo=false"
         placeholder='[{"calendarDate":"2026-08-01","restingHeartRate":48}]'></textarea></div>
-    <button class="full" onclick="importarGarmin(document.getElementById('txGar').value)">Importar texto</button>
+      <button class="full" onclick="importarGarmin(document.getElementById('txGar').value)">Importar texto colado</button>`:''}
     <div class="sep"></div>
     <div class="eyebrow">lançar à mão</div>
     <div class="grid2" style="margin-top:8px">
       <div><label>Data</label><input type="date" id="gD" value="${hoje()}"></div>
-      <div><label>FC repouso</label><input id="gFC" inputmode="numeric"></div>
+      <div><label>Sensação <span class="xs muted">1-10</span></label><input id="gP" inputmode="numeric" placeholder="1-10"></div>
     </div>
-    <div class="grid3" style="margin-top:8px">
-      <div><label>VFC</label><input id="gH" inputmode="numeric"></div>
-      <div><label>Sono <span class="xs muted">7:30 ou 7.5</span></label><input id="gS" inputmode="text"></div>
-      <div><label>Sensação</label><input id="gP" inputmode="numeric" placeholder="1-10"></div>
-    </div>
+    <div class="field" style="margin-top:8px"><label>Quanto dormiu</label>${botoesSono('gS')}</div>
+    <div class="xs muted" style="margin-top:-2px">Faixa aproximada basta — ninguém cronometra o sono.</div>
+    <button class="sm ghost full" style="margin-top:8px" onclick="S.temRelogio=!S.temRelogio;render()">${S.temRelogio?'Não tenho relógio':'Tenho relógio (informar FC e VFC)'}</button>
+    ${S.temRelogio?`<div class="grid2" style="margin-top:8px">
+      <div><label>FC repouso <span class="xs muted">bpm</span></label><input id="gFC" inputmode="numeric"></div>
+      <div><label>VFC <span class="xs muted">ms</span></label><input id="gH" inputmode="numeric"></div>
+    </div>`:''}
     <button class="primary full" style="margin-top:10px" onclick="lancarDia()">Gravar dia</button>`;
   const cExames=`
     <p class="small muted" style="margin-top:2px">Ferritina, hemoglobina, vitamina D, CK e outros. Entram no relatório junto com o relógio e os treinos.</p>
@@ -4430,6 +4434,22 @@ function cardProntidaoSubj(){
     <div class="xs muted" style="margin-top:6px">Sono, energia, dor muscular, estresse e humor — leitura de prontidão sem relógio, complementa a fadiga por carga.</div>
   </div>`;
 }
+/* ── Sono por faixa ────────────────────────────────────────────────────────
+   Pedir "7:30" pressupõe que a pessoa cronometrou o sono, o que quase ninguém
+   faz — e campo difícil de responder vira campo vazio. A faixa é suficiente:
+   o cálculo de prontidão só distingue "menos de 6,5h" de "7,5h ou mais".
+   Guardamos o PONTO MÉDIO em horas, então nada muda no resto do app. */
+const FAIXAS_SONO=[
+  {r:'até 5h', v:4.5},{r:'5–6h', v:5.5},{r:'6–7h', v:6.5},
+  {r:'7–8h', v:7.5},{r:'8–9h', v:8.5},{r:'9h+', v:9.5}
+];
+function sonoNaFaixa(v,f){ return v!=null&&Math.abs(v-f.v)<0.5; }
+/* usado no "lançar à mão", que lê os campos por id na hora de gravar */
+function botoesSono(id){
+  const sel=(S.sonoSel!=null)?S.sonoSel:null;
+  return `<input type="hidden" id="${id}" value="${sel!=null?sel:''}">
+    <div class="opt">${FAIXAS_SONO.map(f=>`<button class="${sel===f.v?'on':''}" onclick="S.sonoSel=${f.v};render()">${f.r}</button>`).join('')}</div>`;
+}
 const CK_PERG=[
   ['sonoQ','Qualidade do sono','péssimo','ótimo'],
   ['energia','Energia / disposição','exausto','cheio'],
@@ -4447,10 +4467,12 @@ function cardCheckin(){
   return`
     <p class="xs muted" style="margin:2px 0 10px">Sem relógio? Responda como você se sente hoje — vira a sua prontidão no relatório.</p>
     ${CK_PERG.map(grp).join('')}
-    <div class="grid2" style="margin-top:4px">
-      <div class="field"><label>Sono <span class="xs muted">7:30 ou 7.5 · opcional</span></label><input inputmode="text" value="${(d.sono!=null&&!isNaN(d.sono))?d.sono:''}" oninput="setCheckin('sono',horasFlex(this.value),false)"></div>
-      <div class="field"><label>FC repouso <span class="xs muted">bpm · opcional</span></label><input inputmode="numeric" value="${d.fc!=null?d.fc:''}" oninput="setCheckin('fc',this.value?+this.value:null,false)"></div>
-    </div>
+    <div class="field" style="margin-top:4px"><label>Quanto dormiu</label>
+      <div class="opt">${FAIXAS_SONO.map(f=>`<button class="${sonoNaFaixa(d.sono,f)?'on':''}" onclick="setCheckin('sono',${f.v},true)">${f.r}</button>`).join('')}</div>
+      <div class="xs muted" style="margin-top:2px">Faixa aproximada basta — ninguém cronometra o sono.</div></div>
+    ${S.temRelogio?`<div class="field"><label>FC de repouso <span class="xs muted">bpm, do relógio</span></label>
+      <input inputmode="numeric" value="${d.fc!=null?d.fc:''}" oninput="setCheckin('fc',this.value?+this.value:null,false)"></div>`
+      :`<button class="sm ghost full" style="margin-bottom:10px" onclick="S.temRelogio=true;render()">Tenho relógio e sei minha FC de repouso</button>`}
     <button class="primary full" onclick="salvarCheckin()">${feito?'Atualizar check-in':'Salvar check-in'}</button>`;
 }
 /* resumo p/ o subtítulo do acordeão de check-in */
@@ -4525,6 +4547,7 @@ async function lancarDia(){
   const nm=id=>{const v=val(id);return v?parseFloat(v):undefined};
   if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
   const sh=horasFlex(val('gS')); if(sh!=null)g.sono=sh; if(nm('gP')!==undefined)g.pse=nm('gP');
+  S.sonoSel=null;                     /* senão a faixa fica marcada no dia seguinte */
   await salvarPro(); toast('Gravado'); render();
 }
 let FOTO=null,SECOPDF=null;
