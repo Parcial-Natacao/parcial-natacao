@@ -219,7 +219,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v84';
+const VER='v85';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -858,7 +858,7 @@ async function cadastrarFB(dados){
     nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:false,criadoEm:Date.now()};
   await DB.set(kUser(u.email),u);
   if(donoDaEquipe){ u.aprovado=true; await DB.set(kUser(u.email),u); }
-  const us=await DB.get(kEqUsers(eqSlug))||[]; if(!us.includes(u.email)){us.push(u.email);await DB.set(kEqUsers(eqSlug),us)}
+  await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   try{ await cred.user.sendEmailVerification(); }catch(_){}   /* confirma o e-mail por link */
   await entrarSessao(u);
@@ -929,7 +929,7 @@ async function cadastrar(dados){
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
     ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
   await DB.set(kUser(u.email),u);
-  const us=await DB.get(kEqUsers(eqSlug))||[]; us.push(u.email); await DB.set(kEqUsers(eqSlug),us);
+  await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   await entrarSessao(u);
   toast(u.aprovado?'Conta criada. Bem-vindo!':(perfil==='tecnico'?'Cadastro de técnico enviado. Aguarde a liberação do desenvolvedor.':'Cadastro enviado! Aguarde a liberação do técnico.'));
@@ -2081,21 +2081,32 @@ function lerCamposLancamento(reps,temParcial,dist){
   return {tempos,parciais};
 }
 async function gravarReg(itemId,atletaId,rd,tempos,parciais){
-  const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
-  t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
-  const prev=t.registros[atletaId][itemId]||{};
-  if(rd==null){
-    t.registros[atletaId][itemId]={...prev,tempos,parciais,em:Date.now(),por:S.u.nome};
-  }else{
-    const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId);
-    const base=Math.max((item&&item.rodadas)||1,(prev.nrd||0),rd+1), arr=(prev.rd||[]).slice();
-    while(arr.length<base)arr.push({tempos:[],parciais:[]});
-    arr[rd]={tempos,parciais};
-    const novo={...prev,rd:arr,nrd:arr.length,em:Date.now(),por:S.u.nome}; delete novo.tempos; delete novo.parciais;
-    t.registros[atletaId][itemId]=novo;
-  }
-  t.atualizado=Date.now();
-  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  const trId=S.treino.id, nome=S.u.nome;
+  const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId);
+  /* aplica SEMPRE sobre a versão que vier (a do servidor, dentro da
+     transação), mexendo só na subárvore DESTE atleta — assim o registro de
+     quem lançou junto é preservado. Função pura: pode ser reexecutada. */
+  const aplicar=base=>{
+    const t=base||S.treino;
+    t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
+    const prev=t.registros[atletaId][itemId]||{};
+    if(rd==null){
+      t.registros[atletaId][itemId]={...prev,tempos,parciais,em:Date.now(),por:nome};
+    }else{
+      const n=Math.max((item&&item.rodadas)||1,(prev.nrd||0),rd+1), arr=(prev.rd||[]).slice();
+      while(arr.length<n)arr.push({tempos:[],parciais:[]});
+      arr[rd]={tempos,parciais};
+      const novo={...prev,rd:arr,nrd:arr.length,em:Date.now(),por:nome}; delete novo.tempos; delete novo.parciais;
+      t.registros[atletaId][itemId]=novo;
+    }
+    t.atualizado=Date.now();
+    return t;
+  };
+  /* tela responde na hora (é o que evita a sensação de lapso)… */
+  S.treino=aplicar(JSON.parse(JSON.stringify(S.treino)));
+  /* …e a gravação é atômica em cima do que está no servidor. */
+  const salvo=await transacao(kTr(S.u.equipe,trId),serv=>aplicar(serv||null));
+  if(salvo)S.treino=salvo;
 }
 /* ✓ verde: grava o tempo daquela linha (e tudo que estiver digitado) na hora */
 async function confTempo(itemId,atletaId,i,rd){
@@ -2132,7 +2143,8 @@ async function excluirTreino(){
 }
 async function confirmarExclusao(){
   const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==S.treino.id);
-  await DB.set(kTrIdx(S.u.equipe),idx); await DB.set(kTr(S.u.equipe,S.treino.id),null);
+  /* apaga de verdade: gravar null deixava o documento residual no banco */
+  await DB.set(kTrIdx(S.u.equipe),idx); await apagarChave(kTr(S.u.equipe,S.treino.id));
   S.tridx=idx; S.treino=null; S.sub=null; S.pilha.pop(); fecharSheet(); toast('Treino excluído'); render();
 }
 
@@ -2314,7 +2326,7 @@ async function assumirEquipe(sg,nome){
   if(!ehDev())return;
   S.u.equipe=sg; S.u.equipeNome=nome; S.u.aprovado=true;
   await DB.set(kUser(S.u.email),S.u);
-  const us=await DB.get(kEqUsers(sg))||[]; if(!us.includes(S.u.email)){us.push(S.u.email);await DB.set(kEqUsers(sg),us);}
+  await transacao(kEqUsers(sg),us=>{us=us||[]; if(!us.includes(S.u.email))us.push(S.u.email); return us;});
   if(S.u.perfil==='pro')S.gestao=true;   /* entra já com a visão de técnico */
   await carregarDados();
   S.equipesDevList=null; S.equipesDisp=null; S.aba='treinos';
@@ -2799,7 +2811,7 @@ async function entrarEmEquipe(){
   const sg=slug(nome), eq=await DB.get(kEq(sg));
   if(!eq)return toast('Equipe não encontrada — confira o nome exato.');
   S.u.equipe=sg; S.u.equipeNome=eq.nome; S.u.aprovado=false; await DB.set(kUser(S.u.email),S.u);
-  S.eq=eq; const us=await DB.get(kEqUsers(sg))||[]; if(!us.includes(S.u.email)){us.push(S.u.email);await DB.set(kEqUsers(sg),us);}
+  S.eq=eq; await transacao(kEqUsers(sg),us=>{us=us||[]; if(!us.includes(S.u.email))us.push(S.u.email); return us;});
   await carregarDados(); toast('Pedido enviado ao técnico da '+eq.nome); render();
 }
 async function mudarNivel(id,n){
@@ -2823,6 +2835,45 @@ async function resetSenhaAtleta(id){
    APAGAR CONTAS
    ===================================================================== */
 /* Apaga um documento de verdade (no Firestore) ou o esvazia (modo local). */
+/* ── Escrita ATÔMICA (ler-modificar-gravar) ────────────────────────────────
+   O app guarda o conteúdo inteiro num campo só (`v`), então toda gravação
+   reescreve o documento completo. Com `DB.get` → modifica → `DB.set`, dois
+   atletas lançando tempo no MESMO treino ao mesmo tempo se atropelam: o
+   segundo grava por cima e apaga o que o primeiro acabou de registrar. Num
+   treino de equipe isso não é hipótese, é rotina.
+
+   `transacao` resolve pedindo ao Firestore que releia e regrave sem que
+   ninguém escreva no meio. O `muta` recebe a versão MAIS RECENTE do servidor
+   e devolve a nova — por isso ele precisa ser PURO e re-executável: nada de
+   toast, render ou leitura de campo de tela lá dentro (o Firestore pode
+   chamá-lo mais de uma vez).
+
+   Transação exige rede. Offline (ou se falhar), cai no caminho antigo, que é
+   o comportamento de hoje — melhor gravar com risco de conflito do que não
+   gravar. Quem chama deve atualizar a tela ANTES, para a resposta seguir
+   instantânea. */
+async function transacao(k,muta){
+  if(!FB){ const v=await DB.get(k); const n=muta(v); if(n!==undefined)await DB.set(k,n); return n; }
+  const ref=fdb.collection('kv').doc(fkey(k));
+  try{
+    return await fdb.runTransaction(async tx=>{
+      const s=await tx.get(ref);
+      let v=null; if(s.exists){ try{ v=JSON.parse(s.data().v); }catch(_){ v=null; } }
+      const n=muta(v);
+      if(n===undefined)return v;
+      const json=JSON.stringify(n);
+      if(!checaTamanho(k,json).ok)throw new Error('documento acima do limite');
+      tx.set(ref,Object.assign({v:json,at:firebase.firestore.FieldValue.serverTimestamp()},camposSeguranca(k,n)));
+      return n;
+    });
+  }catch(e){
+    console.warn('transacao',k,e.message);
+    /* rede indisponível: grava do jeito antigo para não perder o registro */
+    const v=await DB.get(k); const n=muta(v);
+    if(n!==undefined)await DB.set(k,n);
+    return n;
+  }
+}
 async function apagarChave(k){
   if(FB){ try{ await fdb.collection('kv').doc(fkey(k)).delete(); return true }catch(e){ console.warn('apagarChave',k,e.message); return false } }
   return DB.set(k,null);
@@ -3061,10 +3112,15 @@ async function apagarCompeticao(id,nome){
   if(S.comp&&S.comp.id===id){S.comp=null;S.provaSel=null;}
   toast('Competição apagada'); render();
 }
+/* Mesma lógica dos treinos: o atleta lança os próprios tempos na competição da
+   equipe, e vários podem fazer isso ao mesmo tempo. `fn` precisa ser pura. */
 async function mutarComp(fn){
-  const f=await DB.get(kCmp(S.u.equipe,S.comp.id))||S.comp;
-  fn(f); f.atualizado=Date.now(); S.comp=f;
-  await DB.set(kCmp(S.u.equipe,f.id),f); render();
+  const cid=S.comp.id;
+  const aplicar=base=>{ const f=base||S.comp; fn(f); f.atualizado=Date.now(); return f; };
+  S.comp=aplicar(JSON.parse(JSON.stringify(S.comp)));
+  render();
+  const salvo=await transacao(kCmp(S.u.equipe,cid),serv=>aplicar(serv||null));
+  if(salvo){ S.comp=salvo; render(); }
 }
 
 /* ---------- nova prova ---------- */
