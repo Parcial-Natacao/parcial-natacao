@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v91';
+const VER='v92';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -457,6 +457,28 @@ const MODO=EMREDE?'em rede':(LOCAL?'neste aparelho':'temporário');
    usuário fica preso numa versão antiga sem perceber (não há service worker
    para gerenciar isso). Limpa o cache do que dá e recarrega com um parâmetro
    novo na URL, que o navegador é obrigado a buscar do servidor. */
+/* ── Aviso do ícone novo ───────────────────────────────────────────────────
+   O ícone da tela de início é gravado pelo iOS no momento em que se adiciona,
+   e o sistema nunca mais consulta o servidor — não há como trocá-lo à
+   distância. Quem instalou antes da v89 continua vendo o desenho antigo.
+   Então avisamos UMA vez, só para quem está em modo instalado (quem usa pelo
+   navegador já vê o ícone certo), e com botão de dispensar para sempre. */
+const KEY_AVISO_ICONE=PFX+'aviso-icone-v91';
+function ehInstalado(){
+  try{ return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true; }
+  catch(_){ return false; }
+}
+function avisoIcone(){
+  if(!ehInstalado())return'';
+  try{ if(localStorage.getItem(KEY_AVISO_ICONE))return''; }catch(_){ return''; }
+  return`<div class="card" style="border-color:var(--rope)">
+    <div class="eyebrow">ícone novo</div>
+    <p class="small" style="margin:6px 0 4px">O PARCIAL ganhou ícone próprio — um cronômetro com água. Se na sua tela de início ainda aparece o desenho antigo, é porque o iPhone guarda o ícone de quando você adicionou e não busca sozinho.</p>
+    <p class="xs muted" style="margin:0 0 10px">Para trocar, leva 20 segundos: <b>segure o ícone → Remover → Excluir da Tela de Início</b>, depois abra <b>parcial-natacao.github.io/parcial-natacao</b> e use <b>Compartilhar → Adicionar à Tela de Início</b>. Nada se perde: seus dados ficam na sua conta, não no atalho.</p>
+    <button class="sm ghost full" onclick="dispensarAvisoIcone()">Entendi, não mostrar de novo</button>
+  </div>`;
+}
+function dispensarAvisoIcone(){ try{ localStorage.setItem(KEY_AVISO_ICONE,'1'); }catch(_){} render(); }
 /* ── Aviso de versão nova ──────────────────────────────────────────────────
    O GitHub Pages serve o index.html com `Cache-Control: max-age=600`: por 10
    minutos o navegador entrega a cópia guardada sem nem perguntar ao servidor.
@@ -1485,7 +1507,7 @@ function renderInterno(){
     if(S.u.podeSaude)mapa.garmin=telaGarmin;
     if(S.u.podeRelatorio)mapa.relatorio=telaRelatorio; }
   if(ehDev())mapa.equipes=telaEquipes;   /* aba do desenvolvedor */
-  app.innerHTML=bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  app.innerHTML=avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
   _irAteHoje();
 }
 /* cor determinística por equipe (fundo suave) + destaque */
