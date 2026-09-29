@@ -118,10 +118,13 @@ documentos específicos, nunca a coleção toda.
    exclusão completa nem política de retenção.
 6. **Sem transações** — edições gravam o documento inteiro; escritas
    concorrentes podem se sobrescrever.
-7. **Sem CSP nem SRI**; sem manifest e sem service worker (não é PWA completa).
+7. **Sem manifest e sem service worker** — não é PWA completa (não instala nem
+   funciona offline de verdade).
 8. **Sem suíte de testes** — validação é manual.
-9. **`supabase/`** é referência histórica, **não aplicada**. As políticas ali
-   (`using (true)`) seriam inseguras se fossem usadas.
+9. **CSP com `'unsafe-inline'`** — o app é um arquivo único com handlers
+   inline, então a CSP não bloqueia script injetado no próprio HTML. Quem
+   cobre esse lado é `esc()` e `urlSegura()`. Resolver de vez exigiria tirar
+   os `onclick` do HTML.
 
 ## Licença
 
