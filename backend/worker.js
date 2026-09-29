@@ -14,12 +14,81 @@
    Como publicar: veja BACKEND-IA.md (passo a passo, sem terminal).
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Só o app pode chamar (evita alguém gastar sua chave). Ajuste se mudar a URL. */
+/* Origem é só a PRIMEIRA barreira, e é fraca: o cabeçalho Origin só existe em
+   navegador — qualquer cliente fora dele (curl, script) forja o valor à
+   vontade. Quem de fato autoriza é o TOKEN do Firebase, verificado abaixo. */
 const ORIGENS_OK = [
   'https://parcial-natacao.github.io',
   'http://localhost:8790',
   'http://127.0.0.1:8790'
 ];
+
+/* ── Limites ───────────────────────────────────────────────────────────────
+   Sem teto, um único pedido pode custar caro na API e derrubar o Worker. */
+const MAX_CORPO = 8 * 1024 * 1024;   /* JSON recebido */
+const MAX_B64   = 5 * 1024 * 1024;   /* ~3,7 MB de arquivo real */
+const MAX_DADOS = 256 * 1024;        /* payload do laudo */
+const MIMES_OK  = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const LIMITE_DIA_PADRAO = 40;        /* chamadas por usuário por dia */
+
+/* ── Identidade: verificação do ID token do Firebase ───────────────────────
+   Valida a assinatura RS256 contra as chaves públicas do Google e confere
+   emissor, público-alvo e validade. Sem isso, "origem autorizada" não prova
+   absolutamente nada sobre quem está chamando. */
+const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+let _jwks = null, _jwksEm = 0;
+async function jwksGoogle() {
+  if (_jwks && Date.now() - _jwksEm < 3600000) return _jwks;
+  const r = await fetch(JWKS_URL);
+  if (!r.ok) throw new Error('não consegui buscar as chaves públicas do Google');
+  _jwks = await r.json(); _jwksEm = Date.now();
+  return _jwks;
+}
+function b64urlBytes(s) {
+  s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s), a = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return a;
+}
+function jsonDeB64url(s) { return JSON.parse(new TextDecoder().decode(b64urlBytes(s))); }
+async function verificarToken(token, projeto) {
+  const p = String(token || '').split('.');
+  if (p.length !== 3) throw new Error('token malformado');
+  /* mensagem genérica: erro de parse não deve vazar detalhe interno na resposta */
+  let cab, corpo;
+  try { cab = jsonDeB64url(p[0]); corpo = jsonDeB64url(p[1]); }
+  catch { throw new Error('token malformado'); }
+  const agora = Math.floor(Date.now() / 1000);
+  if (cab.alg !== 'RS256') throw new Error('algoritmo não aceito');
+  if (corpo.aud !== projeto) throw new Error('token de outro projeto');
+  if (corpo.iss !== 'https://securetoken.google.com/' + projeto) throw new Error('emissor inválido');
+  if (!corpo.sub) throw new Error('token sem usuário');
+  if (!(corpo.exp > agora)) throw new Error('token expirado');
+  if (corpo.iat && corpo.iat > agora + 300) throw new Error('token do futuro');
+  const jwk = ((await jwksGoogle()).keys || []).find(k => k.kid === cab.kid);
+  if (!jwk) throw new Error('chave do token não encontrada');
+  const chave = await crypto.subtle.importKey('jwk', jwk,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', chave,
+    b64urlBytes(p[2]), new TextEncoder().encode(p[0] + '.' + p[1]));
+  if (!ok) throw new Error('assinatura inválida');
+  return { uid: corpo.sub, email: String(corpo.email || '').toLowerCase() };
+}
+
+/* ── Quota por usuário ─────────────────────────────────────────────────────
+   Precisa de um namespace KV chamado QUOTA ligado ao Worker. Sem ele a quota
+   não é aplicada — e o Worker avisa na resposta, para não passar a impressão
+   falsa de que está protegido. */
+async function consumirQuota(env, uid) {
+  const limite = Number(env.LIMITE_DIA || LIMITE_DIA_PADRAO);
+  if (!env.QUOTA) return { ok: true, semKV: true };
+  const chave = 'q:' + uid + ':' + new Date().toISOString().slice(0, 10);
+  const usado = Number(await env.QUOTA.get(chave) || 0);
+  if (usado >= limite) return { ok: false, usado, limite };
+  await env.QUOTA.put(chave, String(usado + 1), { expirationTtl: 172800 });
+  return { ok: true, usado: usado + 1, limite };
+}
 
 /* Modelo. claude-opus-5 é o mais capaz (melhor leitura), porém o mais caro.
    Para baratear, troque por 'claude-sonnet-5' (bom e ~1/2 do preço) ou
@@ -33,7 +102,7 @@ export default {
     const cors = {
       'Access-Control-Allow-Origin': permitida ? origem : ORIGENS_OK[0],
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400'
     };
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
@@ -41,16 +110,41 @@ export default {
     if (!permitida) return j({ erro: 'origem não autorizada' }, 403, cors);
     if (!env.ANTHROPIC_API_KEY) return j({ erro: 'falta configurar ANTHROPIC_API_KEY no Worker' }, 500, cors);
 
+    /* 1) QUEM É. Token do Firebase verificado de verdade (assinatura, emissor,
+          validade). É o que impede um cliente fora do navegador de forjar a
+          origem e gastar a chave da Anthropic. */
+    const projeto = env.FIREBASE_PROJECT || 'parcial-cdb0e';
+    const cabAuth = request.headers.get('Authorization') || '';
+    const token = cabAuth.startsWith('Bearer ') ? cabAuth.slice(7) : '';
+    if (!token) return j({ erro: 'faça login no app para usar a IA' }, 401, cors);
+    let usuario;
+    try { usuario = await verificarToken(token, projeto); }
+    catch (e) { return j({ erro: 'sessão inválida: ' + (e && e.message || e) }, 401, cors); }
+
+    /* 2) TAMANHO, antes de ler o corpo. */
+    const tam = Number(request.headers.get('content-length') || 0);
+    if (tam && tam > MAX_CORPO) return j({ erro: 'arquivo grande demais (máx ~5 MB)' }, 413, cors);
+
     let body;
     try { body = await request.json(); } catch { return j({ erro: 'JSON inválido' }, 400, cors); }
     const acao = body.acao;
+
+    /* 3) QUANTO. Quota diária por usuário. */
+    const q = await consumirQuota(env, usuario.uid);
+    if (!q.ok) return j({ erro: `limite diário de ${q.limite} leituras atingido. Tente amanhã.` }, 429, cors);
 
     try {
       let content, ferramenta, maxTok = 1500;
 
       if (acao === 'exame' || acao === 'bio' || acao === 'seco') {
         if (!body.pdf) return j({ erro: 'faltou o campo do arquivo (base64)' }, 400, cors);
+        if (typeof body.pdf !== 'string' || body.pdf.length > MAX_B64)
+          return j({ erro: 'arquivo grande demais (máx ~3,5 MB)' }, 413, cors);
+        if (!/^[A-Za-z0-9+/=\s]+$/.test(body.pdf))
+          return j({ erro: 'arquivo inválido (esperado base64)' }, 400, cors);
         const mime = body.mime || 'application/pdf';
+        if (!MIMES_OK.includes(mime))
+          return j({ erro: 'tipo não aceito. Use PDF, JPEG, PNG ou WEBP.' }, 415, cors);
         const bloco = mime.indexOf('image/') === 0
           ? { type: 'image', source: { type: 'base64', media_type: mime, data: body.pdf } }
           : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: body.pdf } };
@@ -59,7 +153,9 @@ export default {
         ferramenta = { name: 'registrar', description: 'Registra os dados lidos.', input_schema: cfg[1] };
       } else if (acao === 'laudo') {
         maxTok = 2200;
-        content = [{ type: 'text', text: PROMPT_LAUDO + '\n\n=== DADOS DO ATLETA (JSON) ===\n' + JSON.stringify(body.dados || {}) }];
+        const dados = JSON.stringify(body.dados || {});
+        if (dados.length > MAX_DADOS) return j({ erro: 'dados grandes demais para o laudo' }, 413, cors);
+        content = [{ type: 'text', text: PROMPT_LAUDO + '\n\n=== DADOS DO ATLETA (JSON) ===\n' + dados }];
       } else {
         return j({ erro: 'ação desconhecida (use exame, bio ou laudo)' }, 400, cors);
       }
