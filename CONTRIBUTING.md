@@ -57,6 +57,19 @@ Depois, abra um **Pull Request** no GitHub para revisão antes do merge em `main
 - Mensagens curtas, no imperativo, em português: `corrige parsing de duração hh:mm`, `adiciona check-in diário`.
 - Um assunto por commit sempre que possível.
 
+### ⚠️ Mudou ícone, manifest ou outro arquivo estático?
+
+Incremente **também** a constante `VERSAO` no [`sw.js`](sw.js). O nome do cache
+do service worker deriva dela: sem incrementar, o cache antigo continua sendo
+servido e **o arquivo novo nunca chega ao usuário**. Já aconteceu — o ícone foi
+trocado, a `VERSAO` não, e o app seguiu mostrando o ícone velho.
+
+Para ícones há um segundo detalhe: o iOS guarda o ícone da tela de início fora
+do alcance do service worker. Por isso as URLs levam `?v=NN` no `index.html` e
+no `manifest.webmanifest` — mudar esse número é o que faz o iPhone buscar de
+novo. Os três lugares (`index.html`, `manifest.webmanifest` e a lista
+`ESSENCIAIS` do `sw.js`) precisam usar o **mesmo** número.
+
 ### Versão do app
 
 O app tem uma constante `VER` no `index.html` (ex.: `'v67'`). **Ao fazer uma mudança visível ao usuário, incremente `VER`** — é o que sinaliza aos usuários que há versão nova (e ajuda no cache-busting do PWA).
