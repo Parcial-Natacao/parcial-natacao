@@ -1,5 +1,11 @@
 rules_version = '2';
 
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  ESTE ARQUIVO É DO **FIRESTORE**, NÃO DO STORAGE.                    ║
+// ║  Cole SOMENTE em: Console › Firestore Database › aba "Regras".       ║
+// ║  Confira antes de publicar: a linha abaixo diz `cloud.firestore`.    ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
 // PARCIAL — regras do Firestore, VERSÃO 2 (correção do P0). FECHADA.
 //
 // ⚠️ ORDEM OBRIGATÓRIA PARA PUBLICAR:

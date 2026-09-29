@@ -1,5 +1,15 @@
 rules_version = '2';
 
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  ESTE ARQUIVO É DO **STORAGE**, NÃO DO FIRESTORE.                    ║
+// ║  Cole SOMENTE em: Console › Storage › aba "Rules".                   ║
+// ║                                                                      ║
+// ║  Colar isto no editor do FIRESTORE derruba o app inteiro: ninguém    ║
+// ║  consegue ler nada e parece que os cadastros foram apagados (não     ║
+// ║  foram — regras não apagam dados). Já aconteceu uma vez.             ║
+// ║  Confira antes de publicar: a linha abaixo diz `firebase.storage`.   ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+
 // PARCIAL — regras do Firebase STORAGE (anexos).
 //
 // ⚠️ São SEPARADAS das regras do Firestore e publicadas em outro lugar:
