@@ -19,10 +19,16 @@
    console — navigator.serviceWorker.controller.postMessage('desligar')
    ───────────────────────────────────────────────────────────────────────── */
 
-const VERSAO = 'v86';
+/* ⚠️ INCREMENTE `VERSAO` SEMPRE que mudar QUALQUER arquivo da lista abaixo.
+   O nome do cache deriva dela; sem incrementar, o cache antigo continua sendo
+   servido e o arquivo novo nunca chega. Aconteceu na v86: o ícone foi trocado,
+   a VERSAO não, e o app seguiu mostrando o ícone velho. */
+const VERSAO = 'v87';
 const CACHE  = 'parcial-' + VERSAO;
+/* com ?v= porque é assim que a página e o manifest pedem — o cache casa por
+   URL completa, e o iOS só troca o ícone da tela de início se a URL mudar */
 const ESSENCIAIS = ['./', './index.html', './manifest.webmanifest',
-                    './icone-192.png', './icone-512.png'];
+                    './icone-192.png?v=87', './icone-512.png?v=87', './icone-180.png?v=87'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();                       /* versão nova assume sem esperar */
