@@ -191,7 +191,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v81';
+const VER='v82';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -566,6 +566,19 @@ async function apagarAnexo(url){
 }
 const anexoPro=(uid,id,mime)=>`pro/${uid}/seco/${id}.${/pdf/i.test(mime||'')?'pdf':'jpg'}`;
 const anexoTreino=(eq,id)=>`eq/${eq}/tr/${id}.pdf`;
+/* ── Orçamento de espaço do documento ──────────────────────────────────────
+   Enquanto o Storage não estiver disponível (exige plano Blaze), os anexos
+   continuam dentro do `pro_<uid>`, que tem teto RÍGIDO de 1 MiB. Em vez de
+   deixar o usuário descobrir o limite quando a gravação for recusada, o app
+   mostra o espaço e recusa o anexo ANTES de ele se dar ao trabalho. */
+const TETO_ANEXO_PDF=200*1024;      /* PDF da sessão fora d'água */
+const TETO_TREINO_PDF=250*1024;     /* PDF do treino (documento tem os registros de todos) */
+const ALVO_FOTO=90*1024;            /* foto já comprimida */
+function espacoPro(){
+  const usado=bytesDe(JSON.stringify(S.pro||{}));
+  return {usado,livre:Math.max(0,LIM_SEGURO-usado),pct:Math.round(usado/LIM_DOC*100)};
+}
+const kb=b=>(b/1024).toFixed(0)+' KB';
 /* quantos anexos ainda estão em base64 dentro do meu documento */
 function anexosPendentes(){
   let n=0;
@@ -603,7 +616,7 @@ async function migrarAnexos(){
   const partes=[];
   if(n)partes.push(`${n} anexo(s) seus`);
   if(nt)partes.push(`${nt} PDF(s) de treino`);
-  diz(falhas?`Movidos ${partes.join(' e ')||'nenhum'}. <b>${falhas} falharam</b> — tente de novo; nada foi perdido.`
+  diz(falhas?`Movidos ${partes.join(' e ')||'nenhum'}. <b>${falhas} falharam.</b> Se falharam todos, o <b>Storage não está ativo</b> no Firebase — ele exige o plano Blaze. Nada foi perdido: os anexos seguem no cadastro e o app continua controlando o tamanho.`
     :(partes.length?`<b>Pronto: ${partes.join(' e ')} movidos.</b> O espaço do documento foi liberado.`
       :'Nada a mover.'),falhas?'warn':'muted');
   render();
@@ -1210,12 +1223,14 @@ function abrirConta(){
       <span class="xs muted grow">Versão do app: <b class="t">${VER}</b></span>
       <button class="sm ghost" onclick="recarregarForcado()" title="Baixa a versão mais nova, ignorando o cache">Atualizar app</button>
     </div>
-    ${(fst&&anexosPendentes()>0)?`<div class="sep"></div>
-      <div class="note warn"><b>${anexosPendentes()} anexo(s) guardados dentro do seu cadastro.</b>
-      Fotos e PDFs em base64 ocupam o documento, que tem teto de 1 MB — passando dele, o app para de salvar.
-      Mover para o armazenamento de arquivos libera esse espaço e não perde nada.</div>
-      <button class="full" onclick="migrarAnexos()">Mover anexos para o armazenamento</button>
-      <div id="migAnexoSt" class="xs muted" style="margin-top:6px"></div>`:''}
+    ${temPro()?(()=>{const e=espacoPro(),n=anexosPendentes();
+      const cor=e.pct>=70?'warn':'';
+      return `<div class="sep"></div>
+      <div class="note ${cor}"><b>Espaço do seu cadastro: ${kb(e.usado)} de 1024 KB (${e.pct}%).</b>
+      ${n?` Há <b>${n} anexo(s)</b> guardados aqui dentro — é o que mais ocupa.`:' Sem anexos guardados aqui.'}
+      ${e.pct>=70?' <b>Está ficando cheio:</b> apague anexos antigos na aba Saúde › fora d’água.':''}</div>
+      ${n?`<button class="full" onclick="migrarAnexos()">Mover anexos para o armazenamento</button>
+      <div id="migAnexoSt" class="xs muted" style="margin-top:6px">Requer o Storage ativo no Firebase (plano Blaze). Sem ele, os anexos continuam aqui e o app controla o tamanho.</div>`:''}`;})():''}
     ${u.perfil==='pro'?`<div class="sep"></div>
       <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
       ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
@@ -1749,7 +1764,10 @@ function fileTreinoPDF(inp){
   const f=inp.files&&inp.files[0]; if(!f)return;
   const p=document.getElementById('ntPdfPrev');
   if(f.type!=='application/pdf'){ if(p)p.textContent='Escolha um arquivo PDF.'; return; }
-  if(f.size>600000){ TREINOPDF=null; if(p)p.textContent='PDF muito grande (máx 600KB).'; return; }
+  /* o documento do treino também guarda os registros de TODOS os atletas —
+     o PDF não pode tomar o espaço deles. */
+  if(f.size>TETO_TREINO_PDF){ TREINOPDF=null;
+    if(p)p.innerHTML=`<b>PDF muito grande</b> (${kb(f.size)}; máximo ${kb(TETO_TREINO_PDF)}). O treino guarda também os tempos de todos os atletas, e o documento tem teto de 1 MB.`; return; }
   const r=new FileReader(); r.onload=()=>{ TREINOPDF=r.result; if(p)p.textContent='PDF anexado ✓'; }; r.readAsDataURL(f);
 }
 async function salvarTreino(){
@@ -4357,23 +4375,46 @@ async function lancarDia(){
 let FOTO=null,SECOPDF=null;
 function fotoSeco(inp){
   const f=inp.files[0]; if(!f)return;
+  const esp=espacoPro();
   if(f.type==='application/pdf'){
     const p=document.getElementById('skPrev');
-    if(f.size>500000){ SECOPDF=null; if(p)p.textContent='PDF grande demais (máx 500KB). Prefira uma foto.'; return; }
-    const rp=new FileReader(); rp.onload=()=>{ SECOPDF=rp.result; FOTO=null; if(p)p.textContent='PDF anexado ✓'; }; rp.readAsDataURL(f); return;
+    /* em base64 o arquivo cresce ~33%: é esse tamanho que ocupa o documento */
+    const ocupa=Math.round(f.size*1.37);
+    if(f.size>TETO_ANEXO_PDF){ SECOPDF=null;
+      if(p)p.innerHTML=`<b>PDF grande demais</b> (${kb(f.size)}; máximo ${kb(TETO_ANEXO_PDF)}). Enquanto os anexos ficam dentro do cadastro, o limite é apertado. <b>Prefira uma foto</b> — o app comprime sozinho.`; return; }
+    if(ocupa>esp.livre){ SECOPDF=null;
+      if(p)p.innerHTML=`<b>Sem espaço.</b> Este PDF ocuparia ${kb(ocupa)} e restam ${kb(esp.livre)} no seu cadastro. Apague algum anexo antigo em Saúde › fora d'água.`; return; }
+    const rp=new FileReader(); rp.onload=()=>{ SECOPDF=rp.result; FOTO=null;
+      if(p)p.innerHTML=`PDF anexado ✓ <span class="muted">(${kb(ocupa)} · restam ${kb(esp.livre-ocupa)})</span>`; }; rp.readAsDataURL(f); return;
   }
   const r=new FileReader();
   r.onload=()=>{
     SECOPDF=null;
     const img=new Image();
     img.onload=()=>{
-      const max=760,esc2=Math.min(1,max/Math.max(img.width,img.height));
-      const cv=document.createElement('canvas');
-      cv.width=Math.round(img.width*esc2); cv.height=Math.round(img.height*esc2);
-      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
-      FOTO=cv.toDataURL('image/jpeg',.6);
+      /* Comprime até caber no orçamento: uma foto de ficha de musculação
+         precisa ser LEGÍVEL, não bonita. Vai baixando qualidade e, se ainda
+         assim não couber, reduz a dimensão — em vez de recusar o anexo. */
       const p=document.getElementById('skPrev');
-      if(p)p.innerHTML=`<img src="${urlSegura(FOTO)}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">`;
+      const render=(lado,q)=>{
+        const e=Math.min(1,lado/Math.max(img.width,img.height));
+        const cv=document.createElement('canvas');
+        cv.width=Math.round(img.width*e); cv.height=Math.round(img.height*e);
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        return cv.toDataURL('image/jpeg',q);
+      };
+      let d=null;
+      for(const [lado,q] of [[720,.55],[720,.45],[600,.45],[520,.4],[420,.4]]){
+        d=render(lado,q);
+        if(bytesDe(d)<=ALVO_FOTO)break;
+      }
+      const ocupa=bytesDe(d), livre=espacoPro().livre;
+      if(ocupa>livre){ FOTO=null;
+        if(p)p.innerHTML=`<b>Sem espaço.</b> Restam ${kb(livre)} no seu cadastro. Apague algum anexo antigo em Saúde › fora d'água.`;
+        return; }
+      FOTO=d;
+      if(p)p.innerHTML=`<img src="${urlSegura(FOTO)}" style="max-width:130px;border-radius:9px;border:1px solid var(--line)">
+        <div class="xs muted" style="margin-top:3px">${kb(ocupa)} · restam ${kb(livre-ocupa)}</div>`;
     };
     img.src=r.result;
   };
