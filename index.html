@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v94';
+const VER='v95';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4766,14 +4766,25 @@ function cargaTotal(dias){
   const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
   let natacao=0,forca=0,nSeco=0;
   for(const s of (SESSOES||[]))if(dentro(s.data))natacao+=s.load;
-  for(const s of ((S.pro&&S.pro.seco)||[]))if(s.rpe!=null&&s.dur&&dentro(s.data)){forca+=s.rpe*s.dur;nSeco++;}
+  /* duração implausível entra na carga como se fosse real e domina tudo: uma
+     sessão de "330" (lida como 330 min) vale 10× uma de 60. Sinalizamos em vez
+     de descartar — o dado é do usuário, quem corrige é ele. */
+  const secoSuspeito=[];
+  for(const s of ((S.pro&&S.pro.seco)||[]))if(s.rpe!=null&&s.dur&&dentro(s.data)){
+    forca+=s.rpe*s.dur; nSeco++;
+    if(s.dur>240)secoSuspeito.push({data:s.data,tipo:s.tipo||'sessão',dur:Math.round(s.dur),rpe:s.rpe});
+  }
   /* SESSOES só recebe o treino de natação quando RPE **e** duração foram
      preenchidos (ver coletarEsforcos). Contamos quantos treinos existiam no
      período para revelar a cobertura: sem isso a natação aparece com uma
      fatia minúscula e parece erro de cálculo, quando é dado faltando. */
-  let nNat=0,nNatCom=0;
-  for(const t of (S.tridx||[]))if(dentro(t.data)){nNat++;}
-  nNatCom=(SESSOES||[]).filter(s=>dentro(s.data)).length;
+  /* Denominador: só treinos REALMENTE FEITOS. Antes contávamos tudo que estava
+     na agenda (S.tridx), então treino que o atleta não fez entrava como "RPE
+     faltando" e inflava o buraco. Usamos os dias com esforço registrado — se
+     houve tempo anotado, o treino aconteceu. */
+  let nNatCom=(SESSOES||[]).filter(s=>dentro(s.data)).length;
+  const diasFeitos=new Set(((typeof ESF!=='undefined'&&ESF)||[]).filter(e=>dentro(e.data)).map(e=>e.data));
+  const nNat=Math.max(diasFeitos.size,nNatCom);
   /* estimativa do relógio para os dias sem nada informado */
   let estimado=0,nEst=0;
   const jaTem=diasComCargaInformada(), id=idadeDoUsuario();
@@ -4781,19 +4792,39 @@ function cargaTotal(dias){
     if(jaTem[g.data]||!dentro(g.data))continue;
     const e=loadGarminDia(g,id); if(e){estimado+=e.load;nEst++;}
   }
+  /* EXTRAPOLAÇÃO: treino feito sem RPE não vale ZERO — ele aconteceu. Mostrar
+     "12% natação × 88% fora d'água" quando metade dos treinos de piscina não
+     tem RPE é apresentar um número distorcido como se fosse fato. Estimamos os
+     que faltam pela média dos que existem, e deixamos isso EXPLÍCITO. */
+  const mediaNat=nNatCom?natacao/nNatCom:0;
+  const nSemRPE=Math.max(0,nNat-nNatCom);
+  const natExtrap=Math.round(mediaNat*nSemRPE);
   const total=natacao+forca+estimado;
   return total>0?{natacao:Math.round(natacao),forca:Math.round(forca),total:Math.round(total),
-    estimado:Math.round(estimado),nEst,nSeco,nNat,nNatCom}:null;
+    estimado:Math.round(estimado),nEst,nSeco,nNat,nNatCom,
+    natExtrap,nSemRPE,mediaNat:Math.round(mediaNat),
+    secoSuspeito,
+    totalAjust:Math.round(total+natExtrap),
+    cobertura:nNat?nNatCom/nNat:1}:null;
 }
 function cardCargaTotal(){
   const c=cargaTotal(28); if(!c)return'';
-  const pN=c.total?Math.round(c.natacao/c.total*100):0;
-  return`<div class="card"><div class="eyebrow">carga total — 28 dias</div>
+  /* A proporção em destaque NÃO pode sair de dado incompleto. Com treinos de
+     piscina sem RPE, o que se via era "12% natação × 88% fora d'água" — número
+     falso, desmentido só na letra miúda embaixo. Quando a cobertura é baixa,
+     completamos os treinos que faltam pela SUA média e dizemos isso no rótulo. */
+  const usaEstim=c.nSemRPE>0&&c.nNatCom>0;
+  const natShow=c.natacao+(usaEstim?c.natExtrap:0);
+  const totShow=usaEstim?c.totalAjust:c.total;
+  const pN=totShow?Math.round(natShow/totShow*100):0;
+  return`<div class="card"><div class="eyebrow">carga total — 28 dias${usaEstim?' <span class="xs muted">(inclui estimativa)</span>':''}</div>
     <div class="grid3" style="margin-top:8px">
-      <div class="kpi"><div class="v">${c.total}</div><div class="l">total (UA)</div></div>
-      <div class="kpi"><div class="v">${c.natacao}</div><div class="l">natação ${pN}%</div></div>
-      <div class="kpi"><div class="v">${c.forca}</div><div class="l">fora d'água ${100-pN}%</div></div>
+      <div class="kpi"><div class="v">${totShow.toLocaleString('pt-BR')}</div><div class="l">total (UA)</div></div>
+      <div class="kpi"><div class="v">${natShow.toLocaleString('pt-BR')}</div><div class="l">natação ${pN}%</div></div>
+      <div class="kpi"><div class="v">${c.forca.toLocaleString('pt-BR')}</div><div class="l">fora d'água ${100-pN}%</div></div>
     </div>
+    ${usaEstim?`<div class="note" style="margin-top:8px"><b>${c.nSemRPE} treino(s) de natação sem RPE entraram por estimativa</b>, pela sua média de ${c.mediaNat.toLocaleString('pt-BR')} UA por sessão (${c.natExtrap.toLocaleString('pt-BR')} UA). Sem isso a natação apareceria com <b>${c.total?Math.round(c.natacao/c.total*100):0}%</b> — número que só refletiria o campo em branco, não o seu treino. Preencha RPE e duração e a conta deixa de precisar de estimativa.</div>`:''}
+    ${(c.secoSuspeito&&c.secoSuspeito.length)?`<div class="note warn" style="margin-top:8px"><b>Confira a duração de ${c.secoSuspeito.length} sessão(ões) fora d'água.</b> ${c.secoSuspeito.slice(0,3).map(s=>`${brCurta(s.data)} · ${esc(s.tipo)} · <b>${Math.floor(s.dur/60)}h${String(s.dur%60).padStart(2,'0')}</b>`).join(' · ')}${c.secoSuspeito.length>3?' …':''}. Duração acima de 4h é rara numa sessão — se foi engano de digitação (ex.: "330" virando 330 minutos), ela está dominando a sua carga e distorcendo o ACWR e a recomendação de intensidade. Corrija em Saúde › fora d'água.</div>`:''}
     <div class="xs muted" style="margin-top:8px">Carga da sessão = <b>duração × RPE</b> (UA). Põe natação e treinos fora d'água (musculação, bike, corrida…) na mesma escala.</div>
     <div class="eyebrow" style="margin-top:12px">de onde vem cada unidade de carga</div>
     <table style="margin-top:6px"><tbody>
@@ -4803,12 +4834,14 @@ function cardCargaTotal(){
       <tr><td><b>Intensidade estimada por FC</b> <span class="xs muted">deduzida do relógio, não é percepção sua</span></td>
         <td class="n">${c.estimado.toLocaleString('pt-BR')} UA</td>
         <td class="n">${c.total?Math.round(c.estimado/c.total*100):0}%</td></tr>
-      <tr><td><b>Sem carga quantificável</b> <span class="xs muted">${c.nNat-c.nNatCom-c.nEst>0?(c.nNat-c.nNatCom-c.nEst)+' treino(s) sem RPE, duração nem relógio':'nenhum'}</span></td>
+      ${usaEstim?`<tr><td><b>Estimado pela sua média</b> <span class="xs muted">${c.nSemRPE} treino(s) feitos sem RPE</span></td>
+        <td class="n">${c.natExtrap.toLocaleString('pt-BR')} UA</td>
+        <td class="n">${totShow?Math.round(c.natExtrap/totShow*100):0}%</td></tr>`:''}
+      <tr><td><b>Sem carga quantificável</b> <span class="xs muted">${(!c.nNatCom&&c.nSemRPE)?c.nSemRPE+' treino(s): sem nenhuma sessão com RPE, não dá nem para estimar':'nenhum'}</span></td>
         <td class="n">—</td><td class="n">—</td></tr>
     </tbody></table>
     <div class="xs muted" style="margin-top:6px">São coisas diferentes: <b>RPE</b> é o quanto <b>você sentiu</b>; a estimativa por FC é intensidade fisiológica deduzida do batimento. Dado informado sempre vence o estimado.</div>
-    ${(c.nNat&&c.nNatCom<c.nNat)?`<div class="note warn" style="margin-top:8px"><b>Atenção: a natação está subestimada.</b> Só <b>${c.nNatCom} de ${c.nNat}</b> treinos de natação dos últimos 28 dias têm <b>RPE e duração</b> preenchidos — os outros ${c.nNat-c.nNatCom} entram como <b>zero</b>${c.nEst?' (a estimativa do relógio cobre parte deles)':''}. É por isso que o fora d'água (${c.nSeco} sessão(ões), todas com os dois campos) aparece com fatia tão maior. Preencha RPE e duração ao marcar o treino como feito e a proporção se corrige.</div>`
-      :`<div class="xs muted" style="margin-top:4px">Cobertura: ${c.nNatCom} de ${c.nNat||c.nNatCom} treino(s) de natação e ${c.nSeco} fora d'água com RPE e duração.</div>`}
+    <div class="xs muted" style="margin-top:6px"><b>Cobertura:</b> ${c.nNatCom} de ${c.nNat||c.nNatCom} treino(s) de natação <b>feitos</b> têm RPE e duração (${Math.round(c.cobertura*100)}%), e ${c.nSeco} sessão(ões) fora d'água. Só conta treino marcado como feito — o que ficou na agenda e não aconteceu não entra.</div>
     ${(()=>{const t=tonelagem(28);return t?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>Tonelagem de força (28d):</b> ~${t.total.toLocaleString('pt-BR')} kg em ${t.sessoes} sessão(ões) — volume real de musculação (séries×reps×carga), quando a ficha traz as cargas.</div>`:'';})()}
   </div>`;
 }
@@ -5992,14 +6025,17 @@ function cardAprendizado(pro){
     <p class="small muted" style="margin-top:6px">Ainda não há competição registrada para comparar com a previsão. <b>Registre seus resultados em Marcas</b> — a cada prova o app passa a saber o quanto costuma errar com você, e a projeção deixa de ser um palpite genérico.</p></div>`;
   const sinal=v=>(v>0?'+':'')+ (Math.abs(v)>=1000?fmt(Math.abs(v),true):(v/1000).toFixed(2)+'s');
   const linhas=p.itens.map(x=>{
-    const cor=Math.abs(x.erro)<=400?'var(--ok)':Math.abs(x.erro)>=1200?'var(--clock)':'var(--ink-2)';
+    const cor=x.erro<0?'var(--ok)':(x.erro>=1200?'var(--clock)':'var(--ink-2)');   /* verde = nadou mais rapido */
     return`<tr><td class="small">${brCurta(x.data)}${x.origem==='reconstruida'?' <span class="xs muted">·rec</span>':''}</td>
       <td class="n">${fmt(x.central,true)}</td><td class="n">${fmt(x.real,true)}</td>
       <td class="n" style="color:${cor}">${(x.erro>0?'+':'')+(x.erro/1000).toFixed(2)}s</td></tr>`;}).join('');
   const vies=p.vies/1000, abs=p.abs/1000;
-  const leitura=Math.abs(vies)<0.25?'O modelo não puxa para nenhum lado — o erro é ruído, não viés.'
-    :(vies>0?`O modelo tem previsto <b>mais rápido</b> do que você nada: em média ${vies.toFixed(2)}s otimista.`
-            :`O modelo tem previsto <b>mais devagar</b> do que você nada: em média ${Math.abs(vies).toFixed(2)}s conservador.`);
+  /* Frase escrita do ponto de vista do ATLETA. A anterior ("o modelo tem
+     previsto mais devagar do que você nada") era ambígua e foi lida ao
+     contrário — quem lê quer saber o que ELE fez, não o que o modelo fez. */
+  const leitura=Math.abs(vies)<0.25?'<b>O modelo não puxa para nenhum lado.</b> A diferença é ruído, não viés — as previsões estão calibradas com você.'
+    :(vies<0?`<b>Você tem nadado mais RÁPIDO que a previsão</b> — em média ${Math.abs(vies).toFixed(2)}s a menos. O app está sendo conservador com você e já corrige isso nas próximas projeções.`
+            :`<b>Você tem nadado mais DEVAGAR que a previsão</b> — em média ${vies.toFixed(2)}s a mais. O app está otimista demais e já corrige isso nas próximas projeções.`);
   return`<div class="card"><div class="eyebrow">aprendizado do modelo — ${a.d}m ${esc(a.e)} ${pis==='LC50'?'LC50m':'SC25m'}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${p.n}</div><div class="l">prova(s) comparada(s)</div></div>
@@ -6010,7 +6046,7 @@ function cardAprendizado(pro){
     <table style="margin-top:10px"><thead><tr><th>prova</th><th class="n">previsto</th><th class="n">realizado</th><th class="n">erro</th></tr></thead>
       <tbody>${linhas}</tbody></table>
     ${p.nFaixa?`<div class="xs muted" style="margin-top:6px"><b>Cobertura da faixa:</b> ${Math.round(p.cobertura*100)}% das provas caíram dentro do intervalo previsto (${p.nFaixa} com faixa registrada). Perto de 100% com faixa estreita é o ideal; 100% com faixa larga só quer dizer que o app não se comprometeu.</div>`:''}
-    <div class="xs muted" style="margin-top:6px">Erro positivo = você nadou mais devagar que o previsto. Base: ${esc(p.esc)}.${p.previstas<p.n?` ${p.n-p.previstas} linha(s) marcada(s) <b>rec</b> foram reconstruídas a partir dos treinos daquela época, não são previsões que você chegou a ver.`:''}</div>
+    <div class="xs muted" style="margin-top:6px"><b>Erro negativo (verde) = você nadou MAIS RÁPIDO que o previsto</b>; positivo = mais devagar. Base: ${esc(p.esc)}.${p.previstas<p.n?` ${p.n-p.previstas} linha(s) marcada(s) <b>rec</b> foram reconstruídas a partir dos treinos daquela época, não são previsões que você chegou a ver.`:''}</div>
   </div>`;
 }
 function cardPredicao(pro,comPct,est){
