@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v102';
+const VER='v103';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2611,9 +2611,12 @@ function telaTreinosAtleta(){
     ${S.u.perfil==='pro'?`<button class="sm ghost" onclick="novoTreinoPro()">+ Piscina</button>`:''}
     <button class="sm primary" onclick="abrirTreinoExtra()">+ Meu treino</button></div>
   ${futuros?`<div class="xs muted" style="margin:2px 0 8px">Há ${futuros} treino(s) programado(s) para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
-  ${(()=>{const n=duracoesSuspeitas().length; return n?`<div class="note warn" style="margin:8px 0">
-    <b>${n} sessão(ões) fora d'água com a duração errada.</b> Até a v96 o app lia <b>1:10</b> como 1min10s em vez de 1h10 — e duração é carga.
-    <button class="sm primary full" style="margin-top:8px" onclick="revisarDuracoes()">Revisar e corrigir</button></div>`:''})()}
+  ${(()=>{const p=pendenciasSeco(), n=p.length; if(!n)return'';
+    const auto=p.filter(x=>x.auto).length;
+    return`<div class="note warn" style="margin:8px 0">
+      <b>${n} sessão(ões) fora d'água com dado faltando ou errado.</b>
+      ${auto?`${auto} é${auto>1?'ão':''} a duração que o app lia errado até a v96 (<b>1:10</b> como 1min10s em vez de 1h10) — essa${auto>1?'s':''} ele corrige sozinho. `:''}Duração e RPE são o que vira carga: sem eles a sessão não entra na conta.
+      <button class="sm primary full" style="margin-top:8px" onclick="abrirPendencias()">Ver quais são</button></div>`})()}
   ${lista.length?`<div class="row" style="gap:6px;margin-bottom:8px">
     <button class="sm ${S.treinoView!=='lista'?'primary':'ghost'}" onclick="S.treinoView='cal';render()">📅 Calendário</button>
     <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
@@ -5157,6 +5160,62 @@ async function corrigirDuracoes(){
   ESF=null; SESSOES=[];                   /* a carga é recalculada com os valores novos */
   fecharSheet(); toast(`${l.length} duração(ões) corrigida(s)`); render();
 }
+/* ── O que está faltando nos seus dados ────────────────────────────────────
+   Carga de treino = duração × RPE. Faltando um dos dois, a sessão não entra na
+   conta — e o relatório passa a dizer que você treinou menos do que treinou,
+   sem avisar de onde vem o buraco.
+   Os avisos já existiam, mas espalhados (um dentro do card de carga, outro no
+   de duração) e sem dizer QUAL dia. Aqui viram uma lista só, com data e um
+   toque para abrir e corrigir. */
+function pendenciasSeco(){
+  const out=[], corrig=new Map(duracoesSuspeitas().map(x=>[x.id,x]));
+  for(const s of ((S.pro&&S.pro.seco)||[])){
+    const base={id:s.id,data:s.data,tipo:s.tipo||'Sessão',onde:'seco'};
+    const c=corrig.get(s.id);
+    if(c){out.push({...base,o:`duração gravada como ${fmtDur(c.de)}`,fazer:`corrige para ${fmtDur(c.para)}`,auto:true});continue}
+    const falta=[]; if(s.dur==null)falta.push('duração'); if(s.rpe==null)falta.push('RPE');
+    if(falta.length){out.push({...base,o:`sem ${falta.join(' nem ')}`,fazer:'não entra na carga'});continue}
+    if(s.dur>240)out.push({...base,o:`duração de ${fmtDur(s.dur)}`,fazer:'acima de 4h é raro — confira'});
+  }
+  return out.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+}
+/* Natação: dia com tempo anotado (logo, treino feito) que não aparece em
+   SESSOES — que é onde só entra quem tem RPE **e** duração preenchidos. */
+function pendenciasNatacao(){
+  if(!ESF)return null;                    /* ainda não consolidado */
+  const comCarga=new Set((SESSOES||[]).map(s=>s.data));
+  return [...new Set(ESF.map(e=>e.data))].filter(d=>d&&!comCarga.has(d)).sort().reverse()
+    .map(d=>{const t=S.tridx.find(x=>x.data===d&&(x.para||[]).includes(S.u.id));
+      return {id:t?t.id:null,data:d,tipo:t?(t.titulo||'Treino'):'Treino de piscina',
+        o:'sem RPE e duração da sessão',fazer:'entra só por estimativa',onde:'nat'};});
+}
+async function abrirPendencias(){
+  const desenha=nat=>{
+    const seco=pendenciasSeco(), auto=seco.filter(x=>x.auto);
+    const linha=x=>`<button class="card tight lst" style="width:100%;text-align:left;border:1px solid var(--line);border-left:4px solid var(--${x.auto?'ok':'clock'});border-radius:12px;margin:6px 0"
+      onclick="${x.onde==='seco'?`abrirTreinoExtra(null,'${x.id}')`:(x.id?`fecharSheet();abrirTreino('${x.id}')`:'toast(\'Treino não encontrado no índice\')')}">
+      <div class="row" style="align-items:baseline;gap:6px"><b class="grow">${esc(x.tipo)}</b><span class="xs muted">${brData(x.data)}</span></div>
+      <div class="xs" style="color:var(--clock);margin-top:2px">${x.o}</div>
+      <div class="xs muted">${x.fazer}</div></button>`;
+    const total=seco.length+((nat||[]).length);
+    sheet(`<h2>O que falta corrigir</h2>
+      ${total?`<div class="small muted">${total} item(ns). Toque em cada um para abrir e corrigir.</div>
+      <div class="note" style="margin:10px 0">Carga de treino é <b>duração × RPE</b>. Sem um dos dois a sessão não entra na conta, e o relatório mostra menos treino do que você fez.</div>`
+        :`<div class="note ok" style="margin:10px 0"><b>Nada pendente.</b> Todas as sessões têm duração e RPE, e nenhuma duração está fora da faixa.</div>`}
+      ${auto.length?`<div class="eyebrow" style="margin-top:12px">o app corrige sozinho (${auto.length})</div>
+        <button class="sm primary full" style="margin:6px 0" onclick="revisarDuracoes()">Revisar e corrigir as durações</button>`:''}
+      ${seco.filter(x=>!x.auto).length?`<div class="eyebrow" style="margin-top:14px">fora d'água (${seco.filter(x=>!x.auto).length})</div>
+        ${seco.filter(x=>!x.auto).map(linha).join('')}`:''}
+      ${nat===null?`<div class="eyebrow" style="margin-top:14px">natação</div>
+        <div class="small muted">Consolidando os treinos de piscina…</div>`
+        :(nat.length?`<div class="eyebrow" style="margin-top:14px">natação (${nat.length})</div>
+          <div class="xs muted" style="margin-bottom:2px">Treinos feitos sem o RPE e a duração da sessão. O app estima pela sua média, mas o número vira aproximação.</div>
+          ${nat.map(linha).join('')}`:'')}
+      <button class="ghost full" style="margin-top:14px" onclick="fecharSheet()">Fechar</button>`);
+  };
+  desenha(pendenciasNatacao());
+  if(!ESF){ ESF=await coletarEsforcos({dias:120}); desenha(pendenciasNatacao()); }
+}
 
 /* =====================================================================
    PRO — RELATÓRIO DE PERFORMANCE
@@ -5268,6 +5327,8 @@ function cardCargaTotal(){
     </div>
     ${usaEstim?`<div class="note" style="margin-top:8px"><b>${c.nSemRPE} treino(s) de natação sem RPE entraram por estimativa</b>, pela sua média de ${c.mediaNat.toLocaleString('pt-BR')} UA por sessão (${c.natExtrap.toLocaleString('pt-BR')} UA). Sem isso a natação apareceria com <b>${c.total?Math.round(c.natacao/c.total*100):0}%</b> — número que só refletiria o campo em branco, não o seu treino. Preencha RPE e duração e a conta deixa de precisar de estimativa.</div>`:''}
     ${(c.secoSuspeito&&c.secoSuspeito.length)?`<div class="note warn" style="margin-top:8px"><b>Confira a duração de ${c.secoSuspeito.length} sessão(ões) fora d'água.</b> ${c.secoSuspeito.slice(0,3).map(s=>`${brCurta(s.data)} · ${esc(s.tipo)} · <b>${Math.floor(s.dur/60)}h${String(s.dur%60).padStart(2,'0')}</b>`).join(' · ')}${c.secoSuspeito.length>3?' …':''}. Duração acima de 4h é rara numa sessão — se foi engano de digitação (ex.: "330" virando 330 minutos), ela está dominando a sua carga e distorcendo o ACWR e a recomendação de intensidade. Corrija em Saúde › fora d'água.</div>`:''}
+    ${(()=>{const n=pendenciasSeco().length+((pendenciasNatacao()||[]).length);
+      return n?`<button class="sm ghost full" style="margin-top:8px" onclick="abrirPendencias()">Ver os ${n} dia(s) com dado faltando</button>`:''})()}
     <div class="xs muted" style="margin-top:8px">Carga da sessão = <b>duração × RPE</b> (UA). Põe natação e treinos fora d'água (musculação, bike, corrida…) na mesma escala.</div>
     <div class="eyebrow" style="margin-top:12px">de onde vem cada unidade de carga</div>
     <table style="margin-top:6px"><tbody>
