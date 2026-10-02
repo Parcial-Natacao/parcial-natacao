@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v95';
+const VER='v96';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -809,11 +809,22 @@ function horasFlex(txt){
 }
 /* duração em MINUTOS (como o relógio mostra):
    "46:17" (mm:ss, treino <1h) = 46,28 · "1:15:30" (hh:mm:ss) = 75,5 · "90" (min) = 90. Nunca NaN. */
+/* DURAÇÃO DE SESSÃO em minutos. O "a:b" é ambíguo e os dois sentidos aparecem
+   de verdade: "46:17" é 46min17s (um treino de piscina) e "1:10" é 1h10 (uma
+   sessão de musculação). Antes tudo virava mm:ss, então 1:10 virava 1,17 min —
+   uma sessão de um minuto, que não existe.
+   Desempate por grandeza, não por formato: sessão de 1 a 6 MINUTOS não existe,
+   mas de 1 a 6 HORAS existe. Então primeiro campo ≤ 6 ⇒ hh:mm. */
 function durMin(txt){
   if(txt==null||txt==='')return null;
-  const s=String(txt).trim().replace(',','.');
-  if(s.includes(':')){ const p=s.split(':').map(x=>parseFloat(x)||0);
-    return +(p.length>=3?(p[0]*60+p[1]+p[2]/60):(p[0]+p[1]/60)).toFixed(2); }   /* 2 partes = mm:ss */
+  let s=String(txt).trim().toLowerCase().replace(',','.');
+  s=s.replace(/(\d)\s*h\s*(\d+)\s*(?:min)?/,'$1:$2').replace(/(\d)\s*h\b/,'$1:00');  /* 1h10, 2h */
+  s=s.replace(/\s*min\b/,'').replace(/[^0-9:.]/g,'');
+  if(s.includes(':')){
+    const p=s.split(':').map(x=>parseFloat(x)||0);
+    if(p.length>=3)return +(p[0]*60+p[1]+p[2]/60).toFixed(2);          /* hh:mm:ss */
+    return +(p[0]<=6?(p[0]*60+p[1]):(p[0]+p[1]/60)).toFixed(2);        /* hh:mm | mm:ss */
+  }
   const n=parseFloat(s); return isNaN(n)?null:n;
 }
 /* esportes do treino extra (fora d'água / cross-training do atleta) */
@@ -1634,7 +1645,39 @@ function parsePausa(l){
   return null;
 }
 function fmtPausa(ms){ const s=Math.round(ms/1000); if(s>=60){const m=Math.floor(s/60),r=s%60;return r?`${m}min${r}`:`${m}min`;} return s+'s'; }
+/* ── BROKEN (ou "quebrado") ────────────────────────────────────────────────
+   Simula a prova em trechos com descanso curto: broken de 50 = 25 + 25 com
+   10s de pausa; de 100 = 4×25 ou 2×50; de 200 = 4×50. NÃO é uma série de N
+   tiros — é UM tiro reconstruído, e o que interessa é a SOMA dos trechos.
+   Sem isso, "2x25" era lido como série comum e o atleta precisava inventar
+   rodadas para anotar cada trecho. */
+const BROKEN_PADRAO={50:25,100:25,200:50,400:100,800:100,1500:100};
+function parseBroken(l){
+  if(!/\b(broken|quebrad[oa]s?)\b/i.test(l))return null;
+  /* distância da PROVA: um número de prova que não seja o trecho do "NxM" */
+  const nums=[...l.matchAll(/(\d{2,4})/g)].map(m=>+m[1]);
+  const provas=[50,100,200,400,800,1500];
+  const dist=nums.find(n=>provas.includes(n)&&n>=50); if(!dist)return null;
+  /* estrutura explícita "4x25": só vale se os trechos somam a prova */
+  let trecho=null;
+  const me=l.match(/(\d{1,2})\s*[x×]\s*(\d{2,4})/);
+  if(me&&(+me[1])*(+me[2])===dist)trecho=+me[2];
+  if(!trecho)trecho=BROKEN_PADRAO[dist]||Math.round(dist/4);
+  const n=Math.round(dist/trecho); if(!(n>=2&&n<=8))return null;
+  /* descanso entre trechos, em segundos */
+  const md=l.match(/(?:desc(?:anso)?|pausa|rest|c\/)\s*(\d{1,3})\s*(?:s|seg|")?/i);
+  return {dist,trecho,n,desc:md?+md[1]:10};
+}
 function linhaParaItem(l){
+  const bk=parseBroken(l);
+  if(bk){
+    let estilo='livre'; for(const[re,v]of ESTILOS){if(re.test(l)){estilo=v;break}}
+    const tags=[]; for(const[re,v]of RECURSOS){if(re.test(l))tags.push(v)}
+    const mr=l.match(/(\d{1,2})\s*[x×]\s*(?:broken|quebrad)/i);   /* "2x broken 50" */
+    const rod=mr?Math.min(+mr[1],12):1;
+    return{id:uid(),rodadas:rod,reps:1,dist:bk.dist,estilo,tags,intervalo:null,
+      pausa:bk.desc*1000,broken:bk,parcial:false,forte:true,obs:'',texto:l,vol:rod*bk.dist};
+  }
   let rodadas=1,reps=1,dist=null;
   /* série dupla: "2x 4x50" → 2 rodadas de 4×50 */
   const m2=l.match(/(\d{1,2})\s*[x×]\s*(\d{1,3})\s*[x×]\s*(\d{2,5})/i);
@@ -2001,6 +2044,15 @@ function linhaSerie(t,i,at,blocoSolto){
     :`<button class="sm ghost" style="font-weight:800;font-size:18px;line-height:1;padding:6px 12px${logged?'':';color:var(--water)'}" title="${logged?'editar tempos':'registrar tempo'}" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">${logged?'✎':'+'}</button>`;
   const chips=aa
     ? (rec.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(rec.ritmo100,true)}</span></div>`:'')
+    : i.broken
+      /* o destaque é a SOMA; os trechos ficam ao lado, menores */
+      ? (()=>{const rr=multi?rds:[rec];
+          return rr.map((r,ri)=>{const tv=(r.tempos||[]).slice(0,i.broken.n);
+            const s=somaBroken(tv); if(s==null)return'';
+            return`<div class="chips" style="margin-top:4px">
+              ${multi?`<span class="chip" style="background:var(--deck);font-weight:800">R${ri+1}</span>`:''}
+              <span class="chip best" style="font-weight:800">soma ${fmt(s,true)}</span>
+              ${tv.map(x=>x==null?'':`<span class="chip">${fmt(x,true)}</span>`).join('')}</div>`;}).join('');})()
     : multi
       ? rds.map((r,ri)=>(r.tempos||[]).some(x=>x!=null)?`<div class="chips" style="margin-top:4px"><span class="chip" style="background:var(--deck);font-weight:800">R${ri+1}</span>${(r.tempos||[]).map((x,ix)=>{ if(x==null)return''; const pa=r.parciais&&r.parciais[ix]; const extra=Array.isArray(pa)?` <span style="color:var(--water)">(${pa.map((v,k)=>v==null?'—':fmt(k===0?v:v-pa[k-1],true)).join(' · ')})</span>`:''; return`<span class="chip ${x===mel?'best':''}">${fmt(x,true)}${extra}</span>`;}).join('')}</div>`:'').join('')
       : (ts.length?`<div class="chips">${(rec.tempos||[]).map((x,ix)=>{ if(x==null)return'';
@@ -2032,6 +2084,57 @@ function tabelaReps(item,r,itemId,atletaId,rd){
         </td></tr>`).join('')}
     </tbody></table></div>`;
 }
+/* ── Lançamento de BROKEN ──────────────────────────────────────────────────
+   Um campo por trecho e a SOMA calculada na hora. É a soma que importa: ela é
+   o tempo "de prova" simulado, e é com ela que o técnico compara. Cada broken
+   repetido é uma RODADA, não um novo item — era isso que obrigava o atleta a
+   abrir nove rodadas para um treino só. */
+function somaBroken(arr){
+  const v=(arr||[]).filter(x=>x!=null);
+  return v.length?v.reduce((a,b)=>a+b,0):null;
+}
+function abrirBroken(itemId,atletaId,item,at,rec,nrd){
+  const bk=item.broken, rd=(nrd>1)?(S.rd==null||S.rd<0||S.rd>=nrd?0:S.rd):0;
+  const atual=nrd>1?((rec.rd&&rec.rd[rd])||{tempos:[]}):rec;
+  const tv=atual.tempos||[];
+  const soma=somaBroken(tv.slice(0,bk.n));
+  const pb=pbDe(S.pro&&at.id===S.u.id?S.pro:null,bk.dist,item.estilo);
+  const campos=Array.from({length:bk.n},(_,k)=>`
+    <div class="field" style="margin:0">
+      <label>${k+1}º trecho · ${bk.trecho}m</label>
+      <input id="bk${k}" inputmode="decimal" placeholder="${bk.trecho<=25?'13.80':'31.50'}"
+        value="${tv[k]!=null?fmt(tv[k],true):''}" oninput="atualizaSomaBroken(${bk.n})">
+    </div>`).join('');
+  sheet(`<h2>Broken ${bk.dist} ${esc(item.estilo)}</h2>
+    <div class="small muted">${esc(at.nome)} · ${bk.n}×${bk.trecho}m com ${bk.desc}s de descanso${nrd>1?` · rodada ${rd+1} de ${nrd}`:''}</div>
+    <div class="note" style="margin:10px 0">Anote o tempo de <b>cada trecho</b>. A soma é o seu tempo simulado de ${bk.dist}m — o app calcula sozinho.</div>
+    ${nrd>1?`<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      ${Array.from({length:nrd},(_,ri)=>{const f=rec.rd&&rec.rd[ri]&&(rec.rd[ri].tempos||[]).some(x=>x!=null);
+        return`<button class="sm ${ri===rd?'primary':'ghost'}" onclick="S.rd=${ri};abrirLancamento('${itemId}','${atletaId}')">Rodada ${ri+1}${f?' ✓':''}</button>`;}).join('')}
+    </div>`:''}
+    <div class="grid2" style="gap:8px">${campos}</div>
+    <div class="card" style="margin-top:12px;text-align:center">
+      <div class="eyebrow">soma dos trechos</div>
+      <div class="n" id="bkSoma" style="font-size:30px;font-weight:800;letter-spacing:-.5px">${soma!=null?fmt(soma,true):'—'}</div>
+      <div class="xs muted" id="bkPB">${(soma!=null&&pb)?`${(pb/soma*100).toFixed(1)}% do seu PB (${fmt(pb,true)})`:`seu ${bk.dist}m ${pb?'PB '+fmt(pb,true):'sem PB registrado'}`}</div>
+    </div>
+    <div class="xs muted" style="margin-top:8px">O broken sai <b>mais rápido</b> que a prova real — o descanso ajuda. Serve para medir ritmo e manutenção, não para virar PB: o app guarda separado e não usa como marca.</div>
+    <button class="primary full" style="margin-top:12px" onclick="salvarBroken('${itemId}','${atletaId}',${bk.n},${nrd>1?rd:'null'})">Salvar broken</button>
+    <button class="ghost full" style="margin-top:8px" onclick="addRodada('${itemId}','${atletaId}')">+ outro broken (rodada ${nrd+1})</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`);
+}
+function atualizaSomaBroken(n){
+  const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
+  const s=somaBroken(tv), el=document.getElementById('bkSoma');
+  if(el)el.textContent=s!=null?fmt(s,true):'—';
+}
+async function salvarBroken(itemId,atletaId,n,rd){
+  const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
+  if(!tv.some(x=>x!=null))return toast('Anote ao menos um trecho');
+  await gravarReg(itemId,atletaId,rd,tv,[]);
+  const s=somaBroken(tv);
+  fecharSheet(); toast(s!=null?`Broken salvo · soma ${fmt(s,true)}`:'Broken salvo'); render();
+}
 function abrirLancamento(itemId,atletaId){
   const t=S.treino,item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId);
   const at=(ehGestor()?S.elenco:[S.u]).find(a=>a.id===atletaId)||S.u;
@@ -2046,6 +2149,7 @@ function abrirLancamento(itemId,atletaId){
     return;
   }
   const nrd=nRodadas(item,rec);
+  if(item.broken){ return abrirBroken(itemId,atletaId,item,at,rec,nrd); }
   if(splitElegivel(item,t.piscina)){ return abrirSplits(itemId,atletaId,item,at,rec); }
   const btnAdd=`<button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>`;
   const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
@@ -4749,6 +4853,19 @@ async function coletarEsforcos(opts){
     for(const b of t.blocos||[])for(const i of b.itens){
       const r=t.registros?.[alvo]?.[i.id]; if(!r)continue;
       const series=r.rd?r.rd:[r];   /* achata rodadas (do interpretador OU manuais) */
+      /* BROKEN: os tempos são TRECHOS, não repetições. Entra UM esforço, a soma,
+         marcado broken — e marcado é o que importa: com descanso no meio ele sai
+         mais rápido que a prova, então não pode disputar com os tiros normais o
+         papel de referência em %PB e projeção. */
+      if(i.broken){
+        for(const s of series){
+          const soma=somaBroken((s.tempos||[]).slice(0,i.broken.n));
+          if(soma!=null)out.push({data:t.data,dist:i.dist,estilo:i.estilo,tags:i.tags,
+            tempo:soma,p1:(s.tempos||[])[0]??null,forte:true,vol:i.vol,
+            broken:true,trechos:(s.tempos||[]).slice(0,i.broken.n),desc:i.broken.desc});
+        }
+        continue;
+      }
       for(const s of series)(s.tempos||[]).forEach((x,k)=>{ if(x==null)return;
         const pk=s.parciais?.[k];
         /* p1 = split de 25m dos 50m (para o "custo do segundo 25"): escalar (legado) ou 1ª passagem do array */
@@ -5797,6 +5914,7 @@ function cardBaseline(pro,comPct){
 function melhorTempo(comPct,d,e,dias,ate){
   const h0=new Date((ate||hoje())+'T00:00:00');
   const rec=comPct.filter(x=>{
+    if(x.broken)return false;   /* broken tem descanso no meio: não é tiro contínuo */
     if(x.dist!==d||x.estilo!==e)return false;
     const dt=(h0-new Date(x.data+'T00:00:00'))/86400000;
     if(ate&&dt<0)return false;   /* autocalibração: só os tiros que existiam ANTES da prova */
