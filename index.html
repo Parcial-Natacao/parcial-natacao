@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v96';
+const VER='v97';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2044,10 +2044,10 @@ function linhaSerie(t,i,at,blocoSolto){
     :`<button class="sm ghost" style="font-weight:800;font-size:18px;line-height:1;padding:6px 12px${logged?'':';color:var(--water)'}" title="${logged?'editar tempos':'registrar tempo'}" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">${logged?'✎':'+'}</button>`;
   const chips=aa
     ? (rec.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(rec.ritmo100,true)}</span></div>`:'')
-    : i.broken
+    : brokenDe(i,rec)
       /* o destaque é a SOMA; os trechos ficam ao lado, menores */
-      ? (()=>{const rr=multi?rds:[rec];
-          return rr.map((r,ri)=>{const tv=(r.tempos||[]).slice(0,i.broken.n);
+      ? (()=>{const bkI=brokenDe(i,rec), rr=multi?rds:[rec];
+          return rr.map((r,ri)=>{const tv=(r.tempos||[]).slice(0,bkI.n);
             const s=somaBroken(tv); if(s==null)return'';
             return`<div class="chips" style="margin-top:4px">
               ${multi?`<span class="chip" style="background:var(--deck);font-weight:800">R${ri+1}</span>`:''}
@@ -2093,8 +2093,27 @@ function somaBroken(arr){
   const v=(arr||[]).filter(x=>x!=null);
   return v.length?v.reduce((a,b)=>a+b,0):null;
 }
+/* Trechos possíveis: têm que dividir a prova em 2 a 8 pedaços. Num broken de
+   50 só existe 25; de 100 para cima quem decide é o técnico com o atleta. */
+function intervalosBroken(dist){
+  return [25,50,100].filter(iv=>iv<dist&&dist%iv===0&&dist/iv>=2&&dist/iv<=8);
+}
+/* Descritor EFETIVO do broken: o que veio do texto do treino, com a escolha do
+   atleta por cima. Também permite marcar como broken uma série que o técnico
+   não escreveu com essa palavra — é o registro que manda. */
+function brokenDe(item,rec){
+  if(!item||!item.dist)return null;
+  const opts=intervalosBroken(item.dist); if(!opts.length)return null;
+  const base=item.broken||((rec&&rec.bk)?{dist:item.dist,trecho:opts[0],desc:10}:null);
+  if(!base)return null;
+  let trecho=(rec&&rec.bkTrecho)||base.trecho||opts[0];
+  if(!opts.includes(trecho))trecho=opts[0];
+  return {dist:item.dist,trecho,n:Math.round(item.dist/trecho),
+    desc:(rec&&rec.bkDesc!=null?rec.bkDesc:base.desc)||10,opts};
+}
 function abrirBroken(itemId,atletaId,item,at,rec,nrd){
-  const bk=item.broken, rd=(nrd>1)?(S.rd==null||S.rd<0||S.rd>=nrd?0:S.rd):0;
+  const bk=brokenDe(item,rec); if(!bk)return;
+  const rd=(nrd>1)?(S.rd==null||S.rd<0||S.rd>=nrd?0:S.rd):0;
   const atual=nrd>1?((rec.rd&&rec.rd[rd])||{tempos:[]}):rec;
   const tv=atual.tempos||[];
   const soma=somaBroken(tv.slice(0,bk.n));
@@ -2107,11 +2126,16 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
     </div>`).join('');
   sheet(`<h2>Broken ${bk.dist} ${esc(item.estilo)}</h2>
     <div class="small muted">${esc(at.nome)} · ${bk.n}×${bk.trecho}m com ${bk.desc}s de descanso${nrd>1?` · rodada ${rd+1} de ${nrd}`:''}</div>
+    ${bk.opts.length>1?`<div class="field" style="margin:10px 0 4px"><label>Parciais a cada</label>
+      <div class="opt">${bk.opts.map(iv=>`<button class="${iv===bk.trecho?'on':''}" onclick="setTrechoBroken('${itemId}','${atletaId}',${iv})">${iv}m</button>`).join('')}</div>
+      <div class="xs muted" style="margin-top:2px">Você e o técnico decidem: ${bk.opts.map(iv=>`${bk.dist/iv}×${iv}m`).join(' ou ')}.</div></div>`
+      :`<div class="xs muted" style="margin:8px 0 0">Parciais de ${bk.trecho}m — num broken de ${bk.dist}m é a única divisão possível.</div>`}
     <div class="note" style="margin:10px 0">Anote o tempo de <b>cada trecho</b>. A soma é o seu tempo simulado de ${bk.dist}m — o app calcula sozinho.</div>
-    ${nrd>1?`<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    ${nrd>1?`<div class="row" style="gap:6px;margin-bottom:6px;flex-wrap:wrap">
       ${Array.from({length:nrd},(_,ri)=>{const f=rec.rd&&rec.rd[ri]&&(rec.rd[ri].tempos||[]).some(x=>x!=null);
         return`<button class="sm ${ri===rd?'primary':'ghost'}" onclick="S.rd=${ri};abrirLancamento('${itemId}','${atletaId}')">Rodada ${ri+1}${f?' ✓':''}</button>`;}).join('')}
-    </div>`:''}
+    </div>
+    <button class="sm ghost full" style="margin-bottom:10px" onclick="apagarRodada('${itemId}','${atletaId}',${rd})">Apagar a rodada ${rd+1}</button>`:''}
     <div class="grid2" style="gap:8px">${campos}</div>
     <div class="card" style="margin-top:12px;text-align:center">
       <div class="eyebrow">soma dos trechos</div>
@@ -2122,6 +2146,61 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
     <button class="primary full" style="margin-top:12px" onclick="salvarBroken('${itemId}','${atletaId}',${bk.n},${nrd>1?rd:'null'})">Salvar broken</button>
     <button class="ghost full" style="margin-top:8px" onclick="addRodada('${itemId}','${atletaId}')">+ outro broken (rodada ${nrd+1})</button>
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`);
+}
+/* Trocar o trecho é decisão do atleta/técnico, então fica no REGISTRO, não no
+   item — o treino do técnico continua como ele escreveu. Zera os tempos porque
+   um broken de 4×25 não tem como virar 2×50 reaproveitando números. */
+/* Se o técnico escreveu de um jeito que o app não reconheceu como broken, o
+   atleta marca na mão — sem depender de eu adivinhar toda forma de escrever. */
+async function marcarComoBroken(itemId,atletaId){
+  const item=(S.treino.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId); if(!item)return;
+  const opts=intervalosBroken(item.dist); if(!opts.length)return toast('Esta distância não se divide em broken');
+  const rec=(S.treino.registros?.[atletaId]?.[itemId])||{};
+  const tinha=(rec.tempos||[]).some(x=>x!=null)||(rec.rd||[]).some(r=>(r.tempos||[]).some(x=>x!=null));
+  if(tinha&&!confirm('Lançar como broken apaga os tempos já anotados nesta série. Continuar?'))return;
+  await mutarRegistro(itemId,atletaId,r=>{ r.bk=true; r.bkTrecho=opts[0]; r.tempos=[]; r.parciais=[]; delete r.rd; delete r.nrd; });
+  S.rd=0; abrirLancamento(itemId,atletaId);
+}
+async function setTrechoBroken(itemId,atletaId,iv){
+  const t=S.treino; if(!t)return;
+  const rec=(t.registros?.[atletaId]?.[itemId])||{};
+  const tinha=(rec.tempos||[]).some(x=>x!=null)||(rec.rd||[]).some(r=>(r.tempos||[]).some(x=>x!=null));
+  if(tinha&&!confirm('Trocar a metragem das parciais apaga os tempos já anotados deste broken. Continuar?'))return;
+  await mutarRegistro(itemId,atletaId,r=>{ r.bk=true; r.bkTrecho=iv; r.tempos=[]; r.parciais=[]; delete r.rd; delete r.nrd; });
+  S.rd=0; abrirLancamento(itemId,atletaId);
+}
+/* FALTAVA: não havia como apagar uma rodada criada por engano — só dava para
+   limpar os tempos, e a rodada vazia continuava lá para sempre. */
+async function apagarRodada(itemId,atletaId,idx){
+  const t=S.treino; if(!t)return;
+  const rec=(t.registros?.[atletaId]?.[itemId])||{};
+  const n=nRodadas((t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId),rec);
+  if(n<=1)return toast('Só há uma rodada');
+  if(!confirm(`Apagar a rodada ${idx+1} e os tempos dela?`))return;
+  await mutarRegistro(itemId,atletaId,r=>{
+    const arr=(r.rd||[]).slice(); arr.splice(idx,1);
+    if(arr.length<=1){ const u=arr[0]||{tempos:[],parciais:[]};
+      r.tempos=u.tempos||[]; r.parciais=u.parciais||[]; delete r.rd; delete r.nrd; }
+    else { r.rd=arr; r.nrd=arr.length; }
+  });
+  S.rd=Math.max(0,idx-1);
+  toast(`Rodada ${idx+1} apagada`); abrirLancamento(itemId,atletaId);
+}
+/* alteração atômica de um registro, reaproveitando a transação dos tempos */
+async function mutarRegistro(itemId,atletaId,fn){
+  const trId=S.treino.id;
+  /* Cópia do estado ANTES da alteração otimista. Sem isso, quando a transação
+     cai no caminho de contingência (offline) o `muta` recebe null e partia do
+     S.treino JÁ alterado — aplicando a mudança duas vezes. Gravar tempo
+     aguentava (grava o mesmo valor), mas apagar rodada removia duas. */
+  const original=JSON.stringify(S.treino);
+  const aplicar=base=>{ const t=base||JSON.parse(original);
+    t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
+    const r=t.registros[atletaId][itemId]||{}; fn(r); r.em=Date.now(); r.por=S.u.nome;
+    t.registros[atletaId][itemId]=r; t.atualizado=Date.now(); return t; };
+  S.treino=aplicar(null);
+  const salvo=await transacao(kTr(S.u.equipe,trId),serv=>aplicar(serv||null));
+  if(salvo)S.treino=salvo;
 }
 function atualizaSomaBroken(n){
   const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
@@ -2149,11 +2228,13 @@ function abrirLancamento(itemId,atletaId){
     return;
   }
   const nrd=nRodadas(item,rec);
-  if(item.broken){ return abrirBroken(itemId,atletaId,item,at,rec,nrd); }
+  if(brokenDe(item,rec)){ return abrirBroken(itemId,atletaId,item,at,rec,nrd); }
   if(splitElegivel(item,t.piscina)){ return abrirSplits(itemId,atletaId,item,at,rec); }
   const btnAdd=`<button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>`;
   const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
     ${btnAdd}
+    ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
+    ${intervalosBroken(item.dist).length?`<button class="ghost full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}')">Lançar como broken (tiro quebrado)</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`;
   if(nrd>1){
     if(S.rd==null||S.rd<0||S.rd>=nrd)S.rd=0;
@@ -2271,8 +2352,9 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais){
   /* aplica SEMPRE sobre a versão que vier (a do servidor, dentro da
      transação), mexendo só na subárvore DESTE atleta — assim o registro de
      quem lançou junto é preservado. Função pura: pode ser reexecutada. */
+  const original=JSON.stringify(S.treino);   /* base limpa: ver nota em mutarRegistro */
   const aplicar=base=>{
-    const t=base||S.treino;
+    const t=base||JSON.parse(original);
     t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
     const prev=t.registros[atletaId][itemId]||{};
     if(rd==null){
@@ -2288,7 +2370,7 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais){
     return t;
   };
   /* tela responde na hora (é o que evita a sensação de lapso)… */
-  S.treino=aplicar(JSON.parse(JSON.stringify(S.treino)));
+  S.treino=aplicar(null);
   /* …e a gravação é atômica em cima do que está no servidor. */
   const salvo=await transacao(kTr(S.u.equipe,trId),serv=>aplicar(serv||null));
   if(salvo)S.treino=salvo;
@@ -4857,12 +4939,13 @@ async function coletarEsforcos(opts){
          marcado broken — e marcado é o que importa: com descanso no meio ele sai
          mais rápido que a prova, então não pode disputar com os tiros normais o
          papel de referência em %PB e projeção. */
-      if(i.broken){
+      const bkI=brokenDe(i,r);
+      if(bkI){
         for(const s of series){
-          const soma=somaBroken((s.tempos||[]).slice(0,i.broken.n));
+          const soma=somaBroken((s.tempos||[]).slice(0,bkI.n));
           if(soma!=null)out.push({data:t.data,dist:i.dist,estilo:i.estilo,tags:i.tags,
             tempo:soma,p1:(s.tempos||[])[0]??null,forte:true,vol:i.vol,
-            broken:true,trechos:(s.tempos||[]).slice(0,i.broken.n),desc:i.broken.desc});
+            broken:true,trecho:bkI.trecho,trechos:(s.tempos||[]).slice(0,bkI.n),desc:bkI.desc});
         }
         continue;
       }
