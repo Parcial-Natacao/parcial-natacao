@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v98';
+const VER='v99';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1648,9 +1648,13 @@ function fmtPausa(ms){ const s=Math.round(ms/1000); if(s>=60){const m=Math.floor
 /* ── BROKEN (ou "quebrado") ────────────────────────────────────────────────
    Simula a prova em trechos com descanso curto: broken de 50 = 25 + 25 com
    10s de pausa; de 100 = 4×25 ou 2×50; de 200 = 4×50. NÃO é uma série de N
-   tiros — é UM tiro reconstruído, e o que interessa é a SOMA dos trechos.
-   Sem isso, "2x25" era lido como série comum e o atleta precisava inventar
-   rodadas para anotar cada trecho. */
+   tiros — é UM tiro reconstruído, e o que interessa é o tempo da PROVA.
+   "3x BROKEN 50" são três brokens de 50, ou seja três RODADAS.
+
+   O broken só existe onde o técnico ESCREVEU broken (ou quebrado) — é o
+   treino que manda, não um botão de conversão. O app chegou a oferecer
+   "marcar como broken" em qualquer série parecida, e isso só criava chance
+   de transformar tiros soltos em prova simulada por engano. */
 const BROKEN_PADRAO={50:25,100:25,200:50,400:100,800:100,1500:100};
 function parseBroken(l){
   if(!/\b(broken|quebrad[oa]s?)\b/i.test(l))return null;
@@ -2030,12 +2034,17 @@ function linhaSerie(t,i,at,blocoSolto){
      (parcial/forte/simulação) SEMPRE ganha o botão, mesmo se o bloco foi rotulado como solto —
      conserta treinos já salvos com a estrutura de blocos antiga. */
   const semCrono=!!blocoSolto&&(i.reps||1)<=1&&(i.rodadas||1)<=1&&!i.parcial&&!i.forte;
-  const ts=temposItem(rec,i);
+  /* No broken o que conta é o tempo da PROVA de cada rodada, não os trechos: um
+     25m de 14.02 comparado ao PB de 50m dava 220% e pintava a série de absurdo. */
+  const bkSerie=aa?null:brokenDe(i,rec);
+  const ts=bkSerie
+    ? (multi?rds:[rec]).map(r=>tempoBroken(r,bkSerie.n)).filter(x=>x!=null)
+    : temposItem(rec,i);
   const logged=aa?(rec.ritmo100!=null):ts.length;
   const dadosPB=at.id===S.u.id?S.pro:null;
   const mel=ts.length?Math.min(...ts):null;                                  /* só p/ destacar o melhor tiro */
   const med=ts.length?ts.reduce((a,b)=>a+b,0)/ts.length:null;                /* %PB da SÉRIE = média dos tiros */
-  const pbSerie=dadosPB?(pbDe(dadosPB,i.dist,i.estilo)||0):0;
+  const pbSerie=dadosPB?(pbDe(dadosPB,bkSerie?bkSerie.dist:i.dist,i.estilo)||0):0;
   const pct=(!aa&&pbSerie&&med)?(pbSerie/med*100)||null:null;
   const pctMel=(!aa&&pbSerie&&mel)?(pbSerie/mel*100)||null:null;
   const z=zona(pct);
@@ -2044,14 +2053,14 @@ function linhaSerie(t,i,at,blocoSolto){
     :`<button class="sm ghost" style="font-weight:800;font-size:18px;line-height:1;padding:6px 12px${logged?'':';color:var(--water)'}" title="${logged?'editar tempos':'registrar tempo'}" onclick="S.rd=0;abrirLancamento('${i.id}','${at.id}')">${logged?'✎':'+'}</button>`;
   const chips=aa
     ? (rec.ritmo100!=null?`<div class="chips"><span class="chip">ritmo /100m · ${fmt(rec.ritmo100,true)}</span></div>`:'')
-    : brokenDe(i,rec)
-      /* o destaque é a SOMA; os trechos ficam ao lado, menores */
-      ? (()=>{const bkI=brokenDe(i,rec), rr=multi?rds:[rec];
+    : bkSerie
+      /* o destaque é o tempo da prova; os trechos ficam ao lado, menores */
+      ? (()=>{const bkI=bkSerie, rr=multi?rds:[rec];
           return rr.map((r,ri)=>{const tv=(r.tempos||[]).slice(0,bkI.n);
-            const s=somaBroken(tv); if(s==null)return'';
+            const s=tempoBroken(r,bkI.n); if(s==null)return'';
             return`<div class="chips" style="margin-top:4px">
               ${multi?`<span class="chip" style="background:var(--deck);font-weight:800">R${ri+1}</span>`:''}
-              <span class="chip best" style="font-weight:800">soma ${fmt(s,true)}</span>
+              <span class="chip best" style="font-weight:800">${bkI.dist}m ${fmt(s,true)}</span>
               ${tv.map(x=>x==null?'':`<span class="chip">${fmt(x,true)}</span>`).join('')}</div>`;}).join('');})()
     : multi
       ? rds.map((r,ri)=>(r.tempos||[]).some(x=>x!=null)?`<div class="chips" style="margin-top:4px"><span class="chip" style="background:var(--deck);font-weight:800">R${ri+1}</span>${(r.tempos||[]).map((x,ix)=>{ if(x==null)return''; const pa=r.parciais&&r.parciais[ix]; const extra=Array.isArray(pa)?` <span style="color:var(--water)">(${pa.map((v,k)=>v==null?'—':fmt(k===0?v:v-pa[k-1],true)).join(' · ')})</span>`:''; return`<span class="chip ${x===mel?'best':''}">${fmt(x,true)}${extra}</span>`;}).join('')}</div>`:'').join('')
@@ -2064,7 +2073,7 @@ function linhaSerie(t,i,at,blocoSolto){
   return`<div class="item ${logged?'sel':''}">
     <div class="row" style="align-items:baseline;flex-wrap:wrap;gap:6px">
       <span class="grow" style="min-width:58%"><b>${esc(i.texto||((i.rodadas>1?i.rodadas+'x ':'')+(i.reps>1?i.reps+'×':'')+i.dist+' '+i.estilo))}</b></span>
-      ${z?`<span class="z ${z.c}" title="${pct.toFixed(0)}% do PB — média dos ${ts.length} tiro(s) da série${pctMel?` · melhor tiro ${pctMel.toFixed(0)}%`:''}">${pct.toFixed(0)}%</span>`:''}
+      ${z?`<span class="z ${z.c}" title="${pct.toFixed(0)}% do PB de ${bkSerie?bkSerie.dist:i.dist}m — média ${bkSerie?`dos ${ts.length} broken(s)`:`dos ${ts.length} tiro(s) da série`}${pctMel?` · melhor ${pctMel.toFixed(0)}%`:''}">${pct.toFixed(0)}%</span>`:''}
       ${botao}
     </div>
     ${chips}
@@ -2098,34 +2107,31 @@ function somaBroken(arr){
 function intervalosBroken(dist){
   return [25,50,100].filter(iv=>iv<dist&&dist%iv===0&&dist/iv>=2&&dist/iv<=8);
 }
-/* Descritor EFETIVO do broken: o que veio do texto do treino, com a escolha do
-   atleta por cima. Também permite marcar como broken uma série que o técnico
-   não escreveu com essa palavra — é o registro que manda. */
+/* Descritor EFETIVO do broken. A ÚNICA fonte é a prescrição; do registro vem
+   só a escolha da metragem das parciais (25m ou 50m), que é combinada na beira
+   da piscina e não muda o treino que o técnico escreveu.
+   Relemos `item.texto` quando `item.broken` não existe porque os blocos ficam
+   congelados na publicação: treino salvo ANTES do interpretador de broken
+   existir continua com a palavra "broken" no texto, e é justo que valha. */
 function brokenDe(item,rec){
-  if(!item||!item.dist)return null;
-  if(!(item.broken||(rec&&rec.bk)))return null;
-  /* A prova pode vir de três lugares, nesta ordem: escolha do atleta, texto do
-     treino, ou a própria distância do item. A escolha existe porque treinos
-     salvos ANTES do broken existir viraram série comum — "Broken 50 2x25" foi
-     lido como 2 tiros de 25m, e nenhum broken de 25 existe. */
-  const dist=(rec&&rec.bkDist)||(item.broken&&item.broken.dist)||item.dist;
+  if(!item)return null;
+  const bk=item.broken||parseBroken(item.texto||'');
+  if(!bk)return null;
+  const dist=bk.dist||item.dist; if(!dist)return null;
   const opts=intervalosBroken(dist); if(!opts.length)return null;
-  let trecho=(rec&&rec.bkTrecho)||(item.broken&&item.broken.trecho)||opts[0];
+  let trecho=(rec&&rec.bkTrecho)||bk.trecho||opts[0];
   if(!opts.includes(trecho))trecho=opts[0];
-  const desc=(rec&&rec.bkDesc!=null)?rec.bkDesc:((item.broken&&item.broken.desc)||10);
+  const desc=(rec&&rec.bkDesc!=null)?rec.bkDesc:(bk.desc||10);
   return {dist,trecho,n:Math.round(dist/trecho),desc,opts};
 }
-/* Provas que esta série PODE representar: ela mesma, ou a soma das repetições
-   (2×25 = broken de 50, 4×25 = de 100). É o que resgata os treinos antigos. */
-function brokenCandidatos(item){
-  if(!item||!item.dist)return [];
-  const provas=[50,100,200,400], out=[];
-  /* a própria distância só vale se a série é de UMA repetição: num 8×50 o
-     broken plausível é o de 400 (8 trechos de 50), não o de 50 */
-  if((item.reps||1)===1&&intervalosBroken(item.dist).length)out.push(item.dist);
-  const tot=(item.reps||1)*item.dist;
-  if(tot!==item.dist&&provas.includes(tot)&&intervalosBroken(tot).length)out.push(tot);
-  return out;
+/* Tempo da prova simulada: o que o CRONÔMETRO marcou, se foi anotado; senão a
+   soma dos trechos. Os dois quase nunca batem na casa do centésimo — 14.02 +
+   16.31 = 30.33 com o relógio marcando 30.29 — e inventar que a soma é a
+   verdade seria descartar a única medida direta que existe. */
+function tempoBroken(reg,n){
+  if(!reg)return null;
+  if(reg.tot!=null)return reg.tot;
+  return somaBroken((reg.tempos||[]).slice(0,n));
 }
 function abrirBroken(itemId,atletaId,item,at,rec,nrd){
   const bk=brokenDe(item,rec); if(!bk)return;
@@ -2140,63 +2146,50 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
       <input id="bk${k}" inputmode="decimal" placeholder="${bk.trecho<=25?'13.80':'31.50'}"
         value="${tv[k]!=null?fmt(tv[k],true):''}" oninput="atualizaSomaBroken(${bk.n})">
     </div>`).join('');
+  const tot=atual.tot;
   sheet(`<h2>Broken ${bk.dist} ${esc(item.estilo)}</h2>
     <div class="small muted">${esc(at.nome)} · ${bk.n}×${bk.trecho}m com ${bk.desc}s de descanso${nrd>1?` · rodada ${rd+1} de ${nrd}`:''}</div>
     ${bk.opts.length>1?`<div class="field" style="margin:10px 0 4px"><label>Parciais a cada</label>
       <div class="opt">${bk.opts.map(iv=>`<button class="${iv===bk.trecho?'on':''}" onclick="setTrechoBroken('${itemId}','${atletaId}',${iv})">${iv}m</button>`).join('')}</div>
       <div class="xs muted" style="margin-top:2px">Você e o técnico decidem: ${bk.opts.map(iv=>`${bk.dist/iv}×${iv}m`).join(' ou ')}.</div></div>`
       :`<div class="xs muted" style="margin:8px 0 0">Parciais de ${bk.trecho}m — num broken de ${bk.dist}m é a única divisão possível.</div>`}
-    <div class="note" style="margin:10px 0">Anote o tempo de <b>cada trecho</b>. A soma é o seu tempo simulado de ${bk.dist}m — o app calcula sozinho.</div>
+    <div class="note" style="margin:10px 0">Anote o tempo de <b>cada trecho</b> e o <b>tempo total</b> do cronômetro. O total é o seu ${bk.dist}m simulado.</div>
     ${nrd>1?`<div class="row" style="gap:6px;margin-bottom:6px;flex-wrap:wrap">
-      ${Array.from({length:nrd},(_,ri)=>{const f=rec.rd&&rec.rd[ri]&&(rec.rd[ri].tempos||[]).some(x=>x!=null);
+      ${Array.from({length:nrd},(_,ri)=>{const f=rec.rd&&rec.rd[ri]&&tempoBroken(rec.rd[ri],bk.n)!=null;
         return`<button class="sm ${ri===rd?'primary':'ghost'}" onclick="S.rd=${ri};abrirLancamento('${itemId}','${atletaId}')">Rodada ${ri+1}${f?' ✓':''}</button>`;}).join('')}
     </div>
     <button class="sm ghost full" style="margin-bottom:10px" onclick="apagarRodada('${itemId}','${atletaId}',${rd})">Apagar a rodada ${rd+1}</button>`:''}
     <div class="grid2" style="gap:8px">${campos}</div>
+    <div class="field" style="margin:12px 0 0">
+      <label>Tempo total · ${bk.dist}m</label>
+      <input id="bkTot" inputmode="decimal" placeholder="${soma!=null?fmt(soma,true):(bk.dist<=50?'30.29':'1:08.50')}"
+        value="${tot!=null?fmt(tot,true):''}" oninput="atualizaSomaBroken(${bk.n})">
+      <div class="xs muted" style="margin-top:2px">O que o cronômetro marcou. Em branco, o app usa a soma dos trechos.</div>
+    </div>
     <div class="card" style="margin-top:12px;text-align:center">
       <div class="eyebrow">soma dos trechos</div>
       <div class="n" id="bkSoma" style="font-size:30px;font-weight:800;letter-spacing:-.5px">${soma!=null?fmt(soma,true):'—'}</div>
-      <div class="xs muted" id="bkPB">${(soma!=null&&pb)?`${(pb/soma*100).toFixed(1)}% do seu PB (${fmt(pb,true)})`:`seu ${bk.dist}m ${pb?'PB '+fmt(pb,true):'sem PB registrado'}`}</div>
+      <div class="xs muted" id="bkPB" data-pb="${pb||0}">${((tot??soma)!=null&&pb)?`${(pb/(tot??soma)*100).toFixed(1)}% do seu PB (${fmt(pb,true)})`:`seu ${bk.dist}m ${pb?'PB '+fmt(pb,true):'sem PB registrado'}`}</div>
+      <div class="xs" id="bkDif" style="margin-top:4px"></div>
     </div>
     <div class="xs muted" style="margin-top:8px">O broken sai <b>mais rápido</b> que a prova real — o descanso ajuda. Serve para medir ritmo e manutenção, não para virar PB: o app guarda separado e não usa como marca.</div>
-    <button class="primary full" style="margin-top:12px" onclick="salvarBroken('${itemId}','${atletaId}',${bk.n},${nrd>1?rd:'null'})">Salvar broken</button>
+    <button class="primary full" style="margin-top:12px" onclick="salvarBroken('${itemId}','${atletaId}',${bk.n},${nrd>1?rd:'null'},${bk.dist})">Salvar broken</button>
     <button class="ghost full" style="margin-top:8px" onclick="addRodada('${itemId}','${atletaId}')">+ outro broken (rodada ${nrd+1})</button>
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`);
+  atualizaSomaBroken(bk.n);   /* a conferência soma × cronômetro já aparece ao abrir */
 }
-/* Trocar o trecho é decisão do atleta/técnico, então fica no REGISTRO, não no
-   item — o treino do técnico continua como ele escreveu. Zera os tempos porque
-   um broken de 4×25 não tem como virar 2×50 reaproveitando números. */
-/* Se o técnico escreveu de um jeito que o app não reconheceu como broken, o
-   atleta marca na mão — sem depender de eu adivinhar toda forma de escrever. */
-async function marcarComoBroken(itemId,atletaId,provaEscolhida){
-  const item=(S.treino.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId); if(!item)return;
-  const cands=brokenCandidatos(item);
-  if(!cands.length)return toast('Esta série não se divide em broken');
-  if(cands.length>1&&!provaEscolhida){
-    /* 2×25 pode ser um broken de 50 ou dois tiros soltos de 25 — quem sabe é o atleta */
-    return sheet(`<h2>Broken de qual prova?</h2>
-      <div class="small muted">A série é <b>${item.reps>1?item.reps+'×':''}${item.dist}m ${esc(item.estilo)}</b>.</div>
-      <div class="note" style="margin:10px 0">No broken, os trechos somados simulam <b>uma prova</b>. Escolha qual.</div>
-      ${cands.map(d=>`<button class="primary full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}',${d})">Broken de ${d}m <span class="xs">(${d/item.dist}×${item.dist}m)</span></button>`).join('')}
-      <button class="ghost full" style="margin-top:12px" onclick="abrirLancamento('${itemId}','${atletaId}')">Cancelar</button>`);
-  }
-  const dist=provaEscolhida||cands[0];
-  const opts=intervalosBroken(dist);
-  const rec=(S.treino.registros?.[atletaId]?.[itemId])||{};
-  const tinha=(rec.tempos||[]).some(x=>x!=null)||(rec.rd||[]).some(r=>(r.tempos||[]).some(x=>x!=null));
-  if(tinha&&!confirm('Lançar como broken apaga os tempos já anotados nesta série. Continuar?'))return;
-  const trecho=opts.includes(item.dist)?item.dist:opts[0];
-  await mutarRegistro(itemId,atletaId,r=>{ r.bk=true; r.bkDist=dist; r.bkTrecho=trecho;
-    r.tempos=[]; r.parciais=[]; delete r.rd; delete r.nrd; });
-  S.rd=0; abrirLancamento(itemId,atletaId);
-}
+/* Trocar a metragem das parciais é decisão do atleta com o técnico, então fica
+   no REGISTRO, não no item — o treino continua como foi escrito. Zera os
+   trechos porque um broken de 4×25 não vira 2×50 reaproveitando números; o
+   tempo TOTAL sobrevive, porque a prova simulada é a mesma. */
 async function setTrechoBroken(itemId,atletaId,iv){
   const t=S.treino; if(!t)return;
   const rec=(t.registros?.[atletaId]?.[itemId])||{};
   const tinha=(rec.tempos||[]).some(x=>x!=null)||(rec.rd||[]).some(r=>(r.tempos||[]).some(x=>x!=null));
-  if(tinha&&!confirm('Trocar a metragem das parciais apaga os tempos já anotados deste broken. Continuar?'))return;
-  await mutarRegistro(itemId,atletaId,r=>{ r.bk=true; r.bkTrecho=iv; r.tempos=[]; r.parciais=[]; delete r.rd; delete r.nrd; });
-  S.rd=0; abrirLancamento(itemId,atletaId);
+  if(tinha&&!confirm('Trocar a metragem das parciais apaga os trechos já anotados deste broken (o tempo total fica). Continuar?'))return;
+  await mutarRegistro(itemId,atletaId,r=>{ r.bkTrecho=iv; r.tempos=[]; r.parciais=[];
+    (r.rd||[]).forEach(x=>{x.tempos=[];x.parciais=[]}); });
+  S.rd=S.rd||0; abrirLancamento(itemId,atletaId);
 }
 /* FALTAVA: não havia como apagar uma rodada criada por engano — só dava para
    limpar os tempos, e a rodada vazia continuava lá para sempre. */
@@ -2209,7 +2202,9 @@ async function apagarRodada(itemId,atletaId,idx){
   await mutarRegistro(itemId,atletaId,r=>{
     const arr=(r.rd||[]).slice(); arr.splice(idx,1);
     if(arr.length<=1){ const u=arr[0]||{tempos:[],parciais:[]};
-      r.tempos=u.tempos||[]; r.parciais=u.parciais||[]; delete r.rd; delete r.nrd; }
+      r.tempos=u.tempos||[]; r.parciais=u.parciais||[];
+      if(u.tot!=null)r.tot=u.tot; else delete r.tot;   /* o total é da rodada, não do item */
+      delete r.rd; delete r.nrd; }
     else { r.rd=arr; r.nrd=arr.length; }
   });
   S.rd=Math.max(0,idx-1);
@@ -2235,13 +2230,30 @@ function atualizaSomaBroken(n){
   const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
   const s=somaBroken(tv), el=document.getElementById('bkSoma');
   if(el)el.textContent=s!=null?fmt(s,true):'—';
+  /* Confere soma × cronômetro. Diferença de alguns centésimos é cronometragem
+     manual e não é erro; acima de 1s por trecho é tempo digitado na linha
+     errada, e é melhor o atleta ver isso na hora do que o técnico descobrir
+     depois numa análise torta. */
+  const et=document.getElementById('bkTot'), ed=document.getElementById('bkDif');
+  const t=et&&et.value?parseTempo(et.value):null;
+  const ep=document.getElementById('bkPB'), pb=ep?+ep.dataset.pb:0, ref=t!=null?t:s;
+  if(ep&&pb&&ref!=null)ep.textContent=`${(pb/ref*100).toFixed(1)}% do seu PB (${fmt(pb,true)})`;
+  if(!ed)return;
+  if(t==null||s==null||tv.some(x=>x==null)){ed.textContent='';ed.style.color='';return}
+  const d=t-s, lim=Math.max(1000,n*1000);
+  ed.style.color=Math.abs(d)>lim?'var(--clock)':'var(--muted)';
+  ed.textContent=Math.abs(d)<10?'total igual à soma'
+    :`${d>0?'+':'−'}${(Math.abs(d)/1000).toFixed(2)}s em relação à soma`
+      +(Math.abs(d)>lim?' — confira se algum trecho ficou trocado':'');
 }
-async function salvarBroken(itemId,atletaId,n,rd){
+async function salvarBroken(itemId,atletaId,n,rd,dist){
   const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
-  if(!tv.some(x=>x!=null))return toast('Anote ao menos um trecho');
-  await gravarReg(itemId,atletaId,rd,tv,[]);
-  const s=somaBroken(tv);
-  fecharSheet(); toast(s!=null?`Broken salvo · soma ${fmt(s,true)}`:'Broken salvo'); render();
+  const et=document.getElementById('bkTot');
+  const tot=(et&&et.value)?parseTempoDist(et.value,dist):null;
+  if(!tv.some(x=>x!=null)&&tot==null)return toast('Anote ao menos um trecho ou o tempo total');
+  await gravarReg(itemId,atletaId,rd,tv,[],{tot});
+  const s=tot!=null?tot:somaBroken(tv);
+  fecharSheet(); toast(s!=null?`Broken salvo · ${fmt(s,true)}`:'Broken salvo'); render();
 }
 function abrirLancamento(itemId,atletaId){
   const t=S.treino,item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId);
@@ -2263,7 +2275,6 @@ function abrirLancamento(itemId,atletaId){
   const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
     ${btnAdd}
     ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
-    ${brokenCandidatos(item).length?`<button class="ghost full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}')">Lançar como broken (tiro quebrado)</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`;
   if(nrd>1){
     if(S.rd==null||S.rd<0||S.rd>=nrd)S.rd=0;
@@ -2331,7 +2342,6 @@ function abrirSplits(itemId,atletaId,item,at,rec){
     <button class="primary full" style="margin-top:12px" onclick="salvarSplits('${itemId}','${atletaId}')">Salvar${nrd>1?' rodada '+(S.rd+1):''}</button>
     <button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>
     ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
-    ${brokenCandidatos(item).length?`<button class="ghost full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}')">Lançar como broken (tiro quebrado)</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`);
 }
 async function salvarSplits(itemId,atletaId){
@@ -2359,11 +2369,14 @@ async function addRodada(itemId,atletaId){
   const item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId); if(!item)return;
   t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
   const prev=t.registros[atletaId][itemId]||{};
-  let rd=(prev.rd&&prev.rd.slice())||[{tempos:prev.tempos||[],parciais:prev.parciais||[]}];
+  /* o registro simples vira a rodada 1 — levando o total do broken com ele */
+  let rd=(prev.rd&&prev.rd.slice())||[{tempos:prev.tempos||[],parciais:prev.parciais||[],
+    ...(prev.tot!=null?{tot:prev.tot}:{})}];
   const base=Math.max(nRodadas(item,prev),rd.length);
   while(rd.length<base)rd.push({tempos:[],parciais:[]});
   rd.push({tempos:[],parciais:[]});
-  const novo={...prev,rd,nrd:rd.length,em:Date.now(),por:S.u.nome}; delete novo.tempos; delete novo.parciais;
+  const novo={...prev,rd,nrd:rd.length,em:Date.now(),por:S.u.nome};
+  delete novo.tempos; delete novo.parciais; delete novo.tot;
   t.registros[atletaId][itemId]=novo; t.atualizado=Date.now();
   await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
   S.rd=rd.length-1; abrirLancamento(itemId,atletaId); toast('Rodada '+rd.length+' adicionada');
@@ -2377,7 +2390,11 @@ function lerCamposLancamento(reps,temParcial,dist){
   }
   return {tempos,parciais};
 }
-async function gravarReg(itemId,atletaId,rd,tempos,parciais){
+/* `extra` são campos do PRÓPRIO lançamento que não são tempos de repetição —
+   hoje só `tot`, o cronômetro do broken. Precisa passar por aqui porque a
+   gravação SUBSTITUI o objeto da rodada: sem isso o total voltava a nulo
+   sozinho na próxima vez que qualquer tempo daquela rodada fosse salvo. */
+async function gravarReg(itemId,atletaId,rd,tempos,parciais,extra){
   const trId=S.treino.id, nome=S.u.nome;
   const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId);
   /* aplica SEMPRE sobre a versão que vier (a do servidor, dentro da
@@ -2389,12 +2406,13 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais){
     t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
     const prev=t.registros[atletaId][itemId]||{};
     if(rd==null){
-      t.registros[atletaId][itemId]={...prev,tempos,parciais,em:Date.now(),por:nome};
+      t.registros[atletaId][itemId]={...prev,tempos,parciais,...(extra||{}),em:Date.now(),por:nome};
     }else{
       const n=Math.max((item&&item.rodadas)||1,(prev.nrd||0),rd+1), arr=(prev.rd||[]).slice();
       while(arr.length<n)arr.push({tempos:[],parciais:[]});
-      arr[rd]={tempos,parciais};
-      const novo={...prev,rd:arr,nrd:arr.length,em:Date.now(),por:nome}; delete novo.tempos; delete novo.parciais;
+      arr[rd]={...(arr[rd]||{}),tempos,parciais,...(extra||{})};
+      const novo={...prev,rd:arr,nrd:arr.length,em:Date.now(),por:nome};
+      delete novo.tempos; delete novo.parciais; delete novo.tot;   /* o total passa a ser por rodada */
       t.registros[atletaId][itemId]=novo;
     }
     t.atualizado=Date.now();
@@ -3847,7 +3865,18 @@ function compartilharTreino(){
     for(const i of b.itens){
       if(i.nota){ ls.push(`• ${i.texto}`); continue; }
       const partes=alvo.map(a=>{
-        const r=t.registros?.[a.id]?.[i.id]; const ts=temposItem(r,i);
+        const r=t.registros?.[a.id]?.[i.id];
+        /* broken: manda o tempo da PROVA com os trechos entre parênteses —
+           "30.29 (14.02+16.31)". Só a lista de trechos não diz nada a quem lê. */
+        const bk=brokenDe(i,r);
+        if(bk&&r){
+          const rr=(r.rd&&nRodadas(i,r)>1)?r.rd:[r];
+          const ms=rr.map(x=>{const v=tempoBroken(x,bk.n); if(v==null)return null;
+            const tv=(x.tempos||[]).slice(0,bk.n).filter(y=>y!=null);
+            return fmt(v,true)+(tv.length?` (${tv.map(y=>fmt(y,true)).join('+')})`:'')}).filter(Boolean);
+          return ms.length?`${alvo.length>1?prim(a.nome)+': ':''}${ms.join(' / ')}`:null;
+        }
+        const ts=temposItem(r,i);
         return ts.length?`${alvo.length>1?prim(a.nome)+': ':''}${ts.map(y=>fmt(y,true)).join(' / ')}`:null}).filter(Boolean);
       ls.push(`${i.rodadas>1?i.rodadas+'x ':''}${i.reps>1?i.reps+'x':''}${i.dist} ${i.estilo}${i.intervalo?` saída ${fmtInt(i.intervalo)}`:''}${i.pausa?` desc ${fmtPausa(i.pausa)}`:''}${i.obs?` (${i.obs})`:''}${partes.length?'\n  '+partes.join('\n  '):''}`);
     }
@@ -4973,9 +5002,9 @@ async function coletarEsforcos(opts){
       const bkI=brokenDe(i,r);
       if(bkI){
         for(const s of series){
-          const soma=somaBroken((s.tempos||[]).slice(0,bkI.n));
-          if(soma!=null)out.push({data:t.data,dist:bkI.dist,estilo:i.estilo,tags:i.tags,
-            tempo:soma,p1:(s.tempos||[])[0]??null,forte:true,vol:i.vol,
+          const tp=tempoBroken(s,bkI.n);   /* cronômetro se houver, senão a soma */
+          if(tp!=null)out.push({data:t.data,dist:bkI.dist,estilo:i.estilo,tags:i.tags,
+            tempo:tp,p1:(s.tempos||[])[0]??null,forte:true,vol:i.vol,
             broken:true,trecho:bkI.trecho,trechos:(s.tempos||[]).slice(0,bkI.n),desc:bkI.desc});
         }
         continue;
