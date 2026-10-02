@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v101';
+const VER='v102';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2611,6 +2611,9 @@ function telaTreinosAtleta(){
     ${S.u.perfil==='pro'?`<button class="sm ghost" onclick="novoTreinoPro()">+ Piscina</button>`:''}
     <button class="sm primary" onclick="abrirTreinoExtra()">+ Meu treino</button></div>
   ${futuros?`<div class="xs muted" style="margin:2px 0 8px">Há ${futuros} treino(s) programado(s) para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
+  ${(()=>{const n=duracoesSuspeitas().length; return n?`<div class="note warn" style="margin:8px 0">
+    <b>${n} sessão(ões) fora d'água com a duração errada.</b> Até a v96 o app lia <b>1:10</b> como 1min10s em vez de 1h10 — e duração é carga.
+    <button class="sm primary full" style="margin-top:8px" onclick="revisarDuracoes()">Revisar e corrigir</button></div>`:''})()}
   ${lista.length?`<div class="row" style="gap:6px;margin-bottom:8px">
     <button class="sm ${S.treinoView!=='lista'?'primary':'ghost'}" onclick="S.treinoView='cal';render()">📅 Calendário</button>
     <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
@@ -5050,7 +5053,7 @@ function formTreinoExtra(){
     <div class="grid2">
       <div class="field"><label>RPE <span class="xs muted">(0–10)</span></label>
         <select onchange="secoDraft('rpe',this.value===''?null:+this.value)"><option value="">—</option>${Array.from({length:11},(_,i)=>`<option ${d.rpe===i?'selected':''}>${i}</option>`).join('')}</select></div>
-      <div class="field"><label>Duração <span class="xs muted">mm:ss ou hh:mm:ss</span></label><input id="skDur" inputmode="text" placeholder="46:17" value="${d.durTxt||''}" oninput="secoDraft('durTxt',this.value)"></div>
+      <div class="field"><label>Duração <span class="xs muted">1:10 = 1h10 · 46:17 = 46min17s</span></label><input id="skDur" inputmode="text" placeholder="1:10" value="${d.durTxt||''}" oninput="secoDraft('durTxt',this.value)"></div>
     </div>
     <div class="grid2">
       <div class="field"><label>FC média <span class="xs muted">bpm</span></label><input id="skFc" inputmode="numeric" value="${d.fc!=null?d.fc:''}" oninput="secoDraft('fc',this.value?+this.value:null)"></div>
@@ -5099,6 +5102,60 @@ async function apagarSeco(id){
   const s=(S.pro.seco||[]).find(x=>x.id===id);
   if(s){ await apagarAnexo(s.img); await apagarAnexo(s.arquivo); }
   S.pro.seco=S.pro.seco.filter(x=>x.id!==id); await salvarPro(); render();
+}
+/* ── Conserto em lote das durações fora d'água ─────────────────────────────
+   Até a v96 uma duração de duas partes era SEMPRE lida como mm:ss: "1:10"
+   (1h10) virava 1,17 minuto em vez de 70. Isso não é um número feio na tela —
+   é carga de treino, e uma sessão de 70 min contando como 1 min some do
+   cálculo de fadiga inteiro.
+
+   Dá para consertar sem reabrir sessão por sessão por dois caminhos:
+   • o TEXTO digitado fica guardado em `durTxt` — é só reinterpretar, e aí o
+     resultado é exato;
+   • onde o texto não existe (sessão antiga ou importada), a conta é direta: o
+     valor errado é exatamente 60× menor, porque a leitura velha era h+m/60 e
+     a certa é h×60+m. */
+const fmtDur=m=>m==null?'—':(m>=60?`${Math.floor(m/60)}h${String(Math.round(m%60)).padStart(2,'0')}`:`${+m.toFixed(m<10?1:0)} min`);
+function duracoesSuspeitas(){
+  const out=[];
+  for(const s of ((S.pro&&S.pro.seco)||[])){
+    if(s.dur==null)continue;
+    if(s.durTxt){
+      const novo=durMin(s.durTxt);
+      if(novo!=null&&Math.abs(novo-s.dur)>0.5)out.push({id:s.id,data:s.data,tipo:s.tipo,txt:s.durTxt,de:s.dur,para:novo,exato:true});
+      continue;
+    }
+    /* sem o texto original: só mexemos no que é implausível de verdade */
+    if(s.dur<8){ const novo=+(s.dur*60).toFixed(2);
+      if(novo>=10&&novo<=300)out.push({id:s.id,data:s.data,tipo:s.tipo,txt:null,de:s.dur,para:novo,exato:false}); }
+  }
+  return out;
+}
+function revisarDuracoes(){
+  const l=duracoesSuspeitas();
+  if(!l.length)return toast('Nenhuma duração fora do lugar');
+  const exatos=l.filter(x=>x.exato), estimados=l.filter(x=>!x.exato);
+  const linha=x=>`<div class="row" style="gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)">
+    <span class="grow"><b>${esc(x.tipo||'Sessão')}</b> <span class="xs muted">${brData(x.data)}${x.txt?` · você digitou <b>${esc(x.txt)}</b>`:''}</span></span>
+    <span class="xs" style="color:var(--clock)">${fmtDur(x.de)}</span><span class="xs muted">→</span>
+    <b style="color:var(--ok)">${fmtDur(x.para)}</b></div>`;
+  sheet(`<h2>Durações fora d'água</h2>
+    <div class="small muted">${l.length} sessão(ões) com a duração lida errado. Até a v96 o app entendia <b>1:10</b> como 1 minuto e 10 segundos, não como 1h10.</div>
+    <div class="note" style="margin:10px 0">Isso mexe na <b>carga</b>: uma sessão de 70 min valendo 1 min praticamente desaparece do cálculo de fadiga.</div>
+    ${exatos.length?`<div class="eyebrow" style="margin-top:10px">reinterpretadas do que você digitou (${exatos.length})</div>${exatos.map(linha).join('')}`:''}
+    ${estimados.length?`<div class="eyebrow" style="margin-top:14px">sem o texto original (${estimados.length})</div>
+      <div class="xs muted" style="margin-bottom:4px">Aqui o app refaz a conta: o valor guardado é exatamente 60× menor que o certo. Confira um a um antes de aplicar.</div>
+      ${estimados.map(linha).join('')}`:''}
+    <button class="primary full" style="margin-top:14px" onclick="corrigirDuracoes()">Corrigir as ${l.length} sessões</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Agora não</button>`);
+}
+async function corrigirDuracoes(){
+  const l=duracoesSuspeitas(); if(!l.length)return;
+  const porId=new Map(l.map(x=>[x.id,x.para]));
+  S.pro.seco=(S.pro.seco||[]).map(s=>porId.has(s.id)?{...s,dur:porId.get(s.id)}:s);
+  await salvarPro();
+  ESF=null; SESSOES=[];                   /* a carga é recalculada com os valores novos */
+  fecharSheet(); toast(`${l.length} duração(ões) corrigida(s)`); render();
 }
 
 /* =====================================================================
