@@ -226,7 +226,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v97';
+const VER='v98';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2103,13 +2103,29 @@ function intervalosBroken(dist){
    não escreveu com essa palavra — é o registro que manda. */
 function brokenDe(item,rec){
   if(!item||!item.dist)return null;
-  const opts=intervalosBroken(item.dist); if(!opts.length)return null;
-  const base=item.broken||((rec&&rec.bk)?{dist:item.dist,trecho:opts[0],desc:10}:null);
-  if(!base)return null;
-  let trecho=(rec&&rec.bkTrecho)||base.trecho||opts[0];
+  if(!(item.broken||(rec&&rec.bk)))return null;
+  /* A prova pode vir de três lugares, nesta ordem: escolha do atleta, texto do
+     treino, ou a própria distância do item. A escolha existe porque treinos
+     salvos ANTES do broken existir viraram série comum — "Broken 50 2x25" foi
+     lido como 2 tiros de 25m, e nenhum broken de 25 existe. */
+  const dist=(rec&&rec.bkDist)||(item.broken&&item.broken.dist)||item.dist;
+  const opts=intervalosBroken(dist); if(!opts.length)return null;
+  let trecho=(rec&&rec.bkTrecho)||(item.broken&&item.broken.trecho)||opts[0];
   if(!opts.includes(trecho))trecho=opts[0];
-  return {dist:item.dist,trecho,n:Math.round(item.dist/trecho),
-    desc:(rec&&rec.bkDesc!=null?rec.bkDesc:base.desc)||10,opts};
+  const desc=(rec&&rec.bkDesc!=null)?rec.bkDesc:((item.broken&&item.broken.desc)||10);
+  return {dist,trecho,n:Math.round(dist/trecho),desc,opts};
+}
+/* Provas que esta série PODE representar: ela mesma, ou a soma das repetições
+   (2×25 = broken de 50, 4×25 = de 100). É o que resgata os treinos antigos. */
+function brokenCandidatos(item){
+  if(!item||!item.dist)return [];
+  const provas=[50,100,200,400], out=[];
+  /* a própria distância só vale se a série é de UMA repetição: num 8×50 o
+     broken plausível é o de 400 (8 trechos de 50), não o de 50 */
+  if((item.reps||1)===1&&intervalosBroken(item.dist).length)out.push(item.dist);
+  const tot=(item.reps||1)*item.dist;
+  if(tot!==item.dist&&provas.includes(tot)&&intervalosBroken(tot).length)out.push(tot);
+  return out;
 }
 function abrirBroken(itemId,atletaId,item,at,rec,nrd){
   const bk=brokenDe(item,rec); if(!bk)return;
@@ -2152,13 +2168,26 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
    um broken de 4×25 não tem como virar 2×50 reaproveitando números. */
 /* Se o técnico escreveu de um jeito que o app não reconheceu como broken, o
    atleta marca na mão — sem depender de eu adivinhar toda forma de escrever. */
-async function marcarComoBroken(itemId,atletaId){
+async function marcarComoBroken(itemId,atletaId,provaEscolhida){
   const item=(S.treino.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId); if(!item)return;
-  const opts=intervalosBroken(item.dist); if(!opts.length)return toast('Esta distância não se divide em broken');
+  const cands=brokenCandidatos(item);
+  if(!cands.length)return toast('Esta série não se divide em broken');
+  if(cands.length>1&&!provaEscolhida){
+    /* 2×25 pode ser um broken de 50 ou dois tiros soltos de 25 — quem sabe é o atleta */
+    return sheet(`<h2>Broken de qual prova?</h2>
+      <div class="small muted">A série é <b>${item.reps>1?item.reps+'×':''}${item.dist}m ${esc(item.estilo)}</b>.</div>
+      <div class="note" style="margin:10px 0">No broken, os trechos somados simulam <b>uma prova</b>. Escolha qual.</div>
+      ${cands.map(d=>`<button class="primary full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}',${d})">Broken de ${d}m <span class="xs">(${d/item.dist}×${item.dist}m)</span></button>`).join('')}
+      <button class="ghost full" style="margin-top:12px" onclick="abrirLancamento('${itemId}','${atletaId}')">Cancelar</button>`);
+  }
+  const dist=provaEscolhida||cands[0];
+  const opts=intervalosBroken(dist);
   const rec=(S.treino.registros?.[atletaId]?.[itemId])||{};
   const tinha=(rec.tempos||[]).some(x=>x!=null)||(rec.rd||[]).some(r=>(r.tempos||[]).some(x=>x!=null));
   if(tinha&&!confirm('Lançar como broken apaga os tempos já anotados nesta série. Continuar?'))return;
-  await mutarRegistro(itemId,atletaId,r=>{ r.bk=true; r.bkTrecho=opts[0]; r.tempos=[]; r.parciais=[]; delete r.rd; delete r.nrd; });
+  const trecho=opts.includes(item.dist)?item.dist:opts[0];
+  await mutarRegistro(itemId,atletaId,r=>{ r.bk=true; r.bkDist=dist; r.bkTrecho=trecho;
+    r.tempos=[]; r.parciais=[]; delete r.rd; delete r.nrd; });
   S.rd=0; abrirLancamento(itemId,atletaId);
 }
 async function setTrechoBroken(itemId,atletaId,iv){
@@ -2234,7 +2263,7 @@ function abrirLancamento(itemId,atletaId){
   const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
     ${btnAdd}
     ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
-    ${intervalosBroken(item.dist).length?`<button class="ghost full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}')">Lançar como broken (tiro quebrado)</button>`:''}
+    ${brokenCandidatos(item).length?`<button class="ghost full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}')">Lançar como broken (tiro quebrado)</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`;
   if(nrd>1){
     if(S.rd==null||S.rd<0||S.rd>=nrd)S.rd=0;
@@ -2301,6 +2330,8 @@ function abrirSplits(itemId,atletaId,item,at,rec){
     ${corpo}
     <button class="primary full" style="margin-top:12px" onclick="salvarSplits('${itemId}','${atletaId}')">Salvar${nrd>1?' rodada '+(S.rd+1):''}</button>
     <button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>
+    ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
+    ${brokenCandidatos(item).length?`<button class="ghost full" style="margin-top:8px" onclick="marcarComoBroken('${itemId}','${atletaId}')">Lançar como broken (tiro quebrado)</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`);
 }
 async function salvarSplits(itemId,atletaId){
@@ -4943,7 +4974,7 @@ async function coletarEsforcos(opts){
       if(bkI){
         for(const s of series){
           const soma=somaBroken((s.tempos||[]).slice(0,bkI.n));
-          if(soma!=null)out.push({data:t.data,dist:i.dist,estilo:i.estilo,tags:i.tags,
+          if(soma!=null)out.push({data:t.data,dist:bkI.dist,estilo:i.estilo,tags:i.tags,
             tempo:soma,p1:(s.tempos||[])[0]??null,forte:true,vol:i.vol,
             broken:true,trecho:bkI.trecho,trechos:(s.tempos||[]).slice(0,bkI.n),desc:bkI.desc});
         }
