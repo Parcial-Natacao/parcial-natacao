@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v113';
+const VER='v114';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5774,7 +5774,14 @@ function fadigaCarga(){
   if(aguda<=0&&cron<=0)return null;
   const acwr=cron>0?aguda/cron:null;
   const arr=Array.from({length:7},(_,i)=>dia[i]||0), m=arr.reduce((t,x)=>t+x,0)/7;
-  const sd=Math.sqrt(arr.reduce((t,x)=>t+(x-m)*(x-m),0)/7), monotonia=sd>0?m/sd:(m>0?3:0);
+  /* Monotonia de Foster = media/desvio da carga diaria da semana. Com carga
+     quase igual todo dia o desvio tende a zero e a razao EXPLODE: o teste
+     mostrou 'monotonia 23.7', numero que nao existe na escala (acima de 2 ja
+     e alto) e que ainda derrubava a pressao de treinamento e disparava um
+     REDUZIR com a carga em 0,99x a habitual. O teto de 5 preserva a ordem e
+     tira o absurdo; o piso de desvio evita divisao por quase-zero. */
+    const sd=Math.sqrt(arr.reduce((t,x)=>t+(x-m)*(x-m),0)/7);
+    const monotonia=m>0?Math.min(5,m/Math.max(sd,m*0.08)):0;
   return {aguda:Math.round(aguda),cronica:Math.round(cron),acwr,monotonia:+monotonia.toFixed(1),strain:Math.round(aguda*monotonia)};
 }
 function cardFadiga(){
@@ -5826,7 +5833,14 @@ async function calcFadigaAtleta(atId){
   if(temCarga){
     const acwr=cron>0?aguda/cron:null;
     const arr=Array.from({length:7},(_,i)=>dia[i]||0), m=arr.reduce((t,x)=>t+x,0)/7;
-    const sd=Math.sqrt(arr.reduce((t,x)=>t+(x-m)*(x-m),0)/7), monotonia=sd>0?m/sd:(m>0?3:0);
+    /* Monotonia de Foster = media/desvio da carga diaria da semana. Com carga
+     quase igual todo dia o desvio tende a zero e a razao EXPLODE: o teste
+     mostrou 'monotonia 23.7', numero que nao existe na escala (acima de 2 ja
+     e alto) e que ainda derrubava a pressao de treinamento e disparava um
+     REDUZIR com a carga em 0,99x a habitual. O teto de 5 preserva a ordem e
+     tira o absurdo; o piso de desvio evita divisao por quase-zero. */
+    const sd=Math.sqrt(arr.reduce((t,x)=>t+(x-m)*(x-m),0)/7);
+    const monotonia=m>0?Math.min(5,m/Math.max(sd,m*0.08)):0;
     res={aguda:Math.round(aguda),cronica:Math.round(cron),acwr,monotonia:+monotonia.toFixed(1),prontidao:pront};
   }
   return Object.assign(res,extra);
@@ -7004,6 +7018,28 @@ function predicao(pro,comPct,est){
    (e ao técnico) DESCONFIAR do app com evidência, em vez de acreditar nele por
    fé — foi a falta disso que fez a projeção errada de setembro parecer
    arbitrária. Sem prova registrada, diz o que falta em vez de sumir. */
+function cardProntidaoComp(pro,motor,comPct){
+  const ref=motor.provaRef; if(!ref)return'';
+  const r=prontidaoCompetitiva(pro,comPct,motor,ref.d,ref.e,ref.pis);
+  if(!r)return'';
+  const nome=`${ref.d}m ${ref.e} ${ref.pis==='LC50'?'LC50m':'SC25m'}`;
+  const cor=s=>s==null?'var(--ink-3)':(s>=75?'var(--ok)':s>=55?'var(--ink)':'var(--clock)');
+  const linhas=r.comps.map(c=>`<tr>
+    <td><b>${c.rot}</b> <span class="xs muted">${PESOS_PC[c.id]}%</span><div class="xs muted">${esc(c.txt)}</div></td>
+    <td class="n" style="text-align:right;font-weight:800;color:${cor(c.score)}">${c.score==null?'—':c.score}</td></tr>`).join('');
+  const topo=r.score!=null
+    ? `<div class="row" style="align-items:baseline;gap:9px;margin-top:8px">
+        <div class="v t" style="font-size:38px;font-weight:800;line-height:1;color:${cor(r.score)}">${r.score}</div>
+        <div><b>${r.rotulo}</b><div class="xs muted">${r.confiabilidade}% dos componentes disponíveis${r.ok<5?` (${5-r.ok} sem dado)`:''}</div></div></div>`
+    : `<div class="note warn" style="margin-top:8px"><b>Ainda não dá para calcular.</b> ${esc(r.motivo)}. Um score com metade das peças seria inventar um número.</div>`;
+  return`<div class="card" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
+    <div class="small muted" style="margin-top:3px">Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".</div>
+    ${topo}
+    <table style="margin-top:10px"><tbody>${linhas}</tbody></table>
+    ${r.direcao?`<div class="note ${r.direcao==='REDUZIR'?'warn':r.direcao==='AUMENTAR'?'ok':''}" style="margin-top:10px"><b>Direção da carga: ${r.direcao}.</b> <i>Leitura para o técnico — o app não prescreve treino.</i></div>`:''}
+    <div class="xs muted" style="margin-top:6px">Média dos componentes, ponderada pelos pesos ao lado de cada um. Componente <b>sem dado sai da conta</b> em vez de valer zero, e os pesos são redistribuídos — por isso a linha de confiabilidade. Não é probabilidade de nadar bem: é o quanto, no que o app mede, você está posicionado para esta prova.</div>
+  </div>`;
+}
 /* ── TREINO → PROVA ────────────────────────────────────────────────────────
    O diferencial do produto: não "quanto você nada", e sim quanto do que você
    nada no treino chega na prova. Mostra a conversão crua, prova a prova, e —
@@ -7246,6 +7282,88 @@ function transferenciaProva(pro,comPct,d,e,pis,janela){
     mediana:q(0.5),p25:q(0.25),p75:q(0.75),
     media:+(p.reduce((a,b)=>a+b,0)/p.length).toFixed(2),
     estagio:estagioCalib(itens.length)};
+}
+/* ── PRESSÃO DE TREINAMENTO ────────────────────────────────────────────────
+   Camada sobre fadiga/fitness e monotonia. Não é "quanto você treina": é se o
+   ponto em que você está favorece competir. Janela de desempenho entre 0,8 e
+   1,3 de fadiga/fitness — acima, fadiga acumulada; abaixo, destreino. A
+   monotonia desconta à parte porque carga certa com estímulo sempre igual
+   também não rende.
+   Unidade: 0–100. Janela: 7 e 28 dias (via fadigaCarga). Insuficiência: sem
+   carga habitual registrada devolve null, nunca zero. */
+function pressaoTreinamento(motor){
+  const f=(motor&&motor.fadiga)||{}, a=f.acwr, mono=f.monotonia;
+  if(a==null)return{score:null,direcao:null,txt:'sem carga habitual registrada para comparar'};
+  let s=100, porque=[];
+  if(a>1.3){ s-=Math.min(55,(a-1.3)*110); porque.push(`carga ${a.toFixed(2)}× a habitual`); }
+  else if(a<0.8){ s-=Math.min(35,(0.8-a)*90); porque.push(`carga ${a.toFixed(2)}× a habitual (abaixo)`); }
+  else porque.push(`carga ${a.toFixed(2)}× a habitual`);
+  if(mono!=null&&mono>1.8){ s-=Math.min(25,(mono-1.8)*18); porque.push(`monotonia ${mono}`); }
+  const direcao=(a>1.5||(mono!=null&&mono>2.2))?'REDUZIR':(a<0.8?'AUMENTAR':'MANTER');
+  return{score:Math.round(Math.max(0,Math.min(100,s))),direcao,txt:porque.join(' · ')};
+}
+/* Transferência como COMPONENTE de prontidão. Conversão alta não é mérito: o
+   que conta é converter bem (prova igual ou mais rápida que o melhor tiro) e
+   de forma previsível. Por isso entram os três: o nível, a dispersão entre os
+   quartis e o tamanho da amostra. */
+function transfScore(t){
+  if(!t)return null;
+  let s=50;
+  s+=Math.max(-20,Math.min(25,-t.mediana*6));        /* −2,4% de conversão → +14 */
+  s+=Math.min(15,t.estagio.peso*15);                 /* amostra */
+  s+=Math.max(0,10-Math.abs(t.p75-t.p25)*2);         /* consistência entre provas */
+  return Math.round(Math.max(0,Math.min(100,s)));
+}
+/* ── PRONTIDÃO COMPETITIVA ─────────────────────────────────────────────────
+   "Como estou hoje?" (VFC, sono, FC) não responde "estou preparado para nadar
+   BEM ESTA PROVA?". Esta é a segunda pergunta, por prova e piscina.
+
+   Cinco componentes, todos de dado que já existe, cada um 0–100:
+     forma específica  30%  melhor tiro da prova em 42 dias, em %PB
+     especificidade    20%  exposição a ritmo de prova em 28 dias (P3)
+     fisiológica       20%  prontidão do relógio (VFC/FC/sono)
+     pressão           15%  fadiga/fitness e monotonia
+     transferência     15%  como os seus tiros viram prova (P3)
+
+   Os pesos seguem o que cada um responde: capacidade na prova pesa mais que
+   estado do dia, porque é o que mais explica o resultado; o estado do dia
+   modula. Componente sem dado NÃO vira zero — sai da conta, e os pesos são
+   renormalizados sobre o que sobrou. Abaixo de 3 componentes, ou sem a forma
+   específica, não há número: um "score" com metade das peças seria inventar.
+   A confiabilidade é a fração do peso total que estava disponível. */
+const PESOS_PC={forma:30,espec:20,fisio:20,pressao:15,transf:15};
+function prontidaoCompetitiva(pro,comPct,motor,d,e,pis){
+  if(!d||!e)return null;
+  const comps=[];
+  const fe=(typeof melhorPct==='function')?melhorPct(comPct,d,e,42):null;
+  comps.push({id:'forma',rot:'Forma específica',
+    score: fe!=null?Math.round(Math.max(0,Math.min(100,(fe-80)*5))):null,
+    txt: fe!=null?`melhor tiro a ${fe.toFixed(0)}% do PB (42d)`:'sem tiro desta prova em 42 dias'});
+  const esp=especificidadeProva(comPct,d,e);
+  comps.push({id:'espec',rot:'Especificidade recente',score:esp?esp.score:null,txt:esp?esp.txt:'—'});
+  const pg=prontidaoGarmin(pro,null);
+  const prS=(typeof prontidaoSubj==='function')?prontidaoSubj(7):null;
+  comps.push({id:'fisio',rot:'Prontidão fisiológica',
+    score: pg?pg.score:null,
+    txt: pg?`${pg.dias} dia(s) de VFC/FC`:(prS?`sem relógio — check-in em ${prS.media} (não entra na conta)`:'sem dados do relógio')});
+  const pt=pressaoTreinamento(motor);
+  comps.push({id:'pressao',rot:'Pressão de treinamento',score:pt.score,txt:pt.txt,extra:pt.direcao});
+  const tr=transferenciaProva(pro,comPct,d,e,pis);
+  comps.push({id:'transf',rot:'Transferência treino → prova',score:transfScore(tr),
+    txt: tr?`${tr.n} prova(s), conversão ${tr.mediana>0?'+':''}${tr.mediana.toFixed(1)}%`:'sem prova comparável registrada'});
+  const ok=comps.filter(c=>c.score!=null);
+  const pesoTot=Object.values(PESOS_PC).reduce((a,b)=>a+b,0);
+  const pesoOk=ok.reduce((a,c)=>a+PESOS_PC[c.id],0);
+  const temForma=ok.some(c=>c.id==='forma');
+  if(ok.length<3||!temForma)
+    return{score:null,comps,ok:ok.length,confiabilidade:Math.round(pesoOk/pesoTot*100),
+      motivo:!temForma?'sem forma específica — é o componente que não dá para suprir'
+                      :`só ${ok.length} de 5 componentes disponíveis`};
+  const score=Math.round(ok.reduce((a,c)=>a+c.score*PESOS_PC[c.id],0)/pesoOk);
+  const conf=Math.round(pesoOk/pesoTot*100);
+  return{score,comps,ok:ok.length,confiabilidade:conf,
+    rotulo:score>=75?'pronto para competir':score>=55?'parcialmente pronto':'pouco pronto',
+    direcao:pt.direcao};
 }
 function fingerprintDims(velPct,manutCV,pront,composicao,tend,espec){
   const cl=v=>Math.max(0,Math.min(100,v));
@@ -7526,6 +7644,7 @@ function telaRelatorio(){
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
   ${cardPrioridadeSemana(pro,motor,diag)}
   ${cardKPIs(pro,motor,sem)}
+  ${cardProntidaoComp(pro,motor,comPct)}
   ${cabecalhoRelatorio(pro,motor)}
   ${cardResumoExec(pro,motor,comPct)}
   ${cardFingerprint(motor)}
