@@ -252,6 +252,17 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .hero-meta{font-family:var(--mono);font-size:13.5px;opacity:.8;margin-top:6px}
 .hero-cta{display:block;text-align:center;margin-top:16px;background:#fff;color:#0B2F42;
   border-radius:var(--r-sm);padding:13px;font-weight:700;font-size:15.5px}
+/* os três números do topo do relatório */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.kpi-t{display:block;padding:14px 6px;text-align:center;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r-sm);min-height:0;font-family:var(--body);text-transform:none;letter-spacing:0}
+.kpi-t:disabled{opacity:1;cursor:default}
+.kpi-t .v{font-family:var(--mono);font-weight:700;font-size:21px;line-height:1.1}
+.kpi-t .v.mini{font-size:16px;line-height:1.3}   /* cabe a faixa inteira, nas duas linhas */
+.kpi-t .l{font-family:var(--disp);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.faixa-eq{display:flex;align-items:center;gap:7px;margin:11px 0 0;font-family:var(--disp);
+  font-size:12.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.faixa-eq .pt{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
 /* faixa da semana */
 .dias{display:flex;gap:6px;margin-top:11px}
 .dia{flex:1;text-align:center;font-family:var(--disp);font-size:12.5px;font-weight:600;letter-spacing:.06em;
@@ -365,7 +376,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v108';
+const VER='v109';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1729,8 +1740,12 @@ function bannerEquipe(){
   if(!S.u||!S.u.equipeNome)return'';
   const c=corEquipe(S.u.equipeNome);
   if(S.adminOrig)return`<div class="note warn" style="margin:10px 0 2px"><div class="row"><span class="grow"><b>Modo administrador:</b> visualizando e editando ${esc(S.u.equipeNome)}.</span><button class="sm" onclick="sairContextoAdmin()">Sair da equipe</button></div></div>`;
-  return`<div style="margin:10px 0 2px;padding:9px 13px;border-radius:11px;background:${c.bg};border:1px solid ${c.ac}">
-    <span style="font-weight:800;color:${c.ac}">Olá, ${esc(prim(S.u.nome))}!</span> <span class="small">Você está na área da <b>${esc(S.u.equipeNome)}</b>. Seja bem-vindo(a) e bons treinos!</span></div>`;
+  /* Uma linha, não um bloco. A boas-vindas ocupava a melhor parte da tela —
+     a primeira dobra — para dizer algo que o atleta já sabe e lê uma vez na
+     vida. O que é útil permanentemente é só saber em qual equipe se está, e
+     isso cabe numa linha com a cor dela. */
+  return`<div class="faixa-eq" style="color:${c.ac}">
+    <span class="pt" style="background:${c.ac}"></span><b>${esc(S.u.equipeNome)}</b></div>`;
 }
 const ESPORTES=['Natação','Corrida','Triathlon','Musculação','Bicicleta','Ciclismo','Futebol','Vôlei','Basquete','Funcional','Crossfit','Outro'];
 function telaEsporte(){
@@ -5748,7 +5763,7 @@ function cardFadiga(){
   else if(a>1.5||f.monotonia>2.2){nivel='alerta de fadiga';cor='var(--clock)';txt='Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+' — fadiga acumulada. Vale um dia leve/recuperação antes de subir a carga (risco de overtraining).';}
   else if(a>=0.8){nivel='carga sustentável';cor='var(--ok)';txt='Carga em faixa saudável — dá para manter ou progredir aos poucos.';}
   else {nivel='carga baixa';cor='';txt='Carga abaixo da habitual — há espaço para aumentar volume/intensidade com segurança.';}
-  return`<div class="card"><div class="eyebrow">fadiga e overtraining</div>
+  return`<div class="card" id="c-fadiga"><div class="eyebrow">fadiga e overtraining</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${f.cronica}</div><div class="l">fitness (crônica/sem)</div></div>
       <div class="kpi"><div class="v">${f.aguda}</div><div class="l">fadiga (aguda 7d)</div></div>
@@ -7075,15 +7090,47 @@ function cabecalhoRelatorio(pro,motor){
   const preds=motor.predicoes||[];
   const pl=p=>{const q=p.prova.split(' ');return `${q[0]}m ${q[1]} · ${q[2]==='LC50'?'50m':'25m'}`;};
   const linhas=preds.map(p=>`<tr><td><b>${pl(p)}</b></td><td class="n">${fmt(p.pb,true)}</td><td class="n" style="font-weight:700">${fmt(p.low,true)}–${fmt(p.high,true)}</td></tr>`).join('');
-  return`<div class="card" style="text-align:center">
-    <div style="font-size:24px;font-weight:800;letter-spacing:-.3px">${esc(nome)}</div>
-    <div class="small muted" style="margin-top:2px">Relatório de performance · ${brData(hoje())}</div>
-    ${preds.length?`<table style="margin:12px auto 0;width:100%;max-width:440px;text-align:left">
-      <thead><tr><th>prova-alvo</th><th class="n">PB</th><th class="n">projeção hoje</th></tr></thead>
+  /* O nome e a data saíram daqui: viraram a primeira linha do cartão-chefe, que
+     é onde a identificação faz sentido. Aqui ficou só o que é conteúdo — PB
+     contra projeção —, para esta não ser mais uma caixa quase vazia ocupando a
+     primeira dobra de quem ainda não definiu provas-alvo. */
+  return`<div class="card" id="c-provas">
+    <div class="eyebrow">provas-alvo</div>
+    ${preds.length?`<table style="margin:8px 0 0;width:100%">
+      <thead><tr><th>prova</th><th class="n">PB</th><th class="n">projeção hoje</th></tr></thead>
       <tbody>${linhas}</tbody></table>
       <div class="xs muted" style="margin-top:6px">Projeção = tempo de competição provável hoje (detalhes abaixo).</div>`
-      :'<div class="small muted" style="margin-top:8px">Defina suas provas-alvo em Marcas para ver PB × projeção aqui.</div>'}
+      :'<div class="small muted" style="margin-top:6px">Defina suas provas-alvo em <b>Marcas</b> para ver PB × projeção aqui.</div>'}
   </div>`;
+}
+/* ── Três números do topo ──────────────────────────────────────────────────
+   O relatório tem mais de vinte cartões de peso igual, e quem abre não sabe
+   por onde começar. Estes três são os que mudam decisão: o tempo que você
+   nadaria hoje, se a carga está acima do habitual, e se o corpo respondeu.
+   Cada um leva ao cartão que o explica — o resumo vira o índice. */
+function cardKPIs(pro,motor,sem){
+  const p=(motor.predicoes||[])[0];
+  const f=(typeof fadigaCarga==='function')?fadigaCarga():null;
+  const pg=prontidaoGarmin(pro,sem);
+  const a=f&&f.acwr;
+  const corAC=a==null?'':(a>1.5?'color:var(--clock)':(a>=0.8?'color:var(--ok)':'color:var(--ink-2)'));
+  const corPr=!pg?'':(pg.score>=70?'color:var(--ok)':(pg.score>=50?'':'color:var(--clock)'));
+  const tile=(v,l,cor,anc,mini)=>`<button class="kpi-t" ${anc?`onclick="irParaDetalhe('${anc}')"`:'disabled'}>
+    <div class="v${mini?' mini':''}" style="${cor||''}">${v}</div><div class="l">${l}</div></button>`;
+  return`<div class="kpis">
+    ${/* a FAIXA inteira, nunca só a ponta rápida: mostrar 31.50 de uma projeção
+          de 31.50–33.32 é prometer o melhor caso como se fosse a previsão */''}
+    ${tile(p?`${fmt(p.low,true)}<br>–${fmt(p.high,true)}`:'—', p?`projeção ${p.prova.split(' ')[0]}m`:'sem prova-alvo', '', p?'c-provas':null, !!p)}
+    ${tile(a!=null?a.toFixed(2):'—','carga a/c',corAC,'c-fadiga')}
+    ${tile(pg?pg.score:'—','prontidão',corPr,'c-prontidao')}
+  </div>`;
+}
+/* abre o detalhamento e leva até o cartão — sem isto o número do topo seria
+   uma afirmação sem como conferir */
+function irParaDetalhe(ancora){
+  S.acc=S.acc||{}; S.acc.dt_relDet=true; render();
+  setTimeout(()=>{const el=document.getElementById(ancora);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'})},60);
 }
 /* ── RESUMO EXECUTIVO (topo do relatório): estado assertivo + fortes/fracos ── */
 function cardResumoExec(pro,motor,comPct){
@@ -7134,7 +7181,12 @@ function recomendaIntensidade(motor){
 }
 function cardPrioridadeSemana(pro,motor,diag){
   const ri=recomendaIntensidade(motor), foco=(diag.foco||[])[0];
-  return`<div class="card report-lead"><div><div class="eyebrow">prioridade desta semana</div><h2 style="margin:5px 0 8px">${esc(ri.nivel)}</h2><p style="margin:0">${ri.txt}</p>${foco?`<div class="note ${foco.t}" style="margin-top:12px">${foco.txt}</div>`:''}</div><div class="report-meta"><b>${motor.confianca}%</b><span>confiança dos dados</span><small>Janela: últimos 120 dias · atualizado em ${brData(hoje())}</small></div></div>`;
+  return`<div class="card report-lead"><div>
+    <div class="eyebrow">${esc(nomeLaudo())} · ${brData(hoje())}</div>
+    <div class="eyebrow" style="margin-top:9px">prioridade desta semana</div>
+    <h2 style="margin:5px 0 8px">${esc(ri.nivel)}</h2><p style="margin:0">${ri.txt}</p>
+    ${foco?`<div class="note ${foco.t}" style="margin-top:12px">${foco.txt}</div>`:''}</div>
+    <div class="report-meta"><b>${motor.confianca}%</b><span>confiança dos dados</span><small>Janela: últimos 120 dias</small></div></div>`;
 }
 /* ── PLANO DE AÇÃO: intensidade + ajustes de treino e foco para a competição ── */
 function cardPlanoAcao(pro,motor,diag,comPct){
@@ -7178,8 +7230,9 @@ function telaRelatorio(){
     <button class="sm ghost" onclick="imprimirRelatorio()">PDF</button>
     ${!S.laudoAtleta?`<button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>`:''}
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
-  ${cabecalhoRelatorio(pro,motor)}
   ${cardPrioridadeSemana(pro,motor,diag)}
+  ${cardKPIs(pro,motor,sem)}
+  ${cabecalhoRelatorio(pro,motor)}
   ${cardResumoExec(pro,motor,comPct)}
   ${cardFingerprint(motor)}
   ${cardCorrelacoes(pro,comPct)}
@@ -7211,7 +7264,7 @@ function telaRelatorio(){
   ${cardEvolucaoForca(pro)}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
-  ${pro.garmin?.length?`<div class="card"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}
+  ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}
   ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
     <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
     ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
