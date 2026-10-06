@@ -181,6 +181,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock)
 .report-lead .muted{color:var(--lead-2)}
 .report-lead .note{color:var(--ink);border-left-width:0;border-radius:var(--r-sm)}
 .report-meta{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;margin-top:12px;color:var(--lead-2)}
+.report-meta>div{display:flex;gap:7px;align-items:baseline}
 .report-meta b{font:700 24px/1 var(--mono);color:var(--lead-ink)}
 .report-meta small{width:100%}
 .report-details>summary{cursor:pointer;list-style:none;font-family:var(--disp);font-weight:700;text-transform:uppercase;
@@ -380,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v110';
+const VER='v111';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5761,7 +5762,7 @@ function diasComCargaInformada(){
   return m;
 }
 function idadeDoUsuario(){ try{ return (typeof anos==='function'&&S.u)?anos(S.u):null; }catch(_){ return null; } }
-/* fadiga: aguda(7d) × crônica(28d/sem) = relação a/c; monotonia = média/desvio (7d) */
+/* fadiga: carga aguda (7d) / carga habitual (28d/sem), em UA de duração × RPE. NAO e a mesma conta de cargaACWR(), que usa METROS NADADOS. monotonia = média/desvio (7d) */
 function fadigaCarga(){
   const dia=loadDiario(42), soma=(a,b)=>{let t=0;for(let i=a;i<b;i++)t+=dia[i]||0;return t;};
   const aguda=soma(0,7), cron=soma(0,28)/4;
@@ -5774,18 +5775,18 @@ function fadigaCarga(){
 function cardFadiga(){
   const f=fadigaCarga(); if(!f)return'';
   const a=f.acwr; let nivel,cor,txt;
-  if(a==null){nivel='dados iniciais';cor='var(--ink-2)';txt='Ainda sem carga habitual (crônica) suficiente para comparar. Registre RPE e duração nos treinos.';}
-  else if(a>1.5||f.monotonia>2.2){nivel='alerta de fadiga';cor='var(--clock)';txt='Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+' — fadiga acumulada. Vale um dia leve/recuperação antes de subir a carga (risco de overtraining).';}
-  else if(a>=0.8){nivel='carga sustentável';cor='var(--ok)';txt='Carga em faixa saudável — dá para manter ou progredir aos poucos.';}
-  else {nivel='carga baixa';cor='';txt='Carga abaixo da habitual — há espaço para aumentar volume/intensidade com segurança.';}
+  if(a==null){nivel='dados iniciais';cor='var(--ink-2)';txt='Ainda sem carga habitual suficiente para comparar. Preencha RPE e duração nos treinos.';}
+  else if(a>1.5||f.monotonia>2.2){nivel='alerta de fadiga';cor='var(--clock)';txt='Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+' — fadiga acumulada, padrão associado a overtraining. <i>Leitura para o técnico sobre reduzir a carga.</i>';}
+  else if(a>=0.8){nivel='carga sustentável';cor='var(--ok)';txt='Carga em faixa saudável, compatível com manter ou progredir.';}
+  else {nivel='carga baixa';cor='';txt='Carga abaixo da habitual — há margem em relação ao que o seu corpo já tolerou.';}
   return`<div class="card" id="c-fadiga"><div class="eyebrow">fadiga e overtraining</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${f.cronica}</div><div class="l">fitness (crônica/sem)</div></div>
       <div class="kpi"><div class="v">${f.aguda}</div><div class="l">fadiga (aguda 7d)</div></div>
-      <div class="kpi"><div class="v" style="${a!=null&&a>1.5?'color:var(--clock)':''}">${a!=null?a.toFixed(2):'—'}</div><div class="l">relação a/c</div></div>
+      <div class="kpi"><div class="v" style="${a!=null&&a>1.5?'color:var(--clock)':''}">${a!=null?a.toFixed(2):'—'}</div><div class="l">fadiga / fitness</div></div>
     </div>
     <div class="note" style="margin-top:10px;border-color:${cor}"><b>${nivel[0].toUpperCase()+nivel.slice(1)}:</b> ${txt}</div>
-    <div class="xs muted" style="margin-top:6px">Junta natação + treinos fora d'água (carga = duração × RPE). <b>Fitness</b> = carga habitual (28 dias); <b>fadiga</b> = últimos 7 dias; monotonia ${f.monotonia}. Interprete com a prontidão — leitura de apoio, não diagnóstico.</div>
+    <div class="xs muted" style="margin-top:6px">Junta natação + treinos fora d'água (carga = duração × RPE). Esta razão e a de <b>volume</b> não são a mesma coisa: aqui a conta é sobre duração × RPE, lá sobre metros nadados. <b>Fitness</b> = carga habitual (média semanal de 28 dias); <b>fadiga</b> = últimos 7 dias; monotonia ${f.monotonia}. Interprete com a prontidão — leitura de apoio, não diagnóstico.</div>
   </div>`;
 }
 /* ── FADIGA POR ATLETA (visão do técnico) ────────────────────────────────────
@@ -5831,7 +5832,7 @@ function veredictoFadiga(f){
   if(a==null)return {nivel:'dados iniciais',cor:'var(--ink-2)',txt:'Ainda sem carga habitual (crônica) para comparar. Faltam algumas semanas de registro.'};
   if(a>1.5||f.monotonia>2.2)return {nivel:'alerta de fadiga',cor:'var(--clock)',txt:'Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+'. Atleta próximo de overtraining — faça gestão de carga (dia leve/recuperação) antes de progredir.'};
   if(a>=0.8)return {nivel:'carga sustentável',cor:'var(--ok)',txt:'Carga em faixa saudável — dá para manter ou subir a carga aos poucos.'};
-  return {nivel:'carga baixa',cor:'',txt:'Carga abaixo da habitual — há espaço para aumentar volume/intensidade com segurança.'};
+  return {nivel:'carga baixa',cor:'',txt:'Carga abaixo da habitual — há margem em relação ao que o seu corpo já tolerou.'};
 }
 function cardFadigaAtleta(a){
   const c=S.fcache||(S.fcache={});
@@ -5846,7 +5847,7 @@ function cardFadigaAtleta(a){
     ${temCarga?`<div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${f.cronica}</div><div class="l">fitness</div></div>
       <div class="kpi"><div class="v">${f.aguda}</div><div class="l">fadiga 7d</div></div>
-      <div class="kpi"><div class="v" style="${f.acwr!=null&&f.acwr>1.5?'color:var(--clock)':''}">${f.acwr!=null?f.acwr.toFixed(2):'—'}</div><div class="l">relação a/c</div></div>
+      <div class="kpi"><div class="v" style="${f.acwr!=null&&f.acwr>1.5?'color:var(--clock)':''}">${f.acwr!=null?f.acwr.toFixed(2):'—'}</div><div class="l">fadiga / fitness</div></div>
     </div>`:''}
     <div class="note" style="margin-top:10px;border-color:${v.cor}"><b>${v.nivel[0].toUpperCase()+v.nivel.slice(1)}:</b> ${v.txt}</div>
     ${pr&&pr.media!=null?`<div class="row" style="margin-top:10px;align-items:center;gap:10px">
@@ -6195,7 +6196,7 @@ function dadosParaLaudo(motor){
     composicao:motor.composicao,
     cargaTotal28d:motor.cargaTotal,
     baselines:(motor.baselines||[]).map(b=>({indicador:b.nome,agora:+b.atual.toFixed(b.dec),desvioPct:+b.desvio.toFixed(0)})),
-    predicoes:(motor.predicoes||[]).map(p=>({prova:p.prova,faixa:fmt(p.low)+'–'+fmt(p.high),central:fmt(p.central),pb:fmt(p.pb),banda:p.banda+'%',qualidadeDados:p.qual,calibradoPor:p.calN})),
+    predicoes:(motor.predicoes||[]).map(p=>({prova:p.prova,faixa:fmt(p.low)+'–'+fmt(p.high),central:fmt(p.central),pb:fmt(p.pb),deltaLowPct:p.deltaLowPct,deltaHighPct:p.deltaHighPct,referencia:p.referencia,qualidadeDados:p.qual,calibradoPor:p.calN})),
     fingerprint:(motor.fingerprint||[]).filter(d=>d.score!=null).map(d=>({eixo:d.eixo,score:d.score})),
     mudancas28d:(motor.mudancas&&motor.mudancas.movers||[]).map(x=>({indicador:x.nome,deltaPct:+x.dPct.toFixed(0)})),
     porqueMudou:(motor.mudancas&&motor.mudancas.porque)||[],
@@ -6542,8 +6543,20 @@ function composicaoEstim(pro){
   }
   gord=+gord.toFixed(1);
   const massaMagra=+(ult.peso*(1-gord/100)).toFixed(1);
-  const score=Math.round(Math.max(0,Math.min(90,92-(gord-6)*3)));   // teto 90 (nunca "perfeito")
-  return {peso:ult.peso,data:ult.data,gordura:gord,estimada,fonte,motivo,massaMagra,score,imc:imcDe(ult),tmb:tmbDe(ult)};
+  /* QUARENTENA. O relatório já dizia, em texto, "não estou usando esses números
+     nas conclusões" — e logo abaixo exibia Composição 87/100 na assinatura de
+     sprint, derivada justamente do valor recusado. As duas coisas não podiam
+     ser verdade ao mesmo tempo.
+       medida        → a gordura% do aparelho é plausível: alimenta score.
+       água corporal → massa magra por água (TBW ÷ 0,732) é método aceito, mas é
+                       uma ESTIMATIVA: mostramos o número e não geramos score.
+       idade/sexo    → é tabela demográfica, não medição deste atleta: suspeito.
+     `usavelParaScore` é o que o motor consulta; o número continua visível. */
+  const status=!estimada?'medida':(fonte==='água corporal'?'estimada':'suspeita');
+  const usavelParaScore=status==='medida';
+  const score=usavelParaScore?Math.round(Math.max(0,Math.min(90,92-(gord-6)*3))):null;   // teto 90 (nunca "perfeito")
+  return {peso:ult.peso,data:ult.data,gordura:gord,estimada,fonte,motivo,massaMagra,
+    status,usavelParaScore,score,imc:imcDe(ult),tmb:tmbDe(ult)};
 }
 /* Composição × desempenho: massa magra + relação peso/potência (tempo/peso) */
 function cardComposicaoRelativa(pro){
@@ -6565,14 +6578,18 @@ function cardCarga(){
   const c=cargaACWR(); if(!c)return'';
   const r=c.acwr;
   const est=r>1.5?{t:'',txt:'carga da semana bem acima da sua habitual'}:r<0.8?{t:'',txt:'carga da semana abaixo da sua habitual'}:{t:'ok',txt:'carga em linha com a sua habitual'};
-  return`<div class="card"><div class="eyebrow">relação de carga aguda/crônica</div>
+  /* Isto NÃO é ACWR, e chamar assim confundia com a razão da página de fadiga.
+     Aqui a conta é sobre METROS NADADOS (t.vol do índice de treinos); lá é
+     sobre carga de sessão (duração × RPE). São grandezas diferentes com a
+     mesma forma de cálculo, e carregavam o mesmo rótulo. */
+  return`<div class="card" id="c-volume"><div class="eyebrow">volume agudo / volume habitual</div>
     <div class="grid3" style="margin-top:8px">
-      <div class="kpi"><div class="v">${r.toFixed(2)}</div><div class="l">ACWR</div></div>
-      <div class="kpi"><div class="v">${(c.ag/1000).toFixed(1)}k</div><div class="l">aguda (7 dias)</div></div>
-      <div class="kpi"><div class="v">${(c.cr/1000).toFixed(1)}k</div><div class="l">crônica (méd/sem)</div></div>
+      <div class="kpi"><div class="v">${r.toFixed(2)}</div><div class="l">razão</div></div>
+      <div class="kpi"><div class="v">${(c.ag/1000).toFixed(1)}k</div><div class="l">agudo (7 dias)</div></div>
+      <div class="kpi"><div class="v">${(c.cr/1000).toFixed(1)}k</div><div class="l">habitual (méd/sem)</div></div>
     </div>
     <div class="note ${est.t}" style="margin-top:10px">${est.txt}</div>
-    <div class="xs muted" style="margin-top:6px">Indica como a carga recente se compara à sua carga habitual. Interprete junto com o volume absoluto, a recuperação e o seu histórico — é um descritor de carga, não uma medida de risco de lesão.</div>
+    <div class="xs muted" style="margin-top:6px"><b>Metros nadados</b> dos últimos 7 dias contra a média semanal das últimas 4. Não confundir com a relação <b>fadiga/fitness</b>, que usa duração × RPE. É um descritor de volume, não uma medida de risco de lesão.</div>
   </div>`;
 }
 /* ── CORRELAÇÕES: cruza o histórico do próprio atleta ──────────────────────── */
@@ -6872,8 +6889,19 @@ function predicao(pro,comPct,est){
       else fat.push('Sem prova registrada para calibrar — faixa alargada');
       if(pis==='LC50'&&pbs[`${a.d} ${a.e} SC25`])fat.push('Ajustado p/ piscina longa (seu gap SC↔LC)');
       if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
-      out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:Math.round(low),high:Math.round(high),
-        qual:q,conf:q,calN:cal.n,calK:+cal.k.toFixed(3),banda:`−${(bUp*100).toFixed(1)}% / +${(bDn*100).toFixed(1)}%`,fatores:fat});
+      /* Os percentuais têm que sair dos limites QUE SERÃO EXIBIDOS, não da
+         banda pretendida. `low` e `high` acabaram de passar por três travas
+         (piso de 3,5% sobre o PB, teto no próprio PB, largura mínima), então
+         −bUp/+bDn já não descreve o que está na tela: o relatório mostrava
+         "−2,5% / +4,0%" ao lado de uma faixa que, contra o PB, era outra coisa.
+         Referência explícita: o PB, que é o número ao lado na tela. */
+      const L=Math.round(low), H=Math.round(high);
+      const dLow=+((L-pb)/pb*100).toFixed(1), dHigh=+((H-pb)/pb*100).toFixed(1);
+      const sinal=v=>(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(1)+'%';
+      out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:L,high:H,
+        qual:q,conf:q,calN:cal.n,calK:+cal.k.toFixed(3),
+        deltaLowPct:dLow,deltaHighPct:dHigh,referencia:'PB',
+        banda:`${sinal(dLow)} / ${sinal(dHigh)} vs PB`,fatores:fat});
     }
   }
   const fim=out.sort((x,y)=>y.qual-x.qual||x.d-y.d).slice(0,4);
@@ -6928,7 +6956,7 @@ function cardPredicao(pro,comPct,est){
     return`<div style="border-top:1px solid var(--line);padding:8px 0">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
-      <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · faixa ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
+      <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div></div>`;}).join('');
   return`<div class="card"><div class="eyebrow">projeção de tempo — provas-alvo</div>
     <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
@@ -7016,13 +7044,23 @@ function fingerprintDims(velPct,manutCV,pront,composicao,tend){
     {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
     {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
-    {eixo:'Composição', score: composicao&&composicao.score!=null?composicao.score:null, txt: composicao?`~${composicao.gordura}% gordura${composicao.estimada?' (est.)':''}`:'s/ dado'},
+    /* Composição só entra quando a gordura% foi MEDIDA e é plausível. Um eixo
+       pontuando 87/100 a partir de um valor que o próprio relatório marcou como
+       suspeito é pior que eixo nenhum: dá ao palpite a mesma aparência de
+       medida que os outros quatro. Sem dado utilizável, o eixo sai do radar —
+       não fica em zero, que seria afirmar composição ruim. */
+    ...(composicao&&composicao.usavelParaScore
+      ?[{eixo:'Composição', score: composicao.score, txt:`~${composicao.gordura}% gordura`}]
+      :[]),
     {eixo:'Tendência', score: tScore, txt: tend?('capacidade '+tend.dir+(tend.detalhe?` (${tend.detalhe})`:'')):'s/ dado'}
   ];
 }
 function cardFingerprint(m){
   const dims=m&&m.fingerprint; if(!dims||dims.filter(d=>d.score!=null).length<3)return'';
-  const cx=125,cy=98,R=64, ang=i=>-90+i*72, rad=i=>ang(i)*Math.PI/180;
+  /* o passo angular vem do NÚMERO DE EIXOS. Estava fixo em 72° (cinco eixos), e
+     agora a composição pode sair do radar quando o dado não é confiável — com
+     quatro eixos e passo de 72° o polígono não fecharia. */
+  const cx=125,cy=98,R=64, passo=360/dims.length, ang=i=>-90+i*passo, rad=i=>ang(i)*Math.PI/180;
   const pt=(i,r)=>[cx+r*Math.cos(rad(i)),cy+r*Math.sin(rad(i))];
   const poly=r=>dims.map((d,i)=>{const[x,y]=pt(i,typeof r==='function'?r(d):r);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
   /* `var(--accent)` NÃO EXISTE no CSS — nunca existiu. O SVG caía no preto
@@ -7057,21 +7095,27 @@ function motorPerformance(pro,comPct,sem,brk){
   /* composição estimada de forma transparente (peso real; gordura medida ou estimada) */
   const composicao=(typeof composicaoEstim==='function')?composicaoEstim(pro):null;
   const inv={tiros:comPct.length,competicoes:(pro.resultados||[]).length,garmin:(pro.garmin||[]).length,exames:(pro.exames||[]).length,bio:(pro.bioimp||[]).length,seco:(pro.seco||[]).length};
+  /* COBERTURA, não confiança. Esta soma conta QUANTO DADO EXISTE — tantos
+     pontos por tiro, por competição, por dia de Garmin. Ela não sabe nada sobre
+     o acerto de uma projeção. Chamar isso de "100% de confiança" ao lado de uma
+     projeção com 67% de qualidade era uma contradição na mesma página, e a
+     palavra sugeria probabilidade onde não há calibração estatística. */
   const pts=Math.min(20,inv.tiros*1.5)+Math.min(15,inv.competicoes*3)+Math.min(25,inv.garmin*0.8)+Math.min(10,inv.exames*3)+Math.min(10,inv.bio*3)+Math.min(10,inv.seco*1.5)+(est.pr?5:0)+((corr.rec||corr.carga)?5:0);
+  const cobertura=Math.round(Math.min(100,pts));
   /* FASE 1 — força estruturada disponível ao relatório e (depois) ao laudo */
   const progF=(typeof progressaoForca==='function')?progressaoForca(pro,90):{exercicios:[]};
   const ton90=(typeof tonelagem==='function')?tonelagem(90):null;
   const secForca=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;return x>=0&&x<90&&tonForcaSessao(s)>0;})).length;
   const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.e1RMRecente,e1rmPct:e.variacaoPct,melhorE1RM:e.melhorE1RM,e1RMRecente:e.e1RMRecente,tendencia:e.tendencia,confianca:e.confianca}))};
   const fadiga=(typeof fadigaCarga==='function')?fadigaCarga():null;
-  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),forca,fadiga,inventario:inv,confianca:Math.round(Math.min(100,pts))};
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),forca,fadiga,inventario:inv,cobertura,confianca:cobertura};   /* "confianca" fica como apelido: o laudo por IA e dados já gravados leem esse nome */
 }
 function cardModelo(m){
-  const iv=m.inventario, nf=m.confianca>=70?'boa':m.confianca>=40?'parcial':'inicial';
-  return`<div class="card"><div class="row"><div class="eyebrow">modelo de performance</div><div class="grow"></div>
-      <div class="kpi" style="text-align:right"><div class="v" style="${m.confianca>=70?'color:var(--ok)':m.confianca<40?'color:var(--clock)':''}">${m.confianca}%</div><div class="l">confiança</div></div></div>
+  const iv=m.inventario, c=m.cobertura, nf=c>=70?'ampla':c>=40?'parcial':'inicial';
+  return`<div class="card" id="c-modelo"><div class="row"><div class="eyebrow">modelo de performance</div><div class="grow"></div>
+      <div class="kpi" style="text-align:right"><div class="v" style="${c>=70?'color:var(--ok)':c<40?'color:var(--clock)':''}">${c}%</div><div class="l">cobertura</div></div></div>
     <div class="small muted" style="margin-top:4px">Base: ${iv.tiros} tiro(s) · ${iv.competicoes} resultado(s) · ${iv.garmin} dia(s) de relógio · ${iv.exames} exame(s) · ${iv.bio} bioimpedância(s) · ${iv.seco} fora d'água.</div>
-    <div class="xs muted" style="margin-top:6px">A confiança do modelo (${nf}) sobe conforme você acumula dados — e cada número abaixo vem com a própria confiança.</div>
+    <div class="xs muted" style="margin-top:6px">Cobertura ${nf}: mede <b>quanto dado existe</b>, e sobe conforme você registra. Não diz quanto o modelo acerta — isso é a <b>confiabilidade</b>, que aparece em cada projeção, separada por prova e piscina.</div>
   </div>`;
 }
 function laudoConsolidado(pro,diag,comPct,brk,sem){
@@ -7141,7 +7185,7 @@ function cardKPIs(pro,motor,sem){
     ${/* a FAIXA inteira, nunca só a ponta rápida: mostrar 31.50 de uma projeção
           de 31.50–33.32 é prometer o melhor caso como se fosse a previsão */''}
     ${tile(p?`${fmt(p.low,true)}<br>–${fmt(p.high,true)}`:'—', p?`projeção ${p.prova.split(' ')[0]}m`:'sem prova-alvo', '', p?'c-provas':null, !!p)}
-    ${tile(a!=null?a.toFixed(2):'—','carga a/c',corAC,'c-fadiga')}
+    ${tile(a!=null?a.toFixed(2):'—','fadiga / fitness',corAC,'c-fadiga')}
     ${tile(pg?pg.score:'—','prontidão',corPr,'c-prontidao')}
   </div>`;
 }
@@ -7206,7 +7250,14 @@ function cardPrioridadeSemana(pro,motor,diag){
     <div class="eyebrow" style="margin-top:9px">prioridade desta semana</div>
     <h2 style="margin:5px 0 8px">${esc(ri.nivel)}</h2><p style="margin:0">${ri.txt}</p>
     ${foco?`<div class="note ${foco.t}" style="margin-top:12px">${foco.txt}</div>`:''}</div>
-    <div class="report-meta"><b>${motor.confianca}%</b><span>confiança dos dados</span><small>Janela: últimos 120 dias</small></div></div>`;
+    ${(()=>{const p=(motor.predicoes||[])[0];
+      /* Dois números distintos, lado a lado, com nomes distintos: quanto dado
+         existe, e quanto o modelo acerta na prova que importa. Eram a mesma
+         palavra — e um dizia 100% enquanto o outro dizia 67%. */
+      const rot=q=>q>=60?'boa':q>=35?'moderada':'baixa';
+      return`<div class="report-meta"><div><b>${motor.cobertura}%</b><span>cobertura dos dados</span></div>
+      ${p?`<div><b>${p.qual}%</b><span>confiabilidade da projeção (${rot(p.qual)})</span></div>`:''}
+      <small>Janela: últimos 120 dias. Cobertura = quanto dos dados esperados existe; confiabilidade = quanto o modelo já aprendeu sobre a sua prova-alvo. Nenhum dos dois é probabilidade.</small></div></div>`;})()}`;
 }
 /* ── PLANO DE AÇÃO: intensidade + ajustes de treino e foco para a competição ── */
 function cardPlanoAcao(pro,motor,diag,comPct){
@@ -7215,8 +7266,8 @@ function cardPlanoAcao(pro,motor,diag,comPct){
   const ev=evolucaoProvas(pro);
   const evoluiu=[...new Set(ev.filter(x=>x.melhora).map(x=>x.prova))], regr=[...new Set(ev.filter(x=>!x.melhora).map(x=>x.prova))];
   const comp=[];
-  if(regr.length)comp.push({t:'warn',txt:`Revise a preparação específica de <b>${regr.join(', ')}</b> — caíram nas últimas competições.`});
-  if(evoluiu.length)comp.push({t:'ok',txt:`Mantenha o trabalho de <b>${evoluiu.join(', ')}</b> — vêm evoluindo; siga afinando ritmo e viradas.`});
+  if(regr.length)comp.push({t:'warn',txt:`Performance competitiva em queda nas últimas provas: <b>${regr.join(', ')}</b>. <i>Avaliação pelo técnico.</i>`});
+  if(evoluiu.length)comp.push({t:'ok',txt:`Performance competitiva em evolução: <b>${evoluiu.join(', ')}</b>.`});
   const pred=(motor.predicoes||[])[0];
   if(pred){const q=pred.prova.split(' ');const nm=`${q[0]}m ${q[1]} · ${q[2]==='LC50'?'50m':'25m'}`;
     comp.push({t:'',txt:`Projeção de hoje para <b>${nm}</b>: <b>${fmt(pred.low,true)}–${fmt(pred.high,true)}</b> (seu PB ${fmt(pred.pb,true)}). Encurtar essa diferença passa por sustentar o ritmo nos metros finais e chegar descansado à prova.`});}
@@ -7225,12 +7276,13 @@ function cardPlanoAcao(pro,motor,diag,comPct){
      decisão é do técnico. O nome passa a dizer o que o card de fato entrega. */
   return`<div class="card"><div class="eyebrow">indicadores para decisão</div>
     <div class="xs muted" style="margin:4px 0 8px">Leitura dos dados para o <b>técnico decidir</b>. O app não prescreve treino.</div>
-    <div class="eyebrow" style="margin-top:6px">intensidade dos treinos</div>
+    <div class="note" style="margin:0 0 10px"><b>O app não prescreve treino.</b> Ele lê os seus dados e indica apenas a direção da carga — reduzir, manter ou aumentar. O conteúdo do treino é do técnico.</div>
+    <div class="eyebrow" style="margin-top:6px">direção da carga</div>
     <div class="note ${ri.t}" style="margin:6px 0 10px"><b>${ri.nivel}:</b> ${ri.txt}</div>
     ${treinos.length?`<div class="eyebrow">pontos a trabalhar</div>${treinos.map(f=>`<div class="note ${f.t}" style="margin:6px 0 0">${f.txt}</div>`).join('')}`:''}
     <div class="sep"></div>
     <h3 style="margin:4px 0 8px">Para a competição</h3>
-    ${comp.length?comp.map(f=>`<div class="note ${f.t}" style="margin-bottom:8px">${f.txt}</div>`).join(''):'<div class="small muted">Registre resultados de competição (em Marcas) para recomendações específicas de prova.</div>'}
+    ${comp.length?comp.map(f=>`<div class="note ${f.t}" style="margin-bottom:8px">${f.txt}</div>`).join(''):'<div class="small muted">Registre resultados de competição (em Marcas) para indicadores específicos por prova.</div>'}
   </div>`;
 }
 function telaRelatorio(){
@@ -7329,15 +7381,15 @@ function diagnostico(comPct,brk,sem,pro){
 
   if(deltaMd!=null){
     if(deltaMd>2600)foco.push({t:'warn',txt:`O segundo 25 está custando em média <b>+${fmt(deltaMd,true)}</b> a mais que o primeiro. Esse é o seu maior ponto de perda: o limitador é manutenção de velocidade, não velocidade de largada.`});
-    else foco.push({t:'ok',txt:`Diferencial médio de <b>+${fmt(deltaMd,true)}</b> entre os 25. A manutenção está sob controle — dá para apertar o primeiro trecho sem medo.`});
+    else foco.push({t:'ok',txt:`Diferencial médio de <b>+${fmt(deltaMd,true)}</b> entre os 25. A manutenção do segundo 25 está estável, e o primeiro 25 mostra margem de velocidade relativa.`});
   }
   if(md!=null){
-    if(md<90)foco.push({t:'',txt:`Os tiros estão saindo a <b>${md.toFixed(0)}%</b> da sua melhor marca. Volume de qualidade acumulado, mas pouco tempo em ritmo real de prova — vale trocar parte do limiar por séries curtas com descanso completo.`});
+    if(md<90)foco.push({t:'',txt:`Os tiros estão saindo a <b>${md.toFixed(0)}%</b> da sua melhor marca. Baixa exposição recente a esforços curtos em intensidade específica de prova. <i>Leitura para o técnico: avaliar se a preparação traz estímulo específico suficiente.</i>`});
     else if(md>=95)foco.push({t:'ok',txt:`Média de <b>${md.toFixed(0)}%</b> do seu melhor tempo nos tiros. Você está treinando perto do ritmo de prova; o ganho agora vem de frescor, não de mais carga.`});
-    else foco.push({t:'',txt:`Média de <b>${md.toFixed(0)}%</b> do melhor tempo. Faixa saudável de treino: mantenha e concentre a intensidade em menos repetições, com mais descanso.`});
+    else foco.push({t:'',txt:`Média de <b>${md.toFixed(0)}%</b> do melhor tempo. Faixa saudável de treino. <i>Leitura para o técnico: a intensidade específica aparece em volume adequado.</i>`});
   }
-  if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Trabalho de tolerância ao lactato agora tende a render pouco e cobrar caro.'});
-  if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Segure a progressão por uma semana antes de somar carga.'});
+  if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Historicamente, esforços de alta demanda nessa condição rendem menos. <i>Leitura para o técnico.</i>'});
+  if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Salto de volume acima do habitual. <i>Leitura para o técnico sobre a progressão.</i>'});
   exFlags.forEach(f=>foco.push({t:f.t,txt:f.txt}));
   const bioUlt=[...(pro.bioimp||[])].sort((a,b)=>b.data.localeCompare(a.data))[0];
   if(bioUlt)flagsBio(bioUlt).forEach(f=>foco.push({t:f.t,txt:f.txt}));
