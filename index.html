@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v114';
+const VER='v115';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1287,6 +1287,7 @@ async function carregarDados(){
   if(S.treino){const t2=await DB.get(kTr(eq,S.treino.id)); if(t2)S.treino=t2;}
   else if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
   await carregarSemana(eq,meus);
+  if(temPro())await carregarCompFuturas(eq);
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
@@ -7018,8 +7019,55 @@ function predicao(pro,comPct,est){
    (e ao técnico) DESCONFIAR do app com evidência, em vez de acreditar nele por
    fé — foi a falta disso que fez a projeção errada de setembro parecer
    arbitrária. Sem prova registrada, diz o que falta em vez de sumir. */
+/* ── Qual prova a prontidão competitiva está medindo ───────────────────────
+   O app escolhia sozinho a primeira prova-alvo, o que não serve: quem treina
+   para o estadual de setembro quer ver a prova do estadual, não a primeira da
+   lista. As opções vêm, nesta ordem, das COMPETIÇÕES FUTURAS em que o atleta
+   está inscrito — que é o que ele tem em mente — e depois das provas-alvo.
+   Poucos documentos (competições que ainda não aconteceram) e releitura a
+   cada 5 minutos, pela mesma razão do cache da semana. */
+let _compFut={}, _compFutEm=0;
+async function carregarCompFuturas(eq){
+  const h=hoje(), ids=(S.cidx||[]).filter(c=>(c.data||'')>=h).map(c=>c.id);
+  const agora=Date.now(), reler=(agora-_compFutEm)>300000;
+  for(const id of (reler?ids:ids.filter(i=>!_compFut[i]))){
+    try{ const c=await DB.get(kCmp(eq,id)); if(c)_compFut[id]=c; }catch(_){}
+  }
+  if(reler)_compFutEm=agora;
+  for(const k of Object.keys(_compFut))if(!ids.includes(k))delete _compFut[k];
+}
+const chaveProva=o=>`${o.d}|${o.e}|${o.pis}`;
+function opcoesProva(pro){
+  const vis=new Set(), out=[], me=S.u&&S.u.id, h=hoje();
+  for(const c of Object.values(_compFut)){
+    if(!c||(c.data||'')<h)continue;
+    for(const p of (c.provas||[])){
+      if(!p.dist||!p.estilo)continue;
+      if(!(p.inscritos||[]).some(i=>i.atletaId&&i.atletaId===me))continue;
+      const o={d:p.dist,e:p.estilo,pis:c.piscina||'SC25',comp:c.nome,data:c.data,origem:'comp'};
+      if(vis.has(chaveProva(o)))continue; vis.add(chaveProva(o)); out.push(o);
+    }
+  }
+  out.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  for(const a of ((typeof provasAlvo==='function')?provasAlvo(pro):[])){
+    for(const pis of ['SC25','LC50']){
+      if(!((pro&&pro.pbs)||{})[`${a.d} ${a.e} ${pis}`])continue;
+      const o={d:a.d,e:a.e,pis,origem:'alvo'};
+      if(vis.has(chaveProva(o)))continue; vis.add(chaveProva(o)); out.push(o);
+    }
+  }
+  return out;
+}
+/* prova em foco: a escolha do atleta, se ainda existir nas opções */
+function provaEmFoco(pro){
+  const ops=opcoesProva(pro); if(!ops.length)return null;
+  return ops.find(o=>chaveProva(o)===S.provaPC)||ops[0];
+}
+function escolherProvaPC(k){ S.provaPC=k; ESF&&null; render();
+  setTimeout(()=>{const el=document.getElementById('c-prontcomp'); if(el)el.scrollIntoView({block:'start'})},60); }
 function cardProntidaoComp(pro,motor,comPct){
-  const ref=motor.provaRef; if(!ref)return'';
+  const ops=opcoesProva(pro), foco=provaEmFoco(pro);
+  const ref=foco||motor.provaRef; if(!ref)return'';
   const r=prontidaoCompetitiva(pro,comPct,motor,ref.d,ref.e,ref.pis);
   if(!r)return'';
   const nome=`${ref.d}m ${ref.e} ${ref.pis==='LC50'?'LC50m':'SC25m'}`;
@@ -7032,8 +7080,15 @@ function cardProntidaoComp(pro,motor,comPct){
         <div class="v t" style="font-size:38px;font-weight:800;line-height:1;color:${cor(r.score)}">${r.score}</div>
         <div><b>${r.rotulo}</b><div class="xs muted">${r.confiabilidade}% dos componentes disponíveis${r.ok<5?` (${5-r.ok} sem dado)`:''}</div></div></div>`
     : `<div class="note warn" style="margin-top:8px"><b>Ainda não dá para calcular.</b> ${esc(r.motivo)}. Um score com metade das peças seria inventar um número.</div>`;
+  const prox=ops.filter(o=>o.origem==='comp');
+  const seletor=ops.length>1?`<div class="field" style="margin:10px 0 0"><label>Prova em foco</label>
+    <div class="opt">${ops.slice(0,6).map(o=>`<button class="${chaveProva(o)===chaveProva(ref)?'on':''}" onclick="escolherProvaPC('${chaveProva(o)}')">
+      ${o.d}m ${esc(o.e)} <span class="xs">${o.pis==='LC50'?'50m':'25m'}</span></button>`).join('')}</div>
+    ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b> — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`
+      :`<div class="xs muted" style="margin-top:4px">Suas provas-alvo de <b>Marcas</b>. Quando houver competição futura com você inscrito, as provas dela aparecem aqui primeiro.</div>`}</div>`:'';
   return`<div class="card" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
     <div class="small muted" style="margin-top:3px">Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".</div>
+    ${seletor}
     ${topo}
     <table style="margin-top:10px"><tbody>${linhas}</tbody></table>
     ${r.direcao?`<div class="note ${r.direcao==='REDUZIR'?'warn':r.direcao==='AUMENTAR'?'ok':''}" style="margin-top:10px"><b>Direção da carga: ${r.direcao}.</b> <i>Leitura para o técnico — o app não prescreve treino.</i></div>`:''}
@@ -7444,8 +7499,13 @@ function motorPerformance(pro,comPct,sem,brk){
   const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.e1RMRecente,e1rmPct:e.variacaoPct,melhorE1RM:e.melhorE1RM,e1RMRecente:e.e1RMRecente,tendencia:e.tendencia,confianca:e.confianca}))};
   const fadiga=(typeof fadigaCarga==='function')?fadigaCarga():null;
   /* P3 — prova principal como referência da especificidade e da transferência */
-  const alvoP=((typeof provasAlvo==='function')?provasAlvo(pro):[])[0]||null;
-  const pisP=alvoP?((pro.pbs||{})[`${alvoP.d} ${alvoP.e} LC50`]&&!(pro.pbs||{})[`${alvoP.d} ${alvoP.e} SC25`]?'LC50':'SC25'):null;
+  /* a prova em foco e a que o atleta escolheu no cartao de prontidao competitiva;
+     sem escolha, a primeira inscricao futura e, na falta, a primeira prova-alvo */
+  const foco=(typeof provaEmFoco==='function')?provaEmFoco(pro):null;
+  const alvoP=foco||((typeof provasAlvo==='function')?provasAlvo(pro):[])[0]||null;
+  /* a piscina vem da escolha quando ela existe — a inscrição já diz em que
+     piscina a prova vai ser nadada, e é essa que interessa */
+  const pisP=alvoP?(alvoP.pis||((pro.pbs||{})[`${alvoP.d} ${alvoP.e} LC50`]&&!(pro.pbs||{})[`${alvoP.d} ${alvoP.e} SC25`]?'LC50':'SC25')):null;
   const espec=alvoP?especificidadeProva(comPct,alvoP.d,alvoP.e):null;
   const transf=alvoP?transferenciaProva(pro,comPct,alvoP.d,alvoP.e,pisP):null;
   return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend,espec),mudancas:mudancas28d(pro,comPct),forca,fadiga,espec,transf,provaRef:alvoP?{d:alvoP.d,e:alvoP.e,pis:pisP}:null,inventario:inv,cobertura,confianca:cobertura};   /* "confianca" fica como apelido: o laudo por IA e dados já gravados leem esse nome */
@@ -7531,8 +7591,14 @@ function cardKPIs(pro,motor,sem){
 }
 /* abre o detalhamento e leva até o cartão — sem isto o número do topo seria
    uma afirmação sem como conferir */
+/* Cada cartão agora mora dentro de uma seção recolhível: abrir só o
+   <details> não basta — o destino continuaria escondido dentro do acordeão. */
+const SECAO_DE={'c-modelo':'rel_proj','c-transf':'rel_proj','c-fadiga':'rel_carga',
+  'c-prontidao':'rel_carga','c-volume':'rel_carga'};
 function irParaDetalhe(ancora){
-  S.acc=S.acc||{}; S.acc.dt_relDet=true; render();
+  S.acc=S.acc||{}; S.acc.dt_relDet=true;
+  const sec=SECAO_DE[ancora]; if(sec)S.acc[sec]=true;
+  render();
   setTimeout(()=>{const el=document.getElementById(ancora);
     if(el)el.scrollIntoView({behavior:'smooth',block:'start'})},60);
 }
@@ -7652,13 +7718,18 @@ function telaRelatorio(){
   ${cardPlanoAcao(pro,motor,diag,comPct)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>Ver detalhamento e dados de apoio</summary><div>
+  ${/* Eram vinte e poucos cartões de peso igual, um atrás do outro. Agrupados
+       por PERGUNTA, não por origem do dado: o atleta chega aqui querendo saber
+       de projeção, de capacidade, de carga ou do corpo — e abre só aquilo. */''}
+  ${acc('rel_proj','Projeção e aprendizado','quanto o modelo projeta e o quanto ele acerta com você',`
   ${cardModelo(motor)}
+  ${cardPredicao(pro,comPct,motor.estado)}
+  ${cardAprendizado(pro)}
+  ${cardTransferencia(pro,motor,comPct,brk)}`)}
+  ${acc('rel_cap','Capacidade e splits','onde está a sua velocidade e onde ela escapa',`
   ${cardEstado(pro,comPct,sem)}
   ${cardBaseline(pro,comPct)}
   ${cardMudancas(pro,comPct)}
-  ${cardPredicao(pro,comPct,motor.estado)}
-  ${cardAprendizado(pro)}
-  ${cardTransferencia(pro,motor,comPct,brk)}
   <div class="card"><div class="eyebrow">panorama</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
@@ -7670,15 +7741,17 @@ function telaRelatorio(){
     <h3 style="margin:3px 0 9px">Onde a velocidade escapa</h3>
     ${graficoBarras(brk.slice(-10).map(e=>({rot:brCurta(e.data),v:e.delta})))}
     <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b>${(function(){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);if(!a.length)return'';const d=a.reduce((t,x)=>t+x,0)/a.length;return` · queda de velocidade média <b class="t">${d.toFixed(1)}%</b>`})()}</div>
-  </div>`:''}
+  </div>`:''}`)}
+  ${acc('rel_carga','Carga e recuperação','quanto você treinou e como o corpo respondeu',`
   ${cardCarga()}
   ${cardCargaTotal()}
   ${cardFadiga()}
   ${cardProntidaoSubj()}
-  ${cardEvolucaoForca(pro)}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
-  ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}
+  ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
+  ${acc('rel_corpo','Corpo, força e histórico','exames, composição e evolução em competições',`
+  ${cardEvolucaoForca(pro)}
   ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
     <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
     ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
@@ -7692,7 +7765,7 @@ function telaRelatorio(){
   ${cardComposicaoRelativa(pro)}
   ${cardEvolucao(pro,'evolução em competições')}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
-    <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
+    <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}`)}
   </div></details><div style="height:20px"></div>`;
 }
 function volumePorSemana(){
