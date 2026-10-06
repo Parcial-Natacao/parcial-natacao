@@ -256,7 +256,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v105';
+const VER='v106';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1651,6 +1651,14 @@ function navBar(){
 function irPara(a){_limparLaudo();if(a!==S.aba)push();S.aba=a;S.sub=null;S.provaSel=null;S.atletaSel=null;S.comp=null;S.minhaComp=null;render();window.scrollTo(0,0)}
 /* seção recolhível (acordeão): título + seta; abre/fecha ao clicar. Guarda o estado em S.acc. */
 function toggleAcc(id){ S.acc=S.acc||{}; S.acc[id]=!S.acc[id]; render(); }
+/* O <details> nativo guarda o aberto/fechado no PRÓPRIO elemento, e o render()
+   reescreve o #app inteiro — então a sincronia silenciosa, que roda a cada 12s,
+   recriava o elemento fechado e a seção se fechava sozinha na cara de quem
+   estava lendo. Guardamos o estado em S.acc, como o acordeão do app.
+   Sem render() aqui: o <details> já se desenhou sozinho, e redesenhar tudo só
+   faria a página piscar. */
+function lembraDetails(el){ if(!el||!el.id)return; S.acc=S.acc||{}; S.acc[el.id]=el.open; }
+const detAberto=id=>(S.acc&&S.acc[id])?'open':'';
 /* clicar num tempo em destaque abre o histórico daquela prova (resultados +
    gráfico de evolução) e rola até ele */
 function abrirHistProva(id){
@@ -5995,7 +6003,7 @@ function abrirNovoExame(pre){
     <div class="field"><label>Data da coleta</label><input type="date" id="exData" value="${pre.data||hoje()}"></div>
     ${achados.length?`<div class="note ok" style="margin:8px 0">${achados.length} marcador(es) lidos do PDF. Confira antes de salvar.</div>`:''}
     <div class="grid2">${base.map(k=>campoMarc(k,vals[k])).join('')}</div>
-    <details style="margin:10px 0"><summary class="small muted">Outros marcadores</summary>
+    <details style="margin:10px 0" id="dt_exOutros" ontoggle="lembraDetails(this)" ${detAberto('dt_exOutros')}><summary class="small muted">Outros marcadores</summary>
       <div class="grid2" style="margin-top:8px">${resto.map(k=>campoMarc(k,vals[k])).join('')}</div></details>
     <div class="field"><label>Observações</label><input id="exObs" autocapitalize="sentences" value="${esc(pre.obs||'')}" placeholder="contexto, outros marcadores"></div>
     <button class="primary full" onclick="salvarExame()">Salvar exame</button>`);
@@ -6951,7 +6959,7 @@ function telaRelatorio(){
   ${cardCorrelacoes(pro,comPct)}
   ${cardPlanoAcao(pro,motor,diag,comPct)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
-  <details class="report-details"><summary>Ver detalhamento e dados de apoio</summary><div>
+  <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>Ver detalhamento e dados de apoio</summary><div>
   ${cardModelo(motor)}
   ${cardEstado(pro,comPct,sem)}
   ${cardBaseline(pro,comPct)}
