@@ -231,6 +231,34 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .bar i{display:block;height:100%;background:var(--water)}
 .kpi .v{font-family:var(--mono);font-weight:700;font-size:25px;line-height:1}
 .kpi .l{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+/* ── Cartão do treino da vez ───────────────────────────────────────────────
+   O fundo é feito em CSS, não com foto: o app é um arquivo só, e uma imagem
+   de piscina decente custaria centenas de KB para carregar à beira da piscina,
+   onde o sinal é ruim — justamente onde este cartão precisa aparecer rápido.
+   As faixas diagonais evocam as raias sem pesar nada. */
+.hero{display:block;width:100%;text-align:left;border:0;border-radius:var(--r-lg);padding:18px;margin:14px 0;
+  color:var(--lead-ink);background:
+    repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 22px),
+    linear-gradient(145deg,#0E4C63 0%,#0B2F42 55%,#122634 100%);
+  box-shadow:var(--sh-2);text-transform:none;letter-spacing:0;font-family:var(--body);min-height:0}
+.hero.ok{background:
+  repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 22px),
+  linear-gradient(145deg,#12543F 0%,#0C3328 55%,#122620 100%)}
+.hero-top{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.hero-badge{font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  background:rgba(255,255,255,.15);border-radius:999px;padding:4px 11px}
+.hero-data{margin-left:auto;font-size:13px;opacity:.75}
+.hero-tit{display:block;font-family:var(--disp);font-size:27px;line-height:1.05;text-transform:uppercase;font-weight:700}
+.hero-meta{font-family:var(--mono);font-size:13.5px;opacity:.8;margin-top:6px}
+.hero-cta{display:block;text-align:center;margin-top:16px;background:#fff;color:#0B2F42;
+  border-radius:var(--r-sm);padding:13px;font-weight:700;font-size:15.5px}
+/* faixa da semana */
+.dias{display:flex;gap:6px;margin-top:11px}
+.dia{flex:1;text-align:center;font-family:var(--disp);font-size:12.5px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;padding:9px 0;border-radius:10px;border:1.5px solid var(--line);color:var(--ink-3)}
+.dia.prog{border-style:dashed;border-color:var(--water);color:var(--water)}
+.dia.ok{background:var(--ok);border-color:var(--ok);color:var(--sobre-acento)}
+.dia.hj{box-shadow:0 0 0 2px var(--deck),0 0 0 4px var(--clock)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .chip{font-family:var(--mono);font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;background:var(--card-2)}
 .chip.best{border-color:var(--rope);background:var(--rope-bg);font-weight:700}
@@ -337,7 +365,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v107';
+const VER='v108';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -734,9 +762,21 @@ try{ window.addEventListener('popstate',()=>{if(S.pilha.length)voltar()}) }catch
 /* ---------- utilidades ---------- */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmtInt=ms=>{const x=fmt(ms,true);return x.replace(/\.00$/,'')};
-const hoje=()=>new Date().toISOString().slice(0,10);
+/* Data no fuso de QUEM ESTÁ USANDO. `toISOString()` converte para UTC: no
+   Brasil (UTC−3), às 21h01 de segunda ele já devolve terça, e o app passava a
+   noite inteira achando que era o dia seguinte — treino da noite caindo no dia
+   errado, "hoje" apontando para amanhã na agenda e na faixa da semana. */
+const isoDia=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const hoje=()=>isoDia(new Date());
 const brData=d=>d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'';
 const brCurta=d=>d?d.slice(8,10)+'/'+d.slice(5,7):'';
+/* semana de SEGUNDA a DOMINGO, que é como o técnico monta o microciclo */
+function semanaDe(dia){
+  const x=new Date((dia||hoje())+'T00:00:00'), dow=(x.getDay()+6)%7;
+  const ini=new Date(x); ini.setDate(x.getDate()-dow);
+  return Array.from({length:7},(_,k)=>{const y=new Date(ini); y.setDate(ini.getDate()+k); return isoDia(y)});
+}
+const DIA_CURTO=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* ── URL vinda do banco ────────────────────────────────────────────────────
    Anexos (PDF do treino, foto da sessão) são gravados por OUTRA pessoa e
@@ -1230,6 +1270,7 @@ async function carregarDados(){
      de volta pro primeiro da lista — era o que causava o "volta sozinho". */
   if(S.treino){const t2=await DB.get(kTr(eq,S.treino.id)); if(t2)S.treino=t2;}
   else if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
+  await carregarSemana(eq,meus);
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
@@ -2782,6 +2823,82 @@ const cardTreinoExtra=s=>`<button class="card tight lst" style="border:1px solid
   <div class="av">${esc((s.tipo||'?').slice(0,2))}</div>
   <div class="grow"><b>${esc(s.tipo||'Treino')}</b><div class="xs muted">${brData(s.data)}${s.dur?' · '+minParaHMS(s.dur):''}${s.rpe!=null?' · RPE '+s.rpe:''}${s.fc?' · '+s.fc+' bpm':''}${s.calorias?' · '+s.calorias+' kcal':''}</div></div>
   <span class="tag o">meu</span></button>`;
+/* ── Semana do atleta ──────────────────────────────────────────────────────
+   A faixa da semana precisa saber o que foi FEITO, e isso só existe dentro do
+   documento do treino — o índice não carrega. São poucos documentos (os da
+   semana corrente), mas a sincronia silenciosa roda a cada 12s: reler todos a
+   cada volta multiplicaria as leituras do banco sem necessidade. Então:
+   documento novo entra na hora, e a releitura geral acontece no máximo uma vez
+   por minuto. Para a faixa de uma semana, um minuto de atraso não muda nada —
+   e o que o próprio aparelho grava já atualiza o cache na hora. */
+let _semDocs={}, _semEm=0;
+async function carregarSemana(eq,metas){
+  const dias=semanaDe(hoje());
+  const ids=(metas||[]).filter(t=>dias.includes(t.data)).map(t=>t.id);
+  const agora=Date.now(), reler=(agora-_semEm)>60000;
+  for(const id of (reler?ids:ids.filter(id=>!_semDocs[id]))){
+    try{ const d=await DB.get(kTr(eq,id)); if(d)_semDocs[id]=d; }catch(_){}
+  }
+  if(reler)_semEm=agora;
+  for(const k of Object.keys(_semDocs))if(!ids.includes(k))delete _semDocs[k];   /* virou a semana */
+  if(S.treino&&_semDocs[S.treino.id])_semDocs[S.treino.id]=S.treino;             /* o aberto é o mais fresco */
+}
+const semDoc=id=>_semDocs[id]||(S.treino&&S.treino.id===id?S.treino:null);
+/* ── Cartão do treino da vez ───────────────────────────────────────────────
+   A lista de treinos trata todos os dias como iguais, e o dia que importa é
+   um só. Escolhemos, nesta ordem: um treino de HOJE ainda não concluído; o
+   de hoje, concluído; o mais recente que ficou pendente; o mais recente.
+   Treino futuro não entra — o app só o libera quando chega a data. */
+function heroTreino(metas){
+  const h=hoje(), lista=(metas||[]).slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  if(!lista.length)return'';
+  const doDia=lista.filter(t=>t.data===h);
+  const t=doDia.find(x=>feitoConhecido(x)===false)||doDia[0]
+    ||lista.find(x=>feitoConhecido(x)===false)||lista[0];
+  const feito=feitoConhecido(t), d=semDoc(t.id);
+  const blocos=d&&d.blocos?d.blocos.length:0;
+  return`<button class="hero ${feito?'ok':''}" onclick="abrirTreino('${t.id}')">
+    <div class="hero-top">
+      <span class="hero-badge">${feito?'concluído':(t.data===h?'treino de hoje':'pendente')}</span>
+      <span class="hero-data">${brData(t.data)}</span>
+    </div>
+    <b class="hero-tit">${esc(t.titulo||'Treino')}</b>
+    <div class="hero-meta">${(t.vol/1000).toFixed(1)}k${blocos?` · ${blocos} bloco${blocos>1?'s':''}`:''}${t.nivel?` · nível ${esc(t.nivel)}`:''}</div>
+    <span class="hero-cta">${feito?'Rever treino':'Abrir treino'}</span>
+  </button>`;
+}
+/* ── Faixa da semana ───────────────────────────────────────────────────────
+   Segunda a domingo. Verde cheio = feito; contorno = programado e ainda não
+   feito; apagado = dia sem treino. Quando o documento do treino ainda não
+   chegou, o dia fica como programado em vez de "não feito": "não sei" não é
+   "não fez", e riscar um treino que o atleta fez seria pior do que omitir. */
+function faixaSemana(){
+  const dias=semanaDe(hoje()), h=hoje();
+  const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
+  const secos=new Set(((S.pro&&S.pro.seco)||[]).map(s=>s.data));
+  const cels=dias.map((d,k)=>{
+    const nat=meus.filter(t=>t.data===d);
+    const feitoNat=nat.some(t=>feitoConhecido(t)===true);
+    const temSeco=secos.has(d);
+    const cls=(feitoNat||temSeco)?'ok':(nat.length?'prog':'off');
+    return`<span class="dia ${cls}${d===h?' hj':''}" title="${brData(d)}">${DIA_CURTO[k]}</span>`;
+  }).join('');
+  /* O denominador conta DIAS com treino — de piscina ou fora d'água. Contar só
+     os de piscina deixava "1 de 2" com a musculação de terça no numerador e
+     fora do total, o que não fecha para quem está olhando. */
+  const ativos=dias.filter(d=>secos.has(d)||meus.some(t=>t.data===d)).length;
+  const fez=dias.filter(d=>secos.has(d)||meus.some(t=>t.data===d&&feitoConhecido(t)===true)).length;
+  const faltam=dias.filter(d=>d>=h&&meus.some(t=>t.data===d&&feitoConhecido(t)!==true)).length;
+  if(!ativos)return'';
+  return`<div class="card tight">
+    <div class="row" style="align-items:baseline"><span class="eyebrow grow">esta semana</span>
+      <b class="t" style="font-size:15px">${fez} de ${ativos}</b></div>
+    ${faltam?`<div class="small muted" style="margin-top:2px">${faltam===1?'1 treino restante':faltam+' treinos restantes'}</div>`:''}
+    <div class="dias">${cels}</div></div>`;
+}
+/* Concluído? Só respondemos quando temos o documento — "não sei" é diferente de
+   "não fez", e pintar de cinza um treino que o atleta fez seria pior que omitir. */
+function feitoConhecido(meta){ const d=semDoc(meta.id); return d?treinoFeito(d,S.u.id):null; }
 function telaTreinosAtleta(){
   if(S.sub==='novo'&&S.u.perfil==='pro')return telaNovoTreino();   /* PRO lança treino de piscina como o técnico */
   if(S.treino&&S.sub==='detalhe')return telaTreinoDetalhe();
@@ -2795,6 +2912,8 @@ function telaTreinosAtleta(){
   <div class="row" style="margin:16px 0 6px"><h2>Meus treinos</h2><div class="grow"></div>
     ${S.u.perfil==='pro'?`<button class="sm ghost" onclick="novoTreinoPro()">+ Piscina</button>`:''}
     <button class="sm primary" onclick="abrirTreinoExtra()">+ Meu treino</button></div>
+  ${heroTreino(meus)}
+  ${faixaSemana()}
   ${futuros?`<div class="xs muted" style="margin:2px 0 8px">Há ${futuros} treino(s) programado(s) para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
   ${(()=>{const p=pendenciasSeco(), n=p.length; if(!n)return'';
     const auto=p.filter(x=>x.auto).length;
