@@ -22,7 +22,7 @@ indexada por ele: `u_<email>`).
 
 | # | O que testa | Operação e caminho | Quem | Esperado |
 |---|---|---|---|---|
-| 1 | Saúde é privada | `get` · `/kv/pro_<uid-DE-OUTRO>` | você (dev) | ❌ **Deny** |
+| 1 | Saúde é privada | `get` · `/kv/pro_<uid-DE-OUTRO>` | atleta comum | ❌ **Deny** |
 | 2 | Dono lê o próprio | `get` · `/kv/pro_<seu-uid>` | você | ✅ Allow |
 | 3 | Sem aprovação não vê a equipe | `get` · `/kv/eq_<slug>_tridx` | atleta com `aprovado:false` | ❌ **Deny** |
 | 4 | Membro aprovado vê | `get` · `/kv/eq_<slug>_tridx` | atleta aprovado da equipe | ✅ Allow |
@@ -36,6 +36,9 @@ indexada por ele: `u_<email>`).
 | 12 | Técnico edita o índice | `update` · `/kv/eq_<slug>_tridx` | técnico aprovado da equipe | ✅ Allow |
 | 13 | Snapshot próprio | `update` · `/kv/eq_<slug>_perf_<seu-uid>` | você | ✅ Allow |
 | 14 | Snapshot alheio | `update` · `/kv/eq_<slug>_perf_<uid-DE-OUTRO>` | você (não técnico) | ❌ **Deny** |
+| 15 | Administração global | `get` e `update` · `/kv/pro_<uid-DE-OUTRO>` | `barbato.bruno@gmail.com` | ✅ Allow |
+| 16 | Pendente não altera elenco | `update` · `/kv/eq_<slug>_users` | atleta pendente | ❌ **Deny** |
+| 17 | Usuário não troca de equipe aprovado | `update` · `/kv/u_<seu-email>` mantendo `aprovado:true` | o próprio | ❌ **Deny** |
 
 **Os mais importantes são o 1, o 6 e o 7.** O 1 é a privacidade dos dados de
 saúde; o 6 e o 7 são a escalada de privilégio que motivou toda a correção.

@@ -20,7 +20,7 @@ rules_version = '2';
 // risco de o app parar de salvar). Agora vão para cá, e o documento guarda só
 // a URL. O modelo de acesso acompanha o do Firestore:
 //
-//   pro/<uid>/...  → dados pessoais do atleta: SÓ O DONO. Nem técnico, nem dev.
+//   pro/<uid>/...  → dados pessoais: dono e administrador global. Técnico não acessa.
 //   eq/<slug>/...  → material da equipe: membro aprovado lê, gestor escreve.
 //
 // O papel vem do documento kv/u_<email> no Firestore — o mesmo que as regras
@@ -33,6 +33,7 @@ service firebase.storage {
     function logado()   { return request.auth != null; }
     function meuUid()   { return request.auth.uid; }
     function meuEmail() { return request.auth.token.email.lower(); }
+    function ehAdmin()  { return logado() && meuEmail() == 'barbato.bruno@gmail.com'; }
     function chaveU()   { return /databases/(default)/documents/kv/$('u_' + meuEmail()); }
     // durante o cadastro o u_ pode ainda não existir: sem este guarda, o get()
     // derruba a avaliação inteira da regra.
@@ -53,16 +54,16 @@ service firebase.storage {
 
     // ── Anexos pessoais do atleta (sessões fora d'água) ──
     match /pro/{uid}/{arquivo=**} {
-      allow read:   if logado() && meuUid() == uid;
-      allow write:  if logado() && meuUid() == uid && tamanhoOk() && tipoOk();
-      allow delete: if logado() && meuUid() == uid;
+      allow read:   if ehAdmin() || (logado() && meuUid() == uid);
+      allow write:  if (ehAdmin() || (logado() && meuUid() == uid)) && tamanhoOk() && tipoOk();
+      allow delete: if ehAdmin() || (logado() && meuUid() == uid);
     }
 
     // ── Material da equipe (PDF do treino) ──
     match /eq/{slug}/{arquivo=**} {
-      allow read:   if aprovado() && minhaEq() == slug;
-      allow write:  if gestorDe(slug) && tamanhoOk() && tipoOk();
-      allow delete: if gestorDe(slug);
+      allow read:   if ehAdmin() || (aprovado() && minhaEq() == slug);
+      allow write:  if (ehAdmin() || gestorDe(slug)) && tamanhoOk() && tipoOk();
+      allow delete: if ehAdmin() || gestorDe(slug);
     }
 
     // Nada mais é acessível.

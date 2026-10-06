@@ -66,12 +66,16 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/kv/$('eq_' + eq))
           && get(/databases/$(database)/documents/kv/$('eq_' + eq)).data.donoEmail == meuEmail();
       }
-      function ehDev() { return logado() && meuEmail() == 'barbato.bruno@gmail.com'; }
+      // Administrador global. O e-mail vem do token assinado pelo Firebase Auth;
+      // alterar HTML ou dados do perfil no cliente não concede este acesso.
+      function ehAdmin() { return logado() && meuEmail() == 'barbato.bruno@gmail.com'; }
+      function ehDev() { return ehAdmin(); }
 
       function ehPro() { return chave.matches('pro_.*'); }
       function ehU()   { return chave.matches('u_.*'); }
       function ehEq()  { return chave.matches('eq_.*'); }
       function ehOutro() { return !ehPro() && !ehU() && !ehEq(); }
+      function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
       // por qualquer logado: no CADASTRO o app confere se a equipe existe antes
@@ -96,66 +100,71 @@ service cloud.firestore {
 
       // ───────────────────────── LEITURA ─────────────────────────
       allow read: if
-        // dados privados do atleta: só o dono (nem técnico, nem dev)
+        ehAdmin() ||
+        // dados privados do atleta: dono; o administrador global é a exceção
         ( ehPro() && logado() && resource.data.dono == meuUid() )
         // cadastro: o próprio, o técnico aprovado da equipe dele, ou o dev
         || ( ehU() && ( ehMeuU() || ehDev() || tecnicoDe(resource.data.equipe) ) )
         // documento da equipe: qualquer logado (necessário no cadastro)
         || ( ehEqRaiz() && logado() )
         // lista de membros e meu próprio snapshot: mesmo pendente
-        || ( ehEq() && logado() && ( usersDaMinhaEq() || meuPerf() ) )
+        || ( ehEq() && logado() && ( (usersDaMinhaEq() && aprovado()) || meuPerf() ) )
         // demais documentos da equipe: membro APROVADO dela, ou o dev
         || ( ehEq() && ( ehDev() || ( aprovado() && resource.data.equipe == minhaEq() ) ) )
-        || ( ehOutro() && logado() );
+        || ( ehCatalogo() && logado() );
 
       // ──────────────────────── CRIAÇÃO ─────────────────────────
       allow create: if
+        ehAdmin() ||
         ( ehPro() && logado() && request.resource.data.dono == meuUid() )
         // cadastro: só o meu, e SEMPRE pendente (bloqueia autopromoção)
         || ( ehU() && ehMeuU()
              && request.resource.data.dono == meuUid()
              && request.resource.data.aprovado == false )
         // minha lista de membros / meu snapshot
-        || ( ehEq() && logado() && ( meuPerf() || usersDaMinhaEq() ) )
+        || ( ehEq() && aprovado() && ( meuPerf() || usersDaMinhaEq() ) )
         // equipe nova: quem cria vira dono dela; dentro de equipe existente,
         // só o técnico dela (ou o dono).
         || ( ehEq() && logado()
              && ( request.resource.data.donoEmail == meuEmail()
                   || tecnicoDe(request.resource.data.equipe)
                   || souDonoDaEquipe(request.resource.data.equipe) ) )
-        || ( ehOutro() && logado() );
+        || ( ehOutro() && ehAdmin() );
 
       // ─────────────────────── ATUALIZAÇÃO ──────────────────────
       allow update: if
+        ehAdmin() ||
         ( ehPro() && logado() && resource.data.dono == meuUid()
                               && request.resource.data.dono == meuUid() )
         // o próprio cadastro: edita os dados, mas NÃO sobe o próprio privilégio.
         // `aprovado` só fica igual, cai para false, ou sobe se eu for dono da equipe.
         || ( ehU() && ehMeuU() && naoMexeEm('dono') && naoMexeEm('perfil')
+             && ( naoMexeEm('equipe') || request.resource.data.aprovado == false )
              && ( naoMexeEm('aprovado')
                   || request.resource.data.aprovado == false
                   || souDonoDaEquipe(request.resource.data.equipe) ) )
         // o dev libera técnicos (sem mexer em dono nem perfil)
         || ( ehU() && ehDev() && naoMexeEm('dono') && naoMexeEm('perfil') )
         // o técnico aprova / inclui / exclui atletas da SUA equipe
-        || ( ehU() && naoMexeEm('dono') && naoMexeEm('perfil')
+        || ( ehU() && resource.data.perfil == 'atleta' && naoMexeEm('dono') && naoMexeEm('perfil')
              && ( tecnicoDe(resource.data.equipe) || tecnicoDe(request.resource.data.equipe) ) )
         // minha lista de membros / meu snapshot de performance
-        || ( ehEq() && logado() && ( meuPerf() || usersDaMinhaEq() ) )
+        || ( ehEq() && aprovado() && ( meuPerf() || usersDaMinhaEq() ) )
         // treino/competição: membro aprovado da equipe lança os seus tempos
         || ( ehEqAtleta() && aprovado() && resource.data.equipe == minhaEq()
              && naoMexeEm('equipe') )
         // demais documentos da equipe: só o técnico (ou o dono da equipe)
         || ( ehEq() && !ehEqAtleta() && naoMexeEm('equipe')
              && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
-        || ( ehOutro() && logado() );
+        || ( ehOutro() && ehAdmin() );
 
       // ───────────────────────── EXCLUSÃO ───────────────────────
       allow delete: if
-        ( ehPro() && logado() && resource.data.dono == meuUid() )
-        || ( ehU() && ( ehMeuU() || ehDev() || tecnicoDe(resource.data.equipe) ) )
+        ehAdmin()
+        || ( ehPro() && logado() && resource.data.dono == meuUid() )
+        || ( ehU() && ( ehMeuU() || ehDev() || (resource.data.perfil == 'atleta' && tecnicoDe(resource.data.equipe)) ) )
         || ( ehEq() && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
-        || ( ehOutro() && logado() );
+        || ( ehOutro() && ehAdmin() );
     }
   }
 }

@@ -26,7 +26,7 @@
   base-uri 'none';
   form-action 'none';
 ">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -87,7 +87,8 @@ button:focus-visible{outline:3px solid var(--water);outline-offset:2px}
 button.primary{background:var(--ink);color:var(--deck)}
 button.danger{border-color:var(--clock);color:var(--clock)}
 button.ghost{border-color:var(--line);color:var(--ink-2);font-weight:500}
-button.sm{padding:8px 12px;font-size:14px;border-radius:9px;min-height:38px}
+button.sm{padding:8px 12px;font-size:14px;border-radius:9px;min-height:44px}
+button:disabled{opacity:.55;cursor:not-allowed;transform:none}
 button.full{width:100%}
 input,select,textarea{font-family:var(--body);font-size:16px;width:100%;padding:12px 13px;border:1.5px solid var(--line);
   border-radius:11px;background:var(--card);color:var(--ink);min-height:46px;-webkit-appearance:none;appearance:none}
@@ -97,6 +98,27 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--water)}
 textarea{min-height:170px;font-family:var(--mono);font-size:15px;line-height:1.6}
 label{display:block;font-family:var(--disp);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin:0 0 5px}
 .field{margin:12px 0}
+.field-erro{display:block;color:var(--clock);font-size:13px;margin-top:5px;min-height:0}
+input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock);background:#FFF8F7}
+.progress{height:6px;border-radius:999px;background:var(--line);overflow:hidden;margin:12px 0 0}
+.progress span{display:block;height:100%;border-radius:999px;background:var(--clock);transition:width .2s}
+.cad-resumo{display:flex;flex-direction:column;gap:4px;font-size:14px;padding:12px;background:var(--deck);border-radius:10px;margin-bottom:12px}
+.cad-resumo span{overflow-wrap:anywhere;color:var(--ink-2)}
+.admin-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.admin-kpis>div{background:var(--deck);border-radius:11px;padding:12px 8px;text-align:center}
+.admin-kpis strong{display:block;font:700 24px/1 var(--mono)}
+.admin-toolbar{display:grid;grid-template-columns:1fr auto;gap:8px;margin:10px 0}
+.report-lead{background:var(--ink);color:var(--deck);border:0;box-shadow:0 8px 24px rgba(18,24,28,.14)}
+.report-lead .muted{color:#C8D0D5}
+.report-lead .note{color:var(--ink);border-left-width:0;border-radius:10px}
+.report-meta{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;margin-top:12px;color:#C8D0D5}
+.report-meta b{font:700 24px/1 var(--mono);color:var(--deck)}
+.report-meta small{width:100%}
+.report-details>summary{cursor:pointer;list-style:none;font-family:var(--disp);font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;padding:14px 2px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.report-details>summary::-webkit-details-marker{display:none}
+.report-details>summary::after{content:'+';float:right;font-size:20px;line-height:1}
+.report-details[open]>summary::after{content:'−'}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .opt{display:flex;gap:8px;flex-wrap:wrap}
@@ -175,13 +197,19 @@ svg.chart{width:100%;height:auto;display:block}
 .note.warn{border-color:var(--clock);background:#FFF6F5}
 .note.ok{border-color:var(--ok);background:#F4FBF8}
 /* acordeão (seções recolhíveis) — achata cards aninhados no corpo p/ ficar clean */
-.acc-h{cursor:pointer;display:flex;align-items:center;gap:10px;padding:13px 15px}
+.acc-h{cursor:pointer;display:flex;align-items:center;gap:10px;padding:13px 15px;width:100%;border:0;background:none;color:inherit;text-align:left;border-radius:0;text-transform:none;letter-spacing:0}
 .acc-h .tit{font-family:var(--disp);text-transform:uppercase;letter-spacing:.04em;font-size:15px;font-weight:700}
 .acc-chev{font-family:var(--disp);font-size:20px;color:var(--ink-2);transition:transform .15s;display:inline-block}
 .accbody{padding:2px 15px 15px}
 .accbody>.card,.accbody .card{border:0;box-shadow:none;margin:0;padding:0;background:none}
 .accbody .card+.card{margin-top:12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:390px){
+  .grid2{grid-template-columns:1fr}
+  .admin-toolbar{grid-template-columns:1fr}
+  nav button{font-size:10px}
+  nav button b{font-size:17px}
+}
 @media print{
   nav,header,.noprint{display:none!important}
   body{padding:0;background:#fff}
@@ -191,6 +219,8 @@ svg.chart{width:100%;height:auto;display:block}
   .eyebrow{font-size:10.5px}
   h2,h3,.eyebrow{page-break-after:avoid}
   svg,table,.grid3{break-inside:avoid}
+  details:not([open])>*:not(summary){display:block!important}
+  details summary{display:none!important}
   @page{margin:14mm 12mm}
 }
 </style>
@@ -209,9 +239,9 @@ svg.chart{width:100%;height:auto;display:block}
 
 <main class="wrap" id="app"></main>
 <nav class="hide" id="nav"><div class="navin" id="navin"></div></nav>
-<div class="toast" id="toast"></div>
-<div class="sheet" id="sheet" onclick="if(event.target===this)fecharSheet()">
-  <div class="inner"><div class="grab"></div><div id="sheetBody"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-hidden="true" onclick="if(event.target===this)fecharSheet()">
+  <div class="inner" tabindex="-1"><div class="grab"></div><div id="sheetBody"></div></div>
 </div>
 
 <!-- Firebase (SDK "compat" — funciona em <script> comum, sem build).
@@ -226,7 +256,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v103';
+const VER='v104';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -271,8 +301,10 @@ const temIA=()=>!!IA_URL;
    Use o MESMO e-mail da sua conta no app (pode listar mais de um).
    Cadastro de técnico entra pendente até um desenvolvedor liberar.
    ───────────────────────────────────────────────────────────── */
-const DEV_EMAILS=['barbato.bruno@gmail.com'];
-function ehDev(){ return !!(S.u&&DEV_EMAILS.includes((S.u.email||'').toLowerCase())); }
+const ADMIN_EMAILS=['barbato.bruno@gmail.com'];
+const DEV_EMAILS=ADMIN_EMAILS; /* compatibilidade com cadastros e migrações antigas */
+function ehAdmin(){ return !!(S.u&&ADMIN_EMAILS.includes((S.u.email||'').toLowerCase())); }
+function ehDev(){ return ehAdmin(); }
 /* Catálogo de equipes (IV Troféu Brasil Masters — ABMN). O desenvolvedor escolhe
    daqui para criar; pode também digitar uma equipe fora da lista. */
 const CATALOGO_EQUIPES=[
@@ -755,10 +787,19 @@ function parseTempoDist(x,dist){
   }
   return parseTempo(s);
 }
-let tT; function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');
-  clearTimeout(tT);tT=setTimeout(()=>e.classList.remove('on'),2600)}
-function sheet(html){document.getElementById('sheetBody').innerHTML=html;document.getElementById('sheet').classList.add('on')}
-function fecharSheet(){document.getElementById('sheet').classList.remove('on')}
+let tT,_focoAntesSheet=null;
+function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');
+  clearTimeout(tT);tT=setTimeout(()=>e.classList.remove('on'),4200)}
+function sheet(html){
+  const sh=document.getElementById('sheet'); _focoAntesSheet=document.activeElement;
+  document.getElementById('sheetBody').innerHTML=html; sh.classList.add('on'); sh.setAttribute('aria-hidden','false');
+  requestAnimationFrame(()=>{const alvo=sh.querySelector('input,select,textarea,button,[tabindex="0"]')||sh.querySelector('.inner'); alvo?.focus();});
+}
+function fecharSheet(){
+  const sh=document.getElementById('sheet'); sh.classList.remove('on');sh.setAttribute('aria-hidden','true');
+  if(_focoAntesSheet&&typeof _focoAntesSheet.focus==='function')_focoAntesSheet.focus(); _focoAntesSheet=null;
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('sheet')?.classList.contains('on'))fecharSheet();});
 const val=id=>(document.getElementById(id)?.value||'').trim();
 
 /* ---------- telefone ---------- */
@@ -785,8 +826,9 @@ async function copiarTexto(id){
 
 /* ---------- CPF ---------- */
 function cpfLimpo(c){return(c||'').replace(/\D/g,'')}
-/* senha: 6 a 8 caracteres, com ao menos 1 maiúscula, 1 minúscula e 1 símbolo #$%!@ */
-function senhaForte(s){ return typeof s==='string' && /^(?=.*[a-z])(?=.*[A-Z])(?=.*[#$%!@]).{6,8}$/.test(s); }
+/* Senha nova: aceita frases longas e não impõe teto artificial de 8 caracteres.
+   Login continua aceitando contas antigas; esta regra vale só para criação/troca. */
+function senhaForte(s){ return typeof s==='string' && s.length>=10 && s.length<=72 && /[A-Za-zÀ-ÿ]/.test(s) && /\d/.test(s); }
 /* duração: texto "hh:mm:ss" / "mm:ss" / "45" (min) → minutos (decimal); e o inverso */
 function hmsParaMin(txt){
   if(txt==null||txt==='')return null;
@@ -868,7 +910,7 @@ function traduzErroFB(code){
   const m={
     'auth/email-already-in-use':'Já existe conta com este e-mail',
     'auth/invalid-email':'E-mail inválido',
-    'auth/weak-password':'Senha muito fraca (mínimo 6 caracteres)',
+    'auth/weak-password':'Senha muito fraca. Use ao menos 10 caracteres, com letras e números',
     'auth/user-not-found':'E-mail não cadastrado',
     'auth/wrong-password':'Senha incorreta',
     'auth/invalid-credential':'E-mail ou senha incorretos',
@@ -889,7 +931,7 @@ async function cadastrarFB(dados){
   const id=idadeDe(nascimento);
   if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
   if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
-  if(!senhaForte(senha))return toast('Senha: 6 a 8 caracteres, com 1 maiúscula, 1 minúscula e 1 símbolo (#$%!@)');
+  if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
 
   const em=email.toLowerCase(), eqSlug=slug(equipe);
@@ -931,7 +973,7 @@ async function cadastrarFB(dados){
   }
 
   /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
-     dos dados PRO (só o dono lê pro_<uid>). */
+     dos dados PRO (o dono e o administrador global leem pro_<uid>). */
   /* P0: NINGUÉM nasce aprovado. Entrar na equipe passa a exigir confirmação —
      do técnico (atleta) ou do dev (técnico). A única auto-aprovação possível é
      a de quem é DONO da equipe, e ela acontece no passo seguinte, porque a
@@ -941,16 +983,17 @@ async function cadastrarFB(dados){
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
     nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:false,criadoEm:Date.now()};
-  await DB.set(kUser(u.email),u);
-  if(donoDaEquipe){ u.aprovado=true; await DB.set(kUser(u.email),u); }
-  await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
+  if(!await DB.set(kUser(u.email),u))return abortar('Não consegui salvar seu perfil. Tente novamente.');
+  if(donoDaEquipe){ u.aprovado=true; if(!await DB.set(kUser(u.email),u))return abortar('Não consegui concluir seu cadastro. Tente novamente.'); }
+  if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   try{ await cred.user.sendEmailVerification(); }catch(_){}   /* confirma o e-mail por link */
-  await entrarSessao(u);
-  toast(u.aprovado?'Conta criada! Enviei um link de confirmação ao seu e-mail.':(perfil==='tecnico'?'Cadastro enviado. Confirme o e-mail e aguarde a liberação do desenvolvedor.':'Cadastro enviado! Confirme o e-mail e aguarde a liberação do técnico.'));
+  S.emailPendente=em; S.vista='verificar'; S.u=null; render();
+  toast('Conta criada. Confirme o e-mail para continuar.');
 }
 /* fila global de técnicos, para o desenvolvedor enxergar e liberar */
 async function registrarTecnicoDev(u){
+  if(FB)return; /* no Firebase, o administrador encontra pendências pelos perfis u_ */
   const lst=await DB.get('dev_tecnicos')||[];
   if(!lst.some(x=>x.email===u.email)){ lst.push({email:u.email,nome:u.nome,equipeNome:u.equipeNome,em:Date.now()}); await DB.set('dev_tecnicos',lst); }
 }
@@ -959,6 +1002,8 @@ async function autenticarFB(email,senha){
   const em=(email||'').toLowerCase();
   try{ await fauth.signInWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
+  await fauth.currentUser.reload();
+  if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
   const u=await DB.get(kUser(em));
   if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Refaça o cadastro.'); }
   if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada pelo técnico'); }
@@ -974,7 +1019,7 @@ async function cadastrar(dados){
   const id=idadeDe(nascimento);
   if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
   if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
-  if(!senhaForte(senha))return toast('Senha: 6 a 8 caracteres, com 1 maiúscula, 1 minúscula e 1 símbolo (#$%!@)');
+  if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
   if(await DB.get(kUser(email)))return toast('Já existe conta com este e-mail');
 
@@ -1151,7 +1196,7 @@ async function varrerKv(){
 
   await faixa('dev_','dev_');                 /* liberado a qualquer logado */
   const eq=(S.u&&S.u.equipe)||'';
-  if(ehDev()){                                       /* dev lê tudo, menos pro_ alheio */
+  if(ehAdmin()){
     await faixa('eq_','eq_'); await faixa('u_','u_');
   }else{
     if(eq)await faixa('eq_'+eq,'eq_'+eq+'');   /* só a MINHA equipe */
@@ -1217,15 +1262,16 @@ function telaEntrada(){
     <div class="eyebrow">quem é você</div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
       ${[['atleta','A','Atleta','Recebe os treinos do técnico, lança os tempos e devolve tudo pra ele.'],
-         ['pro','P','Atleta PRO','Tudo do atleta, mais Garmin, melhores tempos, histórico e relatório. Entra pelo código mestre, sem depender do técnico.'],
+         ['pro','P','Atleta PRO','Tudo do atleta, mais Garmin, melhores tempos, histórico e relatório. Usa o código da própria equipe.'],
          ['tecnico','T','Técnico','Comanda a equipe, monta os treinos por nível e cronometra as competições.']]
         .map(([k,i,t,d])=>`<button class="perfil ${S.perfilEscolhido===k?'on':''}" onclick="push();S.perfilEscolhido='${k}';render()">
           <span class="ic">${i}</span><span><b>${t}</b><span class="small muted">${d}</span></span></button>`).join('')}
     </div>
-    ${S.perfilEscolhido?`<div class="grid2" style="margin-top:14px">
-      <button class="primary" onclick="push();S.vista='cadastro';render()">Criar conta</button>
+    <div class="grid2" style="margin-top:14px">
+      <button class="primary" ${S.perfilEscolhido?'':'disabled'} onclick="push();CAD_PASSO=1;CAD={};S.vista='cadastro';render()">Criar conta</button>
       <button onclick="push();S.vista='login';render()">Já tenho conta</button>
-    </div>`:`<div class="small muted center" style="margin-top:14px">Escolha um perfil para continuar</div>`}
+    </div>
+    ${S.perfilEscolhido?'':'<div class="small muted center" style="margin-top:10px">Escolha um perfil apenas para criar uma conta.</div>'}
   </div>
   ${botaoDemo()}`;
 }
@@ -1234,15 +1280,15 @@ function telaLogin(){
   return`
   <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
   <h1>Entrar</h1>
-  <div class="card">
-    <div class="field"><label>E-mail</label>
-      <input id="lgEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" placeholder="voce@email.com"></div>
-    <div class="field"><label>Senha</label>
-      <input id="lgSenha" type="password" autocomplete="current-password" placeholder="mínimo 6 caracteres"></div>
-    <button class="primary full" onclick="autenticar(val('lgEmail'),val('lgSenha'))">Entrar</button>
+  <form class="card" onsubmit="event.preventDefault();autenticar(val('lgEmail'),val('lgSenha'))">
+    <div class="field"><label for="lgEmail">E-mail</label>
+      <input id="lgEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" placeholder="voce@email.com" required></div>
+    <div class="field"><label for="lgSenha">Senha</label>
+      <input id="lgSenha" type="password" autocomplete="current-password" placeholder="sua senha" required></div>
+    <button class="primary full" type="submit">Entrar</button>
     <button class="ghost full" style="margin-top:9px" onclick="pedirReset(val('lgEmail'))">Esqueci minha senha</button>
     <div class="xs muted" style="margin-top:9px">Digite o e-mail antes de pedir a recuperação.</div>
-  </div>`;
+  </form>`;
 }
 
 function telaReset(){
@@ -1255,59 +1301,72 @@ function telaReset(){
   </div>`;
 }
 
+let TIPO='piscina', CAD_PASSO=1, CAD={};
+function guardarCadastro(){
+  const ids={cdEquipe:'equipe',cdPro:'codigoPro',cdNome:'nome',cdEmail:'email',cdNasc:'nascimento',cdTel:'telefone',cdCpf:'cpf',cdSenha:'senha',cdSenha2:'senha2'};
+  Object.entries(ids).forEach(([id,k])=>{const el=document.getElementById(id);if(el)CAD[k]=el.value.trim()}); CAD.tipo=TIPO;
+}
+function passoCadastro(dir){
+  guardarCadastro();
+  if(dir>0&&CAD_PASSO===1&&!CAD.equipe)return toast('Informe sua equipe para continuar');
+  if(dir>0&&CAD_PASSO===1&&S.perfilEscolhido==='pro'&&!CAD.codigoPro)return toast('Informe o código PRO da equipe');
+  if(dir>0&&CAD_PASSO===2){
+    if(!CAD.nome||CAD.nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(CAD.email||''))return toast('Informe um e-mail válido');
+    if(!CAD.nascimento||idadeDe(CAD.nascimento)==null)return toast('Informe sua data de nascimento');
+    if(!telValido(CAD.telefone))return toast('Informe WhatsApp com DDD');
+  }
+  CAD_PASSO=Math.max(1,Math.min(3,CAD_PASSO+dir)); render(); window.scrollTo(0,0);
+}
 function telaCadastro(){
   const p=S.perfilEscolhido;
   const titulo={atleta:'Conta de atleta',pro:'Conta PRO',tecnico:'Conta de técnico'}[p];
-  const precisaLista=(p==='tecnico'||p==='atleta');
+  /* No Firebase a lista protegida só pode ser lida depois que o Auth cria a
+     conta. Antes disso usamos entrada por nome; a validação real ocorre já
+     autenticada, sem abrir o catálogo e os códigos da equipe ao público. */
+  const precisaLista=(p==='tecnico'||p==='atleta')&&!FB;
   if(precisaLista&&S.equipesDisp==null){carregarEquipesDisp().then(()=>render());}
   const campoEquipe=!precisaLista
-    ? `<input id="cdEquipe" autocapitalize="words" placeholder="ex.: A3 Swim Team">
-       <div class="xs muted" style="margin-top:5px">Se a equipe ainda não existir, ela é criada agora e o técnico entra depois com o mesmo nome.</div>`
+    ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" autocapitalize="words" placeholder="ex.: A3 Swim Team">
+       <div class="xs muted" style="margin-top:5px">${p==='atleta'?'Digite exatamente o nome informado pelo seu técnico.':p==='tecnico'?'Digite o nome oficial da equipe. Se ela já existir, seu cadastro será vinculado a ela.':'Digite o nome oficial da equipe vinculada ao código PRO.'}</div>`
     : (S.equipesDisp==null
         ? `<select id="cdEquipe" disabled><option>carregando equipes…</option></select>`
         : (S.equipesDisp.length
-            ? `<input id="cdEquipe" list="listaEquipes" autocomplete="off" autocapitalize="characters" placeholder="digite para buscar sua equipe">
+            ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" list="listaEquipes" autocomplete="off" autocapitalize="characters" placeholder="digite para buscar sua equipe">
                <datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>
                <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou (digite para buscar).':'Digite e escolha a mesma equipe do seu técnico.'}</div>`
             : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
+  const equipe=`<div class="field"><label for="cdEquipe">Equipe</label>${campoEquipe}</div>
+    ${p==='pro'?`<div class="field"><label for="cdPro">Código PRO da equipe</label><input id="cdPro" value="${esc(CAD.codigoPro||'')}" autocapitalize="characters" autocorrect="off" placeholder="ABCD-EFGH"><div class="xs muted" style="margin-top:5px">Peça este código ao responsável pela equipe.</div></div>`:''}`;
+  const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
+    <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
+    <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${hoje()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
+    <div class="xs muted" style="margin:-4px 0 8px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div>
+    ${p==='atleta'?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
+    ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
+  const confirmar=`<div class="cad-resumo"><b>${esc(CAD.nome||'Novo usuário')}</b><span>${esc(CAD.email||'')}</span><span>${esc(CAD.equipe||'')} · ${titulo}</span></div>
+    <div class="grid2"><div class="field"><label for="cdSenha">Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="10+ caracteres"></div><div class="field"><label for="cdSenha2">Repita a senha</label><input id="cdSenha2" type="password" autocomplete="new-password"></div></div>
+    <div class="xs muted" style="margin:-4px 0 12px">Use de 10 a 72 caracteres, com letras e números. Uma frase longa é uma boa opção.</div>
+    <label class="small" style="display:flex;gap:9px;align-items:flex-start"><input id="cdAceite" type="checkbox" style="width:auto;margin-top:3px">Confirmo que os dados são meus e entendo que o acesso depende da confirmação do e-mail${p==='atleta'?' e da aprovação da equipe':''}.</label>`;
   return`
   <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
   <h1>${titulo}</h1>
+  <div class="progress" aria-label="Etapa ${CAD_PASSO} de 3"><span style="width:${CAD_PASSO/3*100}%"></span></div><div class="xs muted" style="margin:6px 0 12px">Etapa ${CAD_PASSO} de 3 · ${['equipe','seus dados','segurança'][CAD_PASSO-1]}</div>
   <div class="card">
-    <div class="field"><label>Equipe</label>${campoEquipe}</div>
-    <div class="field"><label>Nome completo</label><input id="cdNome" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
-    <div class="field"><label>E-mail</label><input id="cdEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
-    <div class="grid2">
-      <div class="field"><label>Data de nascimento</label><input id="cdNasc" type="date" max="${hoje()}"></div>
-      <div class="field"><label>WhatsApp</label><input id="cdTel" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div>
-    </div>
-    <div class="xs muted" style="margin:-4px 0 8px">Com o número cadastrado, os treinos e tempos vão direto para a sua conversa.</div>
-    ${p==='atleta'?`
-    <div class="field"><label>CPF <span class="muted">(opcional)</span></label><input id="cdCpf" inputmode="numeric" placeholder="000.000.000-00">
-      <div class="xs muted" style="margin-top:5px">Ajuda o técnico a te identificar. Seu cadastro passa por aprovação dele antes de liberar o acesso.</div></div>`:''}
-    ${p!=='tecnico'?`
-    <div class="field"><label>Onde você compete</label>
-      <div class="opt"><button id="tpA" class="on" onclick="selTipo('piscina')">Piscina</button>
-        <button id="tpB" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}
-    ${p==='pro'?`<div class="field"><label>Código PRO</label>
-      <input id="cdPro" autocapitalize="characters" autocorrect="off" placeholder="código mestre">
-      <div class="xs muted" style="margin-top:5px">O perfil PRO não passa pelo técnico: quem tem o código entra direto, sem CPF e sem liberação.</div></div>`:''}
-    <div class="grid2">
-      <div class="field"><label>Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="6+ caracteres"></div>
-      <div class="field"><label>Repita</label><input id="cdSenha2" type="password" autocomplete="new-password"></div>
-    </div>
-    <button class="primary full" style="margin-top:6px" onclick="enviarCadastro()">Criar conta</button>
+    ${CAD_PASSO===1?equipe:CAD_PASSO===2?pessoal:confirmar}
+    <div class="grid2" style="margin-top:16px">${CAD_PASSO>1?'<button onclick="passoCadastro(-1)">Voltar etapa</button>':'<span></span>'}${CAD_PASSO<3?'<button class="primary" onclick="passoCadastro(1)">Continuar</button>':'<button class="primary" onclick="enviarCadastro()">Criar conta</button>'}</div>
   </div>`;
 }
-let TIPO='piscina';
 function selTipo(t){TIPO=t;
   document.getElementById('tpA').classList.toggle('on',t==='piscina');
   document.getElementById('tpB').classList.toggle('on',t==='aguas')}
 function enviarCadastro(){
-  cadastrar({perfil:S.perfilEscolhido,equipe:val('cdEquipe'),nome:val('cdNome'),email:val('cdEmail'),
-    nascimento:val('cdNasc'),telefone:val('cdTel'),senha:val('cdSenha'),senha2:val('cdSenha2'),
-    tipo:TIPO,cpf:val('cdCpf'),codigoPro:val('cdPro')});
+  guardarCadastro(); if(!(document.getElementById('cdAceite')||{}).checked)return toast('Confirme os dados para criar a conta');
+  cadastrar({perfil:S.perfilEscolhido,...CAD});
 }
+function telaVerificarEmail(){return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div><p class="muted">Enviamos um link para <b>${esc(S.emailPendente||fauth?.currentUser?.email||'seu e-mail')}</b>. Abra o link e volte aqui para liberar o acesso.</p><button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button><button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button><button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button></div>`}
+async function confirmarEmailAgora(){try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
+async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.vista='login';render()}
 
 /* ---------- conta / ajustes ---------- */
 function abrirConta(){
@@ -1467,12 +1526,12 @@ function renderInterno(){
   document.body.classList.remove('t-escura'); document.body.style.background='';
   if(!S.u){
     hdr.classList.add('hide');nav.classList.add('hide');
-    app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset}[S.vista]();
+    app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset,verificar:telaVerificarEmail}[S.vista]();
     return;
   }
   /* a tela de espera é só para quem está PENDENTE numa equipe. Sem equipe, o
      atleta vai para a tela de entrar numa equipe (saiu ou foi removido). */
-  if(S.u.aprovado===false&&S.u.equipe&&(S.u.perfil==='atleta'||S.u.perfil==='tecnico')){
+  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&(S.u.perfil==='atleta'||S.u.perfil==='tecnico')){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
@@ -1481,7 +1540,7 @@ function renderInterno(){
     return;
   }
   /* escolha de esporte (uma vez): Natação segue; qualquer outro = Em Desenvolvimento */
-  if(S.u.esporte!=='Natação'){
+  if(!ehAdmin()&&S.u.esporte!=='Natação'){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm0=document.getElementById('pModo'); if(pm0){pm0.textContent=MODO;pm0.className='pill '+(EMREDE?'tec':'')}
@@ -1532,6 +1591,7 @@ function corEquipe(nome){
 function bannerEquipe(){
   if(!S.u||!S.u.equipeNome)return'';
   const c=corEquipe(S.u.equipeNome);
+  if(S.adminOrig)return`<div class="note warn" style="margin:10px 0 2px"><div class="row"><span class="grow"><b>Modo administrador:</b> visualizando e editando ${esc(S.u.equipeNome)}.</span><button class="sm" onclick="sairContextoAdmin()">Sair da equipe</button></div></div>`;
   return`<div style="margin:10px 0 2px;padding:9px 13px;border-radius:11px;background:${c.bg};border:1px solid ${c.ac}">
     <span style="font-weight:800;color:${c.ac}">Olá, ${esc(prim(S.u.nome))}!</span> <span class="small">Você está na área da <b>${esc(S.u.equipeNome)}</b>. Seja bem-vindo(a) e bons treinos!</span></div>`;
 }
@@ -1558,7 +1618,7 @@ function telaEmDesenvolvimento(){
 async function escolherEsporte(e){ S.u.esporte=e; try{await DB.set(kUser(S.u.email),S.u);}catch(_){} render(); }
 async function trocarEsporte(){ S.u.esporte=null; try{await DB.set(kUser(S.u.email),S.u);}catch(_){} render(); }
 /* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
-function ehGestor(){ return !!(S.u&&(S.u.perfil==='tecnico'||(S.u.perfil==='pro'&&S.gestao))); }
+function ehGestor(){ return !!(S.u&&(ehAdmin()||S.u.perfil==='tecnico'||(S.u.perfil==='pro'&&S.gestao))); }
 /* quem tem dados de performance (aba Marcas/Saúde/Relatório): PRO ou atleta liberado */
 function temPro(u){ u=u||S.u; return !!(u&&(u.perfil==='pro'||u.podeMarcas||u.podeSaude||u.podeRelatorio)); }
 /* sujeito do relatório: normalmente o próprio usuário; quando o técnico abre o laudo
@@ -1591,11 +1651,11 @@ function abrirHistProva(id){
 function acc(id,titulo,sub,conteudo){
   const open=!!(S.acc&&S.acc[id]);
   return`<div class="card" id="acc-${id}" style="padding:0;overflow:hidden">
-    <div class="acc-h" onclick="toggleAcc('${id}')">
+    <button class="acc-h" aria-expanded="${open}" aria-controls="accbody-${id}" onclick="toggleAcc('${id}')">
       <span class="grow"><span class="tit">${titulo}</span>${sub?`<span class="xs muted" style="display:block;margin-top:2px">${sub}</span>`:''}</span>
       <span class="acc-chev" style="transform:rotate(${open?90:0}deg)">›</span>
-    </div>
-    ${open?`<div class="accbody">${conteudo}</div>`:''}
+    </button>
+    ${open?`<div class="accbody" id="accbody-${id}">${conteudo}</div>`:''}
   </div>`;
 }
 
@@ -2634,7 +2694,7 @@ function telaAguardando(){
   <div class="empty" style="margin-top:26px">
     <div class="big">Cadastro enviado ✓</div>
     <p class="small" style="margin-top:10px">Olá, ${esc(prim(S.u.nome))}! ${tec
-      ? `Seu cadastro de <b>técnico</b> da equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação do desenvolvedor</b> do app.`
+      ? `Seu cadastro de <b>técnico</b> da equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação do administrador</b> do app.`
       : `Seu cadastro na equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação</b> do técnico.`}</p>
     <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
   </div>
@@ -2678,6 +2738,7 @@ function telaElenco(){
 async function aprovarAtleta(id){
   const a=S.elenco.find(x=>x.id===id); if(!a)return;
   a.aprovado=true; await DB.set(kUser(a.email),a);
+  await transacao(kEqUsers(a.equipe),us=>{us=us||[];if(!us.includes(a.email))us.push(a.email);return us});
   await carregarDados(); toast(prim(a.nome)+' liberado'); render();
 }
 
@@ -2772,14 +2833,14 @@ async function scanEquipes(){
    estavam sob a equipe original. Os dados nunca foram apagados: só de-referenciados. */
 async function assumirEquipe(sg,nome){
   if(!ehDev())return;
+  if(!S.adminOrig)S.adminOrig={equipe:S.u.equipe,equipeNome:S.u.equipeNome,aprovado:S.u.aprovado};
   S.u.equipe=sg; S.u.equipeNome=nome; S.u.aprovado=true;
-  await DB.set(kUser(S.u.email),S.u);
-  await transacao(kEqUsers(sg),us=>{us=us||[]; if(!us.includes(S.u.email))us.push(S.u.email); return us;});
-  if(S.u.perfil==='pro')S.gestao=true;   /* entra já com a visão de técnico */
+  S.gestao=true;
   await carregarDados();
   S.equipesDevList=null; S.equipesDisp=null; S.aba='treinos';
-  toast('Agora você está na equipe '+nome+' (gestão ligada)'); render();
+  toast('Visualizando '+nome+' como administrador'); render();
 }
+async function sairContextoAdmin(){if(!S.adminOrig)return;Object.assign(S.u,S.adminOrig);S.adminOrig=null;S.gestao=false;await carregarDados();S.aba='equipes';render();toast('Contexto administrativo encerrado')}
 /* DEV: varre TODO o banco e mostra onde estão os treinos (por equipe), inclusive os
    que têm os SEUS tempos, e usuários. Recupera índices perdidos. */
 async function abrirDiagnostico(){
@@ -2980,16 +3041,46 @@ async function carregarEquipesDevList(){
   }
   S.equipesDevList=out;
 }
+async function carregarAdminUsuarios(){
+  const snap=await varrerKv(), out=[];
+  snap.forEach(doc=>{if(!doc.id.startsWith('u_'))return;try{const u=JSON.parse(doc.data().v);if(u&&u.email)out.push(u)}catch(_){}});
+  S.adminUsuarios=out.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+}
+function abrirAdminUsuario(email){
+  const u=(S.adminUsuarios||[]).find(x=>x.email===email);if(!u)return;
+  const eqs=S.equipesDevList||[];
+  sheet(`<h2>Gerenciar usuário</h2><div class="small muted">${esc(u.email)}</div>
+    <div class="field"><label for="auNome">Nome</label><input id="auNome" value="${esc(u.nome||'')}"></div>
+    <div class="field"><label for="auPerfil">Perfil</label><select id="auPerfil">${[['atleta','Atleta'],['pro','Atleta PRO'],['tecnico','Técnico']].map(([v,n])=>`<option value="${v}" ${u.perfil===v?'selected':''}>${n}</option>`).join('')}</select></div>
+    <div class="field"><label for="auEquipe">Equipe</label><select id="auEquipe"><option value="">Sem equipe</option>${eqs.map(e=>`<option value="${e.slug}" ${u.equipe===e.slug?'selected':''}>${esc(e.nome)}</option>`).join('')}</select></div>
+    <label class="small" style="display:flex;gap:8px;margin:10px 0"><input id="auAprov" type="checkbox" style="width:auto" ${u.aprovado!==false?'checked':''}>Acesso aprovado</label>
+    <label class="small" style="display:flex;gap:8px;margin:10px 0 16px"><input id="auAtivo" type="checkbox" style="width:auto" ${u.ativo!==false?'checked':''}>Conta ativa</label>
+    <button class="primary full" onclick="salvarAdminUsuario('${esc(u.email)}')">Salvar alterações</button>`);
+}
+async function registrarAuditoria(acao,alvo,antes,depois){if(!ehAdmin())return;await DB.set(`admin_audit_${Date.now()}_${uid()}`,{acao,alvo,admin:S.u.email,em:Date.now(),antes,depois})}
+async function salvarAdminUsuario(email){
+  if(!ehAdmin())return;const u=await DB.get(kUser(email));if(!u)return toast('Usuário não encontrado');const antes={...u}, novoEq=(document.getElementById('auEquipe')||{}).value;
+  u.nome=val('auNome');u.perfil=(document.getElementById('auPerfil')||{}).value;u.aprovado=!!document.getElementById('auAprov')?.checked;u.ativo=!!document.getElementById('auAtivo')?.checked;
+  if(u.equipe!==novoEq){if(u.equipe)await transacao(kEqUsers(u.equipe),xs=>(xs||[]).filter(x=>x!==email));u.equipe=novoEq;const eq=(S.equipesDevList||[]).find(e=>e.slug===novoEq);u.equipeNome=eq?eq.nome:'';if(novoEq)await transacao(kEqUsers(novoEq),xs=>{xs=xs||[];if(!xs.includes(email))xs.push(email);return xs})}
+  if(!await DB.set(kUser(email),u))return;await registrarAuditoria('editar_usuario',email,antes,u);fecharSheet();S.adminUsuarios=null;await carregarAdminUsuarios();toast('Usuário atualizado');render();
+}
 function telaEquipes(){
   if(!ehDev())return`<div class="empty"><div class="big">Sem acesso</div></div>`;
-  if(S.equipesDevList==null){carregarEquipesDevList().then(()=>render());return`<div class="empty"><div class="big">Carregando equipes…</div></div>`;}
+  if(S.equipesDevList==null||S.adminUsuarios==null){Promise.all([carregarEquipesDevList(),carregarAdminUsuarios()]).then(()=>render());return`<div class="empty"><div class="big">Carregando administração…</div></div>`;}
   const lst=S.equipesDevList, ja=new Set(lst.map(x=>x.slug));
+  const usuarios=S.adminUsuarios||[], pendentes=usuarios.filter(u=>u.aprovado===false), ativos=usuarios.filter(u=>u.ativo!==false), busca=(S.adminBusca||'').toLowerCase();
+  const visiveis=usuarios.filter(u=>!busca||[u.nome,u.email,u.equipeNome,u.perfil].some(x=>String(x||'').toLowerCase().includes(busca)));
   const disp=CATALOGO_EQUIPES.filter(e=>!ja.has(slug(e.nome))).sort((a,b)=>a.nome.localeCompare(b.nome));
   const opts=disp.map(e=>`<option value="${esc(e.nome)}">${esc(e.nome)}${e.sigla&&e.sigla!==e.nome?' — '+esc(e.sigla):''}</option>`).join('');
   return`
-  <div class="row" style="margin:16px 0 6px"><h2>Equipes</h2><div class="grow"></div>
+  <div class="row" style="margin:16px 0 6px"><div><h2>Administração</h2><div class="xs muted">Visão global de Bruno</div></div><div class="grow"></div>
     <button class="sm ghost" onclick="abrirDiagnostico()">Diagnóstico</button>
     <button class="sm ghost" onclick="abrirDevTecnicos()">Técnicos</button></div>
+  <div class="admin-kpis"><div class="kpi"><div class="v">${usuarios.length}</div><div class="l">usuários</div></div><div class="kpi"><div class="v">${pendentes.length}</div><div class="l">pendentes</div></div><div class="kpi"><div class="v">${ativos.length}</div><div class="l">ativos</div></div></div>
+  <div class="card"><div class="row"><div><div class="eyebrow">usuários</div><div class="small muted">Editar perfil, equipe, aprovação e acesso.</div></div><div class="grow"></div></div>
+    <div class="field"><label for="adminBusca">Buscar usuário</label><input id="adminBusca" value="${esc(S.adminBusca||'')}" placeholder="nome, e-mail, equipe ou perfil" oninput="S.adminBusca=this.value;render()"></div>
+    ${visiveis.length?visiveis.slice(0,50).map(u=>`<button class="lst full" style="text-align:left" onclick="abrirAdminUsuario('${esc(u.email)}')"><span class="av">${esc((u.nome||'?')[0])}</span><span class="grow"><b>${esc(u.nome||u.email)}</b><span class="xs muted" style="display:block">${esc(u.email)} · ${esc(u.perfil||'')} · ${esc(u.equipeNome||'sem equipe')}</span></span>${u.aprovado===false?'<span class="tag y">pendente</span>':''}${u.ativo===false?'<span class="tag w">inativo</span>':''}</button>`).join(''):'<div class="small muted">Nenhum usuário encontrado.</div>'}
+  </div>
   <div class="card">
     <div class="eyebrow">nova equipe</div>
     <div class="field" style="margin-top:8px"><label>Equipe do catálogo</label>
@@ -3059,6 +3150,7 @@ async function aprovarTecnico(email){
   if(!ehDev())return;
   const u=await DB.get(kUser(email)); if(!u)return;
   u.aprovado=true; await DB.set(kUser(email),u);
+  if(u.equipe)await transacao(kEqUsers(u.equipe),us=>{us=us||[];if(!us.includes(email))us.push(email);return us});
   toast(prim(u.nome)+' liberado como técnico'); abrirDevTecnicos();
 }
 async function recusarTecnico(email){
@@ -3198,7 +3290,8 @@ async function incluirNaEquipe(){
 async function abrirLaudoAtleta(id){
   if(!ehGestor())return;
   const a=S.elenco.find(x=>x.id===id);
-  const snap=await DB.get(kPerf(S.u.equipe,id));
+  const privado=ehAdmin()?await DB.get(kPro(id)):null;
+  const snap=privado||await DB.get(kPerf(S.u.equipe,id));
   S.laudoAtleta=id; S.laudoNome=a?a.nome:((snap&&snap.nome)||'Atleta'); S.laudoVista='relatorio';
   S._proBak=S.pro;
   /* _pront: só o PLACAR de prontidão do atleta. Os dados de Saúde (VFC, sono,
@@ -3209,7 +3302,7 @@ async function abrirLaudoAtleta(id){
     : ((snap&&snap.prontidaoGar&&snap.prontidaoGar.score!=null)
         ? {score:snap.prontidaoGar.score,dias:snap.prontidaoGar.dias||0,fonte:'Garmin'} : null);
   S.pro={pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
-    alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:[],exames:[],_pront:_p};
+    alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:ehAdmin()?((snap&&snap.garmin)||[]):[],exames:ehAdmin()?((snap&&snap.exames)||[]):[],_pront:_p};
   ESF=null; push(); render(); window.scrollTo(0,0);
 }
 /* mesma troca de contexto, mas abrindo as MARCAS — o técnico vê exatamente a
@@ -5261,7 +5354,7 @@ async function coletarEsforcos(opts){
   SESSOES=ses;
   return out.sort((a,b)=>a.data.localeCompare(b.data));
 }
-let ESF=null, SESSOES=[];
+let ESF=null, ESF_ERRO=null, SESSOES=[];
 /* Carga total (session-RPE = duração × RPE) por modalidade, últimos N dias */
 function cargaTotal(dias){
   dias=dias||28; const h0=new Date(hoje()+'T00:00:00');
@@ -6789,11 +6882,15 @@ function recomendaIntensidade(motor){
     if(acwr!=null&&acwr>1.5)m.push(`carga recente ${acwr.toFixed(1)}× a habitual`);
     if(mono!=null&&mono>2.2)m.push('treinos muito monótonos');
     if(pr!=null&&pr<50)m.push('prontidão baixa');
-    return{t:'warn',nivel:'Reduzir a intensidade',txt:`Diminua intensidade/volume nos próximos dias (${m.join(', ')}). Priorize recuperação antes de voltar às séries fortes — risco de overtraining.`};
+    return{t:'warn',nivel:'Reavaliar a carga',txt:`Há sinais que justificam considerar redução temporária (${m.join(', ')}). Confirme o ajuste com o técnico e, se houver sintomas, com um profissional de saúde.`};
   }
   if(acwr!=null&&acwr<0.8&&(pr==null||pr>=55))
-    return{t:'ok',nivel:'Pode aumentar a intensidade',txt:`Há margem para subir volume/intensidade com segurança (carga abaixo da habitual${pr!=null?', prontidão ok':''}). Progrida de forma gradual.`};
+    return{t:'ok',nivel:'Margem aparente para progressão',txt:`Os dados sugerem espaço para progressão gradual (carga abaixo da habitual${pr!=null?', prontidão adequada':''}), desde que o técnico confirme e não haja sintomas.`};
   return{t:'',nivel:'Manter a carga',txt:`Carga em faixa sustentável${pr!=null?` e prontidão ${pr>=75?'boa':'ok'}`:''}. Mantenha e progrida aos poucos, sem picos bruscos.`};
+}
+function cardPrioridadeSemana(pro,motor,diag){
+  const ri=recomendaIntensidade(motor), foco=(diag.foco||[])[0];
+  return`<div class="card report-lead"><div><div class="eyebrow">prioridade desta semana</div><h2 style="margin:5px 0 8px">${esc(ri.nivel)}</h2><p style="margin:0">${ri.txt}</p>${foco?`<div class="note ${foco.t}" style="margin-top:12px">${foco.txt}</div>`:''}</div><div class="report-meta"><b>${motor.confianca}%</b><span>confiança dos dados</span><small>Janela: últimos 120 dias · atualizado em ${brData(hoje())}</small></div></div>`;
 }
 /* ── PLANO DE AÇÃO: intensidade + ajustes de treino e foco para a competição ── */
 function cardPlanoAcao(pro,motor,diag,comPct){
@@ -6821,7 +6918,8 @@ function cardPlanoAcao(pro,motor,diag,comPct){
   </div>`;
 }
 function telaRelatorio(){
-  if(!ESF){coletarEsforcos({dias:120}).then(e=>{ESF=e;render()});return`<div class="empty"><div class="big">Consolidando…</div></div>`}
+  if(ESF_ERRO)return`<div class="empty"><div class="big">Não foi possível montar o relatório</div><p class="muted">Confira a conexão e tente novamente.</p><button class="primary" onclick="ESF_ERRO=null;ESF=null;render()">Tentar novamente</button></div>`;
+  if(!ESF){coletarEsforcos({dias:120}).then(e=>{ESF=e;ESF_ERRO=null;render()}).catch(e=>{console.warn(e);ESF_ERRO=e||true;render()});return`<div class="empty"><div class="big">Consolidando…</div><div class="small muted">Analisando os últimos 120 dias</div></div>`}
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
   const int=ESF.filter(e=>!tec.includes(e));
@@ -6837,12 +6935,13 @@ function telaRelatorio(){
     ${!S.laudoAtleta?`<button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>`:''}
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
   ${cabecalhoRelatorio(pro,motor)}
+  ${cardPrioridadeSemana(pro,motor,diag)}
   ${cardResumoExec(pro,motor,comPct)}
   ${cardFingerprint(motor)}
   ${cardCorrelacoes(pro,comPct)}
   ${cardPlanoAcao(pro,motor,diag,comPct)}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
-  <div class="row" style="margin:22px 0 2px;align-items:center"><div class="eyebrow">detalhamento · dados de apoio</div><div style="flex:1;height:1px;background:var(--line);margin-left:10px"></div></div>
+  <details class="report-details"><summary>Ver detalhamento e dados de apoio</summary><div>
   ${cardModelo(motor)}
   ${cardEstado(pro,comPct,sem)}
   ${cardBaseline(pro,comPct)}
@@ -6883,7 +6982,7 @@ function telaRelatorio(){
   ${cardEvolucao(pro,'evolução em competições')}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}
-  <div style="height:20px"></div>`;
+  </div></details><div style="height:20px"></div>`;
 }
 function volumePorSemana(){
   const m={};
@@ -6952,7 +7051,8 @@ function graficoBarras(arr,crescerBom){
   const W=600,H=155,P=28,mx=Math.max(...arr.map(a=>a.v)),mn=Math.min(...arr.map(a=>a.v)),rg=(mx-mn)||1;
   const bw=(W-2*P)/arr.length;
   const bom=crescerBom?mx:mn;
-  return`<svg class="chart" viewBox="0 0 ${W} ${H}">
+  const resumo=arr.map(a=>`${a.rot}: ${crescerBom?(a.v/1000).toFixed(1)+' mil':fmt(a.v,true)}`).join(', ');
+  return`<svg class="chart" role="img" aria-label="Gráfico de barras. ${esc(resumo)}" viewBox="0 0 ${W} ${H}">
     ${arr.map((a,i)=>{const h=20+((a.v-mn)/rg)*(H-2*P-20);
       return`<rect x="${(P+i*bw+bw*.16).toFixed(1)}" y="${(H-P-h).toFixed(1)}" width="${(bw*.68).toFixed(1)}" height="${h.toFixed(1)}"
         fill="${a.v===bom?'#1B7F5A':'#0E6E8C'}" rx="3"/>
@@ -7232,6 +7332,8 @@ Soltura
     /* espera o Firebase restaurar a sessão antes de ler dados protegidos */
     fauth.onAuthStateChanged(async user=>{
       if(user){
+        await user.reload();
+        if(!user.emailVerified){S.emailPendente=user.email;S.u=null;S.vista='verificar';render();return}
         const s=await DB.get('sessao',false);
         const em=(s&&s.email)?s.email:(user.email||'').toLowerCase();
         const u=await DB.get(kUser(em));
