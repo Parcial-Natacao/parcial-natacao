@@ -38,7 +38,8 @@ ativar.
 Ainda no Firestore, aba **Regras**. Apague o que estiver lá, cole o conteúdo
 do arquivo [`firestore.rules`](firestore.rules) desta pasta e clique
 **Publicar**. É isso que garante que os dados PRO (Garmin, marcas) fiquem
-privados — nem o técnico enxerga.
+privados: nem o técnico enxerga — ele vê só o snapshot de performance. A única
+exceção é o administrador global, que lê e escreve tudo (ver o README).
 
 ## 5. Registrar o app web e copiar a configuração
 

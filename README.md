@@ -84,11 +84,29 @@ O arquivo `firestore.rules` é a **versão anterior, mantida como rollback**.
 
 Resumo do modelo:
 
-- `pro_<uid>` (saúde, marcas, exames): **só o dono** — nem o técnico, nem o dev.
-- `u_<email>`: o próprio, o técnico aprovado da equipe dele, e o dev. `perfil` e
-  `dono` são congelados; `aprovado` só cai ou é elevado pelo dono da equipe.
+- `pro_<uid>` (saúde, marcas, exames): **o dono e o administrador global**. O
+  técnico **não** lê — ele vê o snapshot `eq_<slug>_perf_<uid>`, que traz
+  performance, fadiga, composição e o *score* de prontidão, mas não o dado cru
+  de saúde (VFC e sono do Garmin, exames, respostas do check-in).
+- `u_<email>`: o próprio, o técnico aprovado da equipe dele, e o administrador.
+  `perfil` e `dono` são congelados; `aprovado` só cai ou é elevado pelo dono da
+  equipe.
 - `eq_*`: membros **aprovados** daquela equipe. Quem não foi aprovado não lê nada.
 - Todo cadastro nasce `aprovado = false`.
+
+### O administrador global
+
+`ADMIN_EMAILS` (no `index.html`) e `ehAdmin()` (nas regras) dão acesso de
+leitura **e escrita** a tudo, inclusive aos `pro_` de terceiros — é o que
+sustenta o painel de administração e o suporte. É o único papel assim: nem o
+técnico nem o dono da equipe chegam perto disso.
+
+Quem decide é o e-mail do **token assinado pelo Firebase Auth**, não um campo
+do cadastro — mexer no HTML ou no próprio perfil não concede esse acesso.
+
+Ser administrador não substitui ser atleta: `ehGestor()` exige que ele **ligue**
+o modo gestão. Deixar `ehAdmin()` solto ali já custou as abas Marcas, Saúde e
+Relatório do próprio administrador, sem jeito de desligar (v105).
 
 **Ao mudar as regras**, leia o cabeçalho do `firestore.rules.v2`: a publicação
 tem pré-requisitos (campos espelhados migrados, app na v73+) e publicar fora de
