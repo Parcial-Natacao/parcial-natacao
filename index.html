@@ -252,6 +252,10 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .hero-meta{font-family:var(--mono);font-size:13.5px;opacity:.8;margin-top:6px}
 .hero-cta{display:block;text-align:center;margin-top:16px;background:#fff;color:#0B2F42;
   border-radius:var(--r-sm);padding:13px;font-weight:700;font-size:15.5px}
+/* célula do calendário: quadrada e sem o tamanho mínimo do botão comum */
+.cal-d{min-height:0;padding:0;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  font-family:var(--body);font-weight:400;letter-spacing:0}
 /* os três números do topo do relatório */
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
 .kpi-t{display:block;padding:14px 6px;text-align:center;background:var(--card);border:1px solid var(--line);
@@ -376,7 +380,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v109';
+const VER='v110';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2099,7 +2103,10 @@ function calendarioTreinos(lista,cardFn,criarFn){
   const nav=dl=>{let y=Y,m=M+dl; if(m<1){m=12;y--} if(m>12){m=1;y++} return y+'-'+String(m).padStart(2,'0');};
   const cell=d=>{const ds=`${Y}-${String(M).padStart(2,'0')}-${String(d).padStart(2,'0')}`, arr=porDia[ds]||[], sel=S.calDia===ds, eHoje=ds===hj;
     const bg=sel?'var(--ink)':arr.length?'var(--deck)':'transparent', cor=sel?'var(--deck)':'inherit';
-    return`<button onclick="S.calDia='${ds}';render()" style="aspect-ratio:1;border:1px solid ${eHoje?'var(--water)':'var(--line)'};border-radius:10px;background:${bg};color:${cor};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0">
+    /* `cal-d` zera o min-height do botão comum (48px). Com aspect-ratio:1 esse
+       mínimo virava também a LARGURA, e sete células de 48px somavam 360px num
+       espaço de 307 — o calendário saía torto e vazando para fora do cartão. */
+    return`<button class="cal-d" onclick="S.calDia='${ds}';render()" style="border-color:${eHoje?'var(--water)':'var(--line)'};background:${bg};color:${cor}">
       <span style="font-size:13px;font-weight:${arr.length?'800':'400'}">${d}</span>
       ${arr.length?`<span style="font-size:8px;line-height:1;color:${sel?'var(--deck)':'var(--water)'}">●${arr.length>1?arr.length:''}</span>`:''}</button>`;};
   let cells=''; for(let i=0;i<inicioSemana;i++)cells+='<div></div>'; for(let d=1;d<=diasNoMes;d++)cells+=cell(d);
@@ -2890,20 +2897,23 @@ function heroTreino(metas){
 function faixaSemana(){
   const dias=semanaDe(hoje()), h=hoje();
   const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
-  const secos=new Set(((S.pro&&S.pro.seco)||[]).map(s=>s.data));
+  /* Sessão fora d'água com data futura é PLANO, não treino feito — o atleta
+     pode deixar a semana montada na agenda. Pintar de verde um dia que ainda
+     nem chegou faria a faixa mentir sobre o que já foi cumprido. */
+  const secoF=new Set(((S.pro&&S.pro.seco)||[]).filter(s=>(s.data||'')<=h).map(s=>s.data));
+  const secoP=new Set(((S.pro&&S.pro.seco)||[]).filter(s=>(s.data||'')>h).map(s=>s.data));
+  const feitoDia=d=>secoF.has(d)||meus.some(t=>t.data===d&&feitoConhecido(t)===true);
+  const temDia=d=>secoF.has(d)||secoP.has(d)||meus.some(t=>t.data===d);
   const cels=dias.map((d,k)=>{
-    const nat=meus.filter(t=>t.data===d);
-    const feitoNat=nat.some(t=>feitoConhecido(t)===true);
-    const temSeco=secos.has(d);
-    const cls=(feitoNat||temSeco)?'ok':(nat.length?'prog':'off');
+    const cls=feitoDia(d)?'ok':(temDia(d)?'prog':'off');
     return`<span class="dia ${cls}${d===h?' hj':''}" title="${brData(d)}">${DIA_CURTO[k]}</span>`;
   }).join('');
   /* O denominador conta DIAS com treino — de piscina ou fora d'água. Contar só
      os de piscina deixava "1 de 2" com a musculação de terça no numerador e
      fora do total, o que não fecha para quem está olhando. */
-  const ativos=dias.filter(d=>secos.has(d)||meus.some(t=>t.data===d)).length;
-  const fez=dias.filter(d=>secos.has(d)||meus.some(t=>t.data===d&&feitoConhecido(t)===true)).length;
-  const faltam=dias.filter(d=>d>=h&&meus.some(t=>t.data===d&&feitoConhecido(t)!==true)).length;
+  const ativos=dias.filter(temDia).length;
+  const fez=dias.filter(feitoDia).length;
+  const faltam=dias.filter(d=>d>=h&&temDia(d)&&!feitoDia(d)).length;
   if(!ativos)return'';
   return`<div class="card tight">
     <div class="row" style="align-items:baseline"><span class="eyebrow grow">esta semana</span>
@@ -2929,11 +2939,11 @@ function telaTreinosAtleta(){
     <button class="sm primary" onclick="abrirTreinoExtra()">+ Meu treino</button></div>
   ${heroTreino(meus)}
   ${faixaSemana()}
-  ${futuros?`<div class="xs muted" style="margin:2px 0 8px">Há ${futuros} treino(s) programado(s) para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
+  ${futuros?`<div class="xs muted" style="margin:2px 0 8px">${futuros===1?'Há 1 treino programado':'Há '+futuros+' treinos programados'} para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
   ${(()=>{const p=pendenciasSeco(), n=p.length; if(!n)return'';
     const auto=p.filter(x=>x.auto).length;
     return`<div class="note warn" style="margin:8px 0">
-      <b>${n} sessão(ões) fora d'água com dado faltando ou errado.</b>
+      <b>${n===1?'1 sessão fora d\u2019água com dado':n+' sessões fora d\u2019água com dados'} faltando ou errado${n===1?'':'s'}.</b>
       ${auto?`${auto} é${auto>1?'ão':''} a duração que o app lia errado até a v96 (<b>1:10</b> como 1min10s em vez de 1h10) — essa${auto>1?'s':''} ele corrige sozinho. `:''}Duração e RPE são o que vira carga: sem eles a sessão não entra na conta.
       <button class="sm primary full" style="margin-top:8px" onclick="abrirPendencias()">Ver quais são</button></div>`})()}
   ${lista.length?`<div class="row" style="gap:6px;margin-bottom:8px">
@@ -5520,11 +5530,16 @@ async function corrigirDuracoes(){
    de duração) e sem dizer QUAL dia. Aqui viram uma lista só, com data e um
    toque para abrir e corrigir. */
 function pendenciasSeco(){
-  const out=[], corrig=new Map(duracoesSuspeitas().map(x=>[x.id,x]));
+  const out=[], h=hoje(), corrig=new Map(duracoesSuspeitas().map(x=>[x.id,x]));
   for(const s of ((S.pro&&S.pro.seco)||[])){
     const base={id:s.id,data:s.data,tipo:s.tipo||'Sessão',onde:'seco'};
     const c=corrig.get(s.id);
+    /* duração errada é erro em qualquer data: o número já está gravado torto */
     if(c){out.push({...base,o:`duração gravada como ${fmtDur(c.de)}`,fazer:`corrige para ${fmtDur(c.para)}`,auto:true});continue}
+    /* FALTA é diferente de AINDA NÃO ACONTECEU. Sessão marcada para depois de
+       hoje é planejamento: cobrar RPE e duração de um treino que o atleta nem
+       fez transforma a agenda dele numa lista de pendências. */
+    if((s.data||'')>h)continue;
     const falta=[]; if(s.dur==null)falta.push('duração'); if(s.rpe==null)falta.push('RPE');
     if(falta.length){out.push({...base,o:`sem ${falta.join(' nem ')}`,fazer:'não entra na carga'});continue}
     if(s.dur>240)out.push({...base,o:`duração de ${fmtDur(s.dur)}`,fazer:'acima de 4h é raro — confira'});
@@ -7010,10 +7025,15 @@ function cardFingerprint(m){
   const cx=125,cy=98,R=64, ang=i=>-90+i*72, rad=i=>ang(i)*Math.PI/180;
   const pt=(i,r)=>[cx+r*Math.cos(rad(i)),cy+r*Math.sin(rad(i))];
   const poly=r=>dims.map((d,i)=>{const[x,y]=pt(i,typeof r==='function'?r(d):r);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
-  const rings=[0.25,0.5,0.75,1].map(f=>`<polygon points="${poly(R*f)}" fill="none" stroke="var(--line)" stroke-width="1"/>`).join('');
-  const axes=dims.map((d,i)=>{const[x,y]=pt(i,R);return`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;}).join('');
-  const dataPoly=`<polygon points="${poly(d=>R*(d.score||0)/100)}" fill="var(--accent)" fill-opacity="0.22" stroke="var(--accent)" stroke-width="2"/>`;
-  const dots=dims.map((d,i)=>{const[x,y]=pt(i,R*(d.score||0)/100);return d.score!=null?`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--accent)"/>`:'';}).join('');
+  /* `var(--accent)` NÃO EXISTE no CSS — nunca existiu. O SVG caía no preto
+     padrão, que passava despercebido sobre cartão branco e sumia por completo
+     no tema escuro: o polígono do atleta ficava preto sobre preto.
+     A teia também sobe de `--line` para `--line-forte`: a linha de separar
+     campos é fina demais para desenhar um gráfico. */
+  const rings=[0.25,0.5,0.75,1].map(f=>`<polygon points="${poly(R*f)}" fill="none" stroke="var(--line-forte)" stroke-width="1"/>`).join('');
+  const axes=dims.map((d,i)=>{const[x,y]=pt(i,R);return`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--line-forte)" stroke-width="1"/>`;}).join('');
+  const dataPoly=`<polygon points="${poly(d=>R*(d.score||0)/100)}" fill="var(--water)" fill-opacity="0.28" stroke="var(--water)" stroke-width="2"/>`;
+  const dots=dims.map((d,i)=>{const[x,y]=pt(i,R*(d.score||0)/100);return d.score!=null?`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" fill="var(--water)"/>`:'';}).join('');
   const labels=dims.map((d,i)=>{const[x,y]=pt(i,R+9);const dx=x-cx,dy=y-cy;
     const an=Math.abs(dx)<8?'middle':dx>0?'start':'end';
     const yy=y+(Math.abs(dy)<8?(dy<0?-6:12):dy<0?-4:11);
