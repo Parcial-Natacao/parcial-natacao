@@ -256,7 +256,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v104';
+const VER='v105';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1413,10 +1413,10 @@ function abrirConta(){
     ${u.perfil==='pro'?`<div class="sep"></div>
       <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
       ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
-    ${u.perfil==='pro'?`<div class="sep"></div>
+    ${(u.perfil==='pro'||ehAdmin())?`<div class="sep"></div>
       <div class="row" style="align-items:center;gap:10px">
         <div class="grow"><b>Gestão da equipe</b>
-          <div class="xs muted">Ative para ajudar o técnico: liberar CPFs, montar treinos e lançar tempos de todos.</div></div>
+          <div class="xs muted">Ative para ajudar o técnico: liberar CPFs, montar treinos e lançar tempos de todos. Desligada, você volta à sua área de atleta.</div></div>
         <button class="sm ${S.gestao?'primary':''}" onclick="alternarGestao()">${S.gestao?'Ativada':'Ativar'}</button></div>`:''}
     ${ehDev()?`<div class="sep"></div>
       <div class="row" style="align-items:center;gap:10px">
@@ -1617,8 +1617,18 @@ function telaEmDesenvolvimento(){
 }
 async function escolherEsporte(e){ S.u.esporte=e; try{await DB.set(kUser(S.u.email),S.u);}catch(_){} render(); }
 async function trocarEsporte(){ S.u.esporte=null; try{await DB.set(kUser(S.u.email),S.u);}catch(_){} render(); }
-/* quem tem os poderes de gestão: o técnico sempre; o PRO quando liga o modo gestão */
-function ehGestor(){ return !!(S.u&&(ehAdmin()||S.u.perfil==='tecnico'||(S.u.perfil==='pro'&&S.gestao))); }
+/* Quem tem os poderes de gestão: o técnico SEMPRE; o PRO e o administrador
+   quando LIGAM o modo gestão (ou entram numa equipe pelo painel admin, que já
+   liga sozinho).
+
+   O administrador não pode ser gestor o tempo todo. A navegação troca conforme
+   isto: gestor vê Treinos/Equipe/Competição, e é só o atleta que vê Marcas,
+   Saúde e Relatório. Com `ehAdmin()` solto aqui, o administrador perdia as três
+   abas e a própria lista de treinos fora d'água — sem nada apagado, apenas sem
+   caminho até elas, e sem como desligar, porque o botão de gestão deixava de
+   ter efeito. Ser administrador do app não deixa de ser atleta. */
+function ehGestor(){ return !!(S.u&&(S.u.perfil==='tecnico'
+  ||((S.u.perfil==='pro'||ehAdmin())&&(S.gestao||S.adminOrig)))); }
 /* quem tem dados de performance (aba Marcas/Saúde/Relatório): PRO ou atleta liberado */
 function temPro(u){ u=u||S.u; return !!(u&&(u.perfil==='pro'||u.podeMarcas||u.podeSaude||u.podeRelatorio)); }
 /* sujeito do relatório: normalmente o próprio usuário; quando o técnico abre o laudo
