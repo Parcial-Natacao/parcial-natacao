@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v112';
+const VER='v113';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4975,14 +4975,19 @@ function graficoLinha(pts){
   const W=600,H=150,P=30,n=pts.length;
   const vs=pts.map(p=>p.v),mx=Math.max(...vs),mn=Math.min(...vs),rg=(mx-mn)||1;
   const x=i=>P+(i*(W-2*P)/(n-1));
-  const y=v=>P+((v-mn)/rg)*(H-2*P);
-  const cor=pts[n-1].v<pts[0].v?'#1B7F5A':'#E0342A';
+  /* EIXO DO TEMPO. Em SVG o y cresce para baixo, então `P + (v-mn)/rg*alt`
+     colocava o MENOR tempo no topo: o atleta melhorava e a linha subia — o
+     contrário do que a própria legenda do card dizia ("linha para baixo =
+     tempo menor = melhorando") e do ▼ do rótulo "melhorou".
+     Aqui o maior tempo fica no topo e o menor embaixo: melhorar é descer. */
+  const y=v=>P+((mx-v)/rg)*(H-2*P);
+  const cor=pts[n-1].v<pts[0].v?'var(--ok)':'var(--clock)';
   const linha=pts.map((p,i)=>`${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
   return`<svg class="chart" viewBox="0 0 ${W} ${H}" style="overflow:visible">
     <polyline points="${linha}" fill="none" stroke="${cor}" stroke-width="2.5"/>
     ${pts.map((p,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.5" fill="${cor}"/>
-      <text x="${x(i).toFixed(1)}" y="${(y(p.v)-8).toFixed(1)}" font-size="10" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${fmt(p.v,true)}</text>
-      <text x="${x(i).toFixed(1)}" y="${H-P+14}" font-size="9" fill="#5A6670" text-anchor="middle" font-family="Barlow,sans-serif">${p.rot}</text>`).join('')}
+      <text x="${x(i).toFixed(1)}" y="${(y(p.v)-8).toFixed(1)}" font-size="10" fill="var(--ink)" text-anchor="middle" font-family="JetBrains Mono,monospace">${fmt(p.v,true)}</text>
+      <text x="${x(i).toFixed(1)}" y="${H-P+14}" font-size="9" fill="var(--ink-2)" text-anchor="middle" font-family="Barlow,sans-serif">${p.rot}</text>`).join('')}
   </svg>`;
 }
 function cardEvolucao(pro,eyebrow){
@@ -6287,13 +6292,13 @@ function graficoSerie(pts,faixa){
   const rg=(mx-mn)||1;
   const x=i=>P+(i*(W-2*P)/(n-1)), y=v=>H-P-((v-mn)/rg)*(H-2*P);
   const faixaSvg=(faixa&&(faixa.lo!=null||faixa.hi!=null))
-    ? `<rect x="${P}" y="${(faixa.hi!=null?y(faixa.hi):P).toFixed(1)}" width="${W-2*P}" height="${Math.max(2,((faixa.lo!=null?y(faixa.lo):H-P)-(faixa.hi!=null?y(faixa.hi):P))).toFixed(1)}" fill="#1B7F5A" opacity=".07"/>` : '';
+    ? `<rect x="${P}" y="${(faixa.hi!=null?y(faixa.hi):P).toFixed(1)}" width="${W-2*P}" height="${Math.max(2,((faixa.lo!=null?y(faixa.lo):H-P)-(faixa.hi!=null?y(faixa.hi):P))).toFixed(1)}" fill="var(--ok)" opacity=".12"/>` : '';
   return`<svg class="chart" viewBox="0 0 ${W} ${H}" style="overflow:visible">
     ${faixaSvg}
-    <polyline points="${pts.map((p,i)=>`${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')}" fill="none" stroke="#0E6E8C" stroke-width="2.5"/>
-    ${pts.map((p,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.2" fill="#0E6E8C"/>
-      <text x="${x(i).toFixed(1)}" y="${(y(p.v)-7).toFixed(1)}" font-size="10" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${p.v}</text>
-      <text x="${x(i).toFixed(1)}" y="${H-P+13}" font-size="9" fill="#5A6670" text-anchor="middle" font-family="Barlow,sans-serif">${p.d}</text>`).join('')}
+    <polyline points="${pts.map((p,i)=>`${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--water)" stroke-width="2.5"/>
+    ${pts.map((p,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.2" fill="var(--water)"/>
+      <text x="${x(i).toFixed(1)}" y="${(y(p.v)-7).toFixed(1)}" font-size="10" fill="var(--ink)" text-anchor="middle" font-family="JetBrains Mono,monospace">${p.v}</text>
+      <text x="${x(i).toFixed(1)}" y="${H-P+13}" font-size="9" fill="var(--ink-2)" text-anchor="middle" font-family="Barlow,sans-serif">${p.d}</text>`).join('')}
   </svg>`;
 }
 /* histórico dos marcadores, com gráfico, para análise antes do relatório */
@@ -6999,6 +7004,57 @@ function predicao(pro,comPct,est){
    (e ao técnico) DESCONFIAR do app com evidência, em vez de acreditar nele por
    fé — foi a falta disso que fez a projeção errada de setembro parecer
    arbitrária. Sem prova registrada, diz o que falta em vez de sumir. */
+/* ── TREINO → PROVA ────────────────────────────────────────────────────────
+   O diferencial do produto: não "quanto você nada", e sim quanto do que você
+   nada no treino chega na prova. Mostra a conversão crua, prova a prova, e —
+   quando há parciais dos dois lados — compara o custo do segundo 25 no treino
+   com o da competição, que é onde a diferença costuma aparecer. */
+function cardTransferencia(pro,motor,comPct,brk){
+  const ref=motor.provaRef; if(!ref)return'';
+  const t=motor.transf;
+  const nome=`${ref.d}m ${ref.e} ${ref.pis==='LC50'?'LC50m':'SC25m'}`;
+  if(!t)return`<div class="card" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
+    <p class="small muted" style="margin-top:6px">Ainda não dá para medir a sua conversão: é preciso ter, na mesma prova, um resultado de competição <b>e</b> tiros registrados nas 6 semanas anteriores. Registre as competições em <b>Marcas</b>.</p></div>`;
+  const sinal=v=>(v>0?'+':'')+v.toFixed(1)+'%';
+  const est=t.estagio;
+  const leitura=est.chave==='sinal'
+    ? `<b>Sinal inicial.</b> Numa prova, você competiu <b>${sinal(t.mediana)}</b> em relação ao seu melhor tiro das 6 semanas anteriores. Uma observação não define a sua conversão.`
+    : `<b>Você compete ${sinal(t.mediana)}</b> em relação ao seu melhor tiro das 6 semanas anteriores (mediana de ${t.n} prova(s); metade entre ${sinal(t.p25)} e ${sinal(t.p75)}).${est.forte?' Com esta amostra já dá para usar como referência.':' '+est.rotulo+' — ainda sensível a uma prova atípica.'}`;
+  const linhas=t.itens.slice(0,8).map(x=>`<tr><td class="small">${brCurta(x.data)}</td>
+    <td class="n">${fmt(x.treino,true)}</td><td class="n">${fmt(x.prova,true)}</td>
+    <td class="n" style="color:${x.pct<=0?'var(--ok)':(x.pct>3?'var(--clock)':'var(--ink-2)')}">${sinal(x.pct)}</td></tr>`).join('');
+  /* custo do segundo 25: treino × competição, só quando os dois lados têm parcial */
+  let cmp='';
+  if(ref.d===50&&brk&&brk.length){
+    const cTre=brk.slice(-10).map(x=>x.delta).filter(x=>x!=null);
+    const comParc=((pro.resultados||[]).filter(r=>r.dist===50&&r.estilo===ref.e&&(r.parciais||[]).length>=2))
+      .map(r=>{const p1=r.parciais[0],fin=r.tempo;return(p1>0&&fin>p1)?(fin-p1)-p1:null}).filter(x=>x!=null);
+    if(cTre.length&&comParc.length){
+      const md=a=>a.reduce((s,x)=>s+x,0)/a.length;
+      const dt=md(cTre), dp=md(comParc);
+      cmp=`<div class="sep"></div><div class="eyebrow">custo do segundo 25</div>
+        <div class="grid2" style="margin-top:8px">
+          <div class="kpi"><div class="v">+${fmt(dt,true)}</div><div class="l">no treino (${cTre.length} tiros)</div></div>
+          <div class="kpi"><div class="v">+${fmt(dp,true)}</div><div class="l">na prova (${comParc.length})</div></div>
+        </div>
+        <div class="xs muted" style="margin-top:6px">${Math.abs(dp-dt)<150?'A queda do segundo 25 se comporta na prova como no treino.'
+          :(dp>dt?`Na prova o segundo 25 custa <b>${fmt(dp-dt,true)} a mais</b> que no treino — a manutenção de velocidade cede mais em competição.`
+                 :`Na prova o segundo 25 custa <b>${fmt(dt-dp,true)} a menos</b> que no treino.`)} <i>Leitura para o técnico.</i></div>`;
+    }
+  }
+  return`<div class="card" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${sinal(t.mediana)}</div><div class="l">conversão (mediana)</div></div>
+      <div class="kpi"><div class="v" style="opacity:.75">${sinal(t.p25)} / ${sinal(t.p75)}</div><div class="l">quartis</div></div>
+      <div class="kpi"><div class="v">${t.n}</div><div class="l">prova(s)</div></div>
+    </div>
+    <div class="small" style="margin-top:8px">${leitura}</div>
+    <table style="margin-top:10px"><thead><tr><th>prova</th><th class="n">melhor tiro</th><th class="n">competição</th><th class="n">conversão</th></tr></thead>
+      <tbody>${linhas}</tbody></table>
+    ${cmp}
+    <div class="xs muted" style="margin-top:6px">Conversão <b>positiva</b> = a prova saiu mais lenta que o melhor tiro; negativa = mais rápida. Janela de 6 semanas antes de cada competição. Associação observada no seu histórico — não é previsão.</div>
+  </div>`;
+}
 function cardAprendizado(pro){
   const alvo=(typeof provasAlvo==='function')?provasAlvo(pro):[];
   const a=alvo[0]; if(!a)return'';
@@ -7139,7 +7195,59 @@ function manutencaoCV(comPct){
     if(m>0){somaCV+=(sd/m*100)*a.length; somaW+=a.length;}}
   return somaW?somaCV/somaW:null;
 }
-function fingerprintDims(velPct,manutCV,pront,composicao,tend){
+/* ── ESPECIFICIDADE ────────────────────────────────────────────────────────
+   Quanto do treino RECENTE aconteceu na intensidade da prova. Volume alto a
+   85% do PB não prepara para competir a 100%: a diferença é o sistema que se
+   está treinando. O corte de 92% do PB é o limite a partir do qual o esforço
+   passa a exigir o ritmo real da prova num sprint; abaixo disso é qualidade
+   aeróbia, que conta em outro lugar do relatório.
+   Dois componentes, porque os dois faltam por motivos diferentes: QUANTIDADE
+   (nunca fez) e RECÊNCIA (fez, mas há três semanas). */
+function especificidadeProva(comPct,d,e,dias){
+  dias=dias||28;
+  const h0=new Date(hoje()+'T00:00:00');
+  const idade=x=>Math.floor((h0-new Date((x.data||'')+'T00:00:00'))/86400000);
+  const daProva=(comPct||[]).filter(x=>x.dist===d&&x.estilo===e&&idade(x)>=0&&idade(x)<dias);
+  if(!daProva.length)return{score:null,n:0,nEsp:0,diasUlt:null,txt:`sem tiro de ${d}m ${e} em ${dias} dias`};
+  const esp=daProva.filter(x=>x.pct>=92);
+  const diasUlt=esp.length?Math.min(...esp.map(idade)):null;
+  const qt=Math.min(65,esp.length*11);                       /* satura em ~6 esforços */
+  const rc=diasUlt==null?0:Math.max(0,35-diasUlt*2.5);       /* zera em 14 dias */
+  return{score:Math.round(qt+rc),n:daProva.length,nEsp:esp.length,diasUlt,
+    txt: esp.length?`${esp.length} tiro(s) ≥92% do PB${diasUlt!=null?`, último há ${diasUlt}d`:''}`
+                   :`${daProva.length} tiro(s), nenhum ≥92% do PB`};
+}
+/* ── TRANSFERÊNCIA TREINO → PROVA ──────────────────────────────────────────
+   A conversão CRUA, sem modelo no meio: o melhor tiro das 6 semanas que
+   antecedem a prova contra o que foi nadado nela. É diferente da calibração,
+   que mede o erro DEPOIS de aplicar saída de bloco e taper; aqui o número é
+   interpretável direto — "eu compito X% acima/abaixo do meu melhor tiro".
+   Mediana e quartis em vez de média: com 3 ou 4 provas, uma competição ruim
+   (prova anulada, doente) desloca a média inteira. */
+function transferenciaProva(pro,comPct,d,e,pis,janela){
+  janela=janela||42;
+  const res=((pro&&pro.resultados)||[]).filter(r=>r&&r.tempo>0&&r.data&&r.dist===d&&r.estilo===e
+    &&(r.piscina||'SC25')===(pis||'SC25'));
+  const itens=[];
+  for(const r of res){
+    const antes=(comPct||[]).filter(x=>x.dist===d&&x.estilo===e&&x.data&&x.data<=r.data
+      &&(new Date(r.data)-new Date(x.data))/86400000<=janela);
+    if(!antes.length)continue;
+    const melhor=Math.min(...antes.map(x=>x.tempo));
+    if(!(melhor>0))continue;
+    const pct=((r.tempo-melhor)/melhor)*100;
+    if(Math.abs(pct)>25)continue;                 /* prova anulada / tempo digitado errado */
+    itens.push({data:r.data,comp:r.comp||null,treino:melhor,prova:r.tempo,nTiros:antes.length,pct:+pct.toFixed(2)});
+  }
+  if(!itens.length)return null;
+  const p=itens.map(x=>x.pct).sort((a,b)=>a-b);
+  const q=f=>p[Math.min(p.length-1,Math.max(0,Math.round((p.length-1)*f)))];
+  return{n:itens.length,itens:itens.sort((a,b)=>b.data.localeCompare(a.data)),
+    mediana:q(0.5),p25:q(0.25),p75:q(0.75),
+    media:+(p.reduce((a,b)=>a+b,0)/p.length).toFixed(2),
+    estagio:estagioCalib(itens.length)};
+}
+function fingerprintDims(velPct,manutCV,pront,composicao,tend,espec){
   const cl=v=>Math.max(0,Math.min(100,v));
   const qCV=manutCV==null?'':(manutCV<2?'ótima':manutCV<3.5?'boa':manutCV<5?'ok':'a melhorar');
   const tScore=tend?Math.round(cl(50+(tend.mag||0)*10)):null;   /* 50=neutro; ±5% satura em 0/100 */
@@ -7147,6 +7255,12 @@ function fingerprintDims(velPct,manutCV,pront,composicao,tend){
     {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
     {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
+    /* Especificidade entra no lugar que a Composição deixou: ela é MEDIDA do
+       próprio treino, não estimada de tabela, e é a dimensão que faltava —
+       dava para estar rápido, constante e descansado e mesmo assim chegar à
+       prova sem ter nadado no ritmo dela. */
+    {eixo:'Especificidade', score: espec&&espec.score!=null?Math.round(cl(espec.score)):null,
+      txt: espec?espec.txt:'s/ dado'},
     /* Composição só entra quando a gordura% foi MEDIDA e é plausível. Um eixo
        pontuando 87/100 a partir de um valor que o próprio relatório marcou como
        suspeito é pior que eixo nenhum: dá ao palpite a mesma aparência de
@@ -7184,7 +7298,7 @@ function cardFingerprint(m){
     <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo (mais longe do centro = melhor).</div>
     <div style="display:flex;justify-content:center"><svg viewBox="0 0 250 196" style="width:100%;max-width:290px">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
-    <div class="xs muted" style="margin-top:6px">Velocidade=%PB dos seus melhores tiros · Manutenção=constância dos tempos numa série (menor variação = melhor) · Recuperação=prontidão · Composição=%gordura · Tendência=direção da capacidade. Eixo "s/ dado" fica no centro.</div>
+    <div class="xs muted" style="margin-top:6px"><b>Velocidade</b>=%PB dos seus melhores tiros · <b>Manutenção</b>=constância dos tempos numa série (menor variação = melhor) · <b>Recuperação</b>=prontidão · <b>Especificidade</b>=exposição a ritmo de prova nos últimos 28 dias (tiros ≥92% do PB, com peso para a recência)${dims.some(d=>d.eixo==='Composição')?' · <b>Composição</b>=%gordura medida':''} · <b>Tendência</b>=direção da capacidade. Eixo sem dado confiável <b>sai</b> do gráfico; eixo sem medida fica no centro.</div>
   </div>`;
 }
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
@@ -7211,7 +7325,12 @@ function motorPerformance(pro,comPct,sem,brk){
   const secForca=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;return x>=0&&x<90&&tonForcaSessao(s)>0;})).length;
   const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.e1RMRecente,e1rmPct:e.variacaoPct,melhorE1RM:e.melhorE1RM,e1RMRecente:e.e1RMRecente,tendencia:e.tendencia,confianca:e.confianca}))};
   const fadiga=(typeof fadigaCarga==='function')?fadigaCarga():null;
-  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend),mudancas:mudancas28d(pro,comPct),forca,fadiga,inventario:inv,cobertura,confianca:cobertura};   /* "confianca" fica como apelido: o laudo por IA e dados já gravados leem esse nome */
+  /* P3 — prova principal como referência da especificidade e da transferência */
+  const alvoP=((typeof provasAlvo==='function')?provasAlvo(pro):[])[0]||null;
+  const pisP=alvoP?((pro.pbs||{})[`${alvoP.d} ${alvoP.e} LC50`]&&!(pro.pbs||{})[`${alvoP.d} ${alvoP.e} SC25`]?'LC50':'SC25'):null;
+  const espec=alvoP?especificidadeProva(comPct,alvoP.d,alvoP.e):null;
+  const transf=alvoP?transferenciaProva(pro,comPct,alvoP.d,alvoP.e,pisP):null;
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend,espec),mudancas:mudancas28d(pro,comPct),forca,fadiga,espec,transf,provaRef:alvoP?{d:alvoP.d,e:alvoP.e,pis:pisP}:null,inventario:inv,cobertura,confianca:cobertura};   /* "confianca" fica como apelido: o laudo por IA e dados já gravados leem esse nome */
 }
 function cardModelo(m){
   const iv=m.inventario, c=m.cobertura, nf=c>=70?'ampla':c>=40?'parcial':'inicial';
@@ -7420,6 +7539,7 @@ function telaRelatorio(){
   ${cardMudancas(pro,comPct)}
   ${cardPredicao(pro,comPct,motor.estado)}
   ${cardAprendizado(pro)}
+  ${cardTransferencia(pro,motor,comPct,brk)}
   <div class="card"><div class="eyebrow">panorama</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
@@ -7528,9 +7648,9 @@ function graficoBarras(arr,crescerBom){
     ${arr.map((a,i)=>{const h=20+((a.v-mn)/rg)*(H-2*P-20);
       return`<rect x="${(P+i*bw+bw*.16).toFixed(1)}" y="${(H-P-h).toFixed(1)}" width="${(bw*.68).toFixed(1)}" height="${h.toFixed(1)}"
         fill="${a.v===bom?'#1B7F5A':'#0E6E8C'}" rx="3"/>
-      <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${H-P+14}" font-size="10" fill="#5A6670" text-anchor="middle" font-family="Barlow,sans-serif">${a.rot}</text>
-      <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${(H-P-h-5).toFixed(1)}" font-size="11" fill="#12181C" text-anchor="middle" font-family="JetBrains Mono,monospace">${crescerBom?(a.v/1000).toFixed(1)+'k':fmt(a.v,true)}</text>`}).join('')}
-    <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#D8D3C9"/></svg>`;
+      <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${H-P+14}" font-size="10" fill="var(--ink-2)" text-anchor="middle" font-family="Barlow,sans-serif">${a.rot}</text>
+      <text x="${(P+i*bw+bw*.5).toFixed(1)}" y="${(H-P-h-5).toFixed(1)}" font-size="11" fill="var(--ink)" text-anchor="middle" font-family="JetBrains Mono,monospace">${crescerBom?(a.v/1000).toFixed(1)+'k':fmt(a.v,true)}</text>`}).join('')}
+    <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="var(--line-forte)"/></svg>`;
 }
 /* PDF/impressão que funciona no CELULAR: monta uma página isolada só com o
    relatório (sem nav) e imprime nela. Tenta uma nova aba (melhor no iOS/Android);
