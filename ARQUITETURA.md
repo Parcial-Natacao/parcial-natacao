@@ -564,7 +564,8 @@ tela e `salvarPro()` descartam os rascunhos.
   parciais (N/C/DQL sem tempo). `blocoResultados()` na competição (upload) → `lerResultados`
   → `incorporarResultados` preenche cada inscrito (casa por CÓDIGO da prova; senão dist+estilo+
   gênero; senão cria) com `oficialTempo`/`parciais`/`colocacao`. `consolidarMinhasMarcas(c)`
-  grava no pro_ do PRÓPRIO usuário (privacidade: só o dono escreve seu Marcas) — chamado
+  grava no pro_ do PRÓPRIO usuário (o app nunca escreve no pro_ alheio; nas regras, só o
+  dono e o administrador global conseguem) — chamado
   automático p/ o importador com pro_, e botão "Consolidar meus tempos no Marcas" na visão do
   atleta. `incorporar` passou a carregar `genero`. Roster mostra tempo oficial + colocação.
   Validado nos PDFs reais A3: 31 inscrições, 25 tempos oficiais; Bruno 50 peito 31.35 (3º) e
