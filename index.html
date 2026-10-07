@@ -376,7 +376,26 @@ svg.chart{width:100%;height:auto;display:block}
     --lead-bg:#fff; --lead-ink:#101418; --lead-2:#4A545D;
     --sh:none; --sh-2:none;
   }
-  .report-lead{border:1px solid var(--line)!important}
+  /* SUPERFÍCIES ESCURAS VIRAM PAPEL. Os gradientes de água entraram na v122 e
+     esta regra não os acompanhou: o texto ficava escuro (--lead-ink já era
+     preto aqui) sobre o azul profundo do gradiente, que a impressora manda
+     para o papel. Dava a página ilegível do PDF.
+     Em papel, destaque se faz com MOLDURA, não com fundo — fundo colorido a
+     impressora descarta ou gasta tinta à toa. */
+  :root,:root[data-tema="escuro"]{--agua1:#fff; --agua2:#fff; --agua3:#fff;}
+  .report-lead,.hero,.sup-agua,.sup-brilho,.pb-tile{
+    background:#fff!important;color:var(--ink)!important;
+    border:1px solid var(--line)!important;border-radius:8px!important}
+  .report-lead .muted,.report-meta,.sup-agua .muted,.hero-meta,.hero-data{color:var(--ink-2)!important}
+  .report-meta b{color:var(--ink)!important}
+  .hero-badge,.hero-cta{background:none!important;color:var(--ink)!important;border:1px solid var(--line)!important}
+  /* O trilho de domínio é FUNDO, e fundo não imprime. Vira borda, que imprime. */
+  .card[data-dom]{border-left:3px solid var(--dom)!important;padding-left:9px!important}
+  .card[data-dom]::before{display:none!important}
+  /* Etiquetas com fundo preto e texto branco sumiam no papel: o fundo cai, o
+     texto branco fica sobre branco. Em papel elas viram contorno. */
+  .tag,.pill,.chip,.dia{background:none!important;color:var(--ink)!important;border:1px solid var(--line-forte)!important}
+  .z{background:none!important}
   nav,header,.noprint{display:none!important}
   body{padding:0;background:#fff}
   main,#app{max-width:100%!important;padding:0!important;margin:0!important}
@@ -422,7 +441,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v122';
+const VER='v123';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -8163,6 +8182,13 @@ function imprimirRelatorio(modo){
   try{ window.scrollTo(0,0); }catch(e){}
   const app=document.getElementById('app'); if(!app){S.acc=JSON.parse(antes);return toast('Abra o Relatório primeiro.')}
   const clone=app.cloneNode(true); clone.querySelectorAll('.noprint').forEach(n=>n.remove());
+  /* A janela de impressão recebe só HTML e CSS — nenhuma função do app existe
+     lá. Handlers inline herdados do clone viram ReferenceError no console da
+     janela nova; e botão em papel não serve para nada. */
+  clone.querySelectorAll('[onclick],[oninput],[ontoggle],[onchange]').forEach(n=>{
+    n.removeAttribute('onclick');n.removeAttribute('oninput');
+    n.removeAttribute('ontoggle');n.removeAttribute('onchange');});
+  clone.querySelectorAll('details').forEach(d=>d.setAttribute('open',''));
   if(modo==='enxuto'){ const d=clone.querySelector('.report-details'); if(d)d.remove(); }
   setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
   const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
