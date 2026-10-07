@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v116';
+const VER='v117';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -6677,7 +6677,59 @@ function baselineSerie(pts,janela,recentes){
   if(!at.length||base.length<3)return null;
   const avg=a=>a.reduce((t,x)=>t+x.v,0)/a.length;
   const a=avg(at), b=avg(base);
-  return {atual:a,base:b,desvio:b?(a-b)/b*100:0,n:base.length};
+  /* FAIXA HABITUAL (média ± 1 desvio da janela). "VFC 42 ms → −1%" não diz se
+     42 é normal PARA ESTA PESSOA: −1% pode ser ruído num indicador que oscila
+     8% ao dia, e pode ser muito num que oscila 1%. A faixa é o que transforma
+     o número em leitura. */
+  const vs=base.map(p=>p.v);
+  const sd=vs.length>1?Math.sqrt(vs.reduce((t,x)=>t+(x-b)*(x-b),0)/(vs.length-1)):0;
+  const lo=b-sd, hi=b+sd;
+  return {atual:a,base:b,lo,hi,sd,
+    status: sd>0?(a<lo?'abaixo':a>hi?'acima':'normal'):'normal',
+    desvio:b?(a-b)/b*100:0,n:base.length,
+    ultimo:s[0]?s[0].data:null};
+}
+/* ── FASE 10 — IDADE DOS DADOS ─────────────────────────────────────────────
+   Dado velho não é dado ruim: ele continua valendo para histórico. O que ele
+   não pode é pesar como se fosse de hoje na leitura do ESTADO ATUAL. Cada
+   fonte tem o seu próprio prazo, porque elas mudam em ritmos diferentes — VFC
+   muda todo dia, bioimpedância não muda em uma semana, exame menos ainda. */
+const FRESCOR=[
+  {id:'tiros',   rot:'Performance (tiros)', atual:14, parcial:42},
+  {id:'carga',   rot:'Carga de treino',     atual:7,  parcial:28},
+  {id:'garmin',  rot:'Relógio (VFC/FC/sono)',atual:3,  parcial:14},
+  {id:'bio',     rot:'Bioimpedância',       atual:60, parcial:180},
+  {id:'exames',  rot:'Exames laboratoriais',atual:180,parcial:365}
+];
+function frescorDados(pro,comPct){
+  const h0=new Date(hoje()+'T00:00:00');
+  const dias=d=>d?Math.floor((h0-new Date(d+'T00:00:00'))/86400000):null;
+  const ult=a=>{const v=(a||[]).map(x=>x&&x.data).filter(Boolean).sort(); return v.length?v[v.length-1]:null};
+  const fontes={
+    tiros: ult(comPct),
+    carga: ult([...(SESSOES||[]),...((pro.seco||[]).filter(s=>s.rpe!=null&&s.dur))]),
+    garmin: ult(pro.garmin),
+    bio: ult(pro.bioimp),
+    exames: ult(pro.exames)
+  };
+  return FRESCOR.map(f=>{
+    const d=fontes[f.id], k=dias(d);
+    return{...f,data:d,dias:k,
+      uso: k==null?'sem dado':(k<=f.atual?'estado atual':(k<=f.parcial?'peso reduzido':'só histórico'))};
+  });
+}
+function cardFrescor(pro,comPct){
+  const rs=frescorDados(pro,comPct);
+  const cor=u=>u==='estado atual'?'var(--ok)':u==='peso reduzido'?'var(--rope-ink)':u==='sem dado'?'var(--ink-3)':'var(--clock)';
+  const linhas=rs.map(r=>`<tr><td>${r.rot}</td>
+    <td class="n">${r.dias==null?'—':(r.dias===0?'hoje':r.dias===1?'ontem':r.dias+'d')}</td>
+    <td class="xs" style="text-align:right;color:${cor(r.uso)};font-weight:700">${r.uso}</td></tr>`).join('');
+  const velhos=rs.filter(r=>r.uso==='só histórico').length;
+  return`<div class="card" id="c-frescor"><div class="eyebrow">idade dos dados</div>
+    <div class="small muted" style="margin:4px 0 6px">Há quanto tempo cada fonte foi atualizada, e se ela ainda descreve o seu <b>estado de hoje</b>.</div>
+    <table><thead><tr><th>fonte</th><th class="n">última</th><th style="text-align:right">uso</th></tr></thead><tbody>${linhas}</tbody></table>
+    <div class="xs muted" style="margin-top:8px">Cada fonte tem o seu prazo porque mudam em ritmos diferentes: VFC muda todo dia, bioimpedância não muda numa semana, exame menos ainda. <b>Dado antigo não é dado ruim</b> — ele continua valendo para o histórico e para as tendências; o que ele não pode é pesar como se fosse de hoje.${velhos?` <b>${velhos} fonte(s)</b> já só entram como histórico.`:''}</div>
+  </div>`;
 }
 function baselinesResumo(pro,comPct){
   const gar=pro.garmin||[], bio=(pro.bioimp||[]).filter(b=>!bioSuspeita(b));
@@ -6689,19 +6741,37 @@ function baselinesResumo(pro,comPct){
     ['Massa magra','kg',1, bio.filter(b=>b.peso!=null&&b.gordura!=null).map(b=>({data:b.data,v:+(b.peso*(1-b.gordura/100)).toFixed(1)})),1],
     ['%PB','%',1, (comPct||[]).map(e=>({data:e.data,v:e.pct})),0]
   ];
-  return spec.map(([nome,un,sinal,pts,dec])=>{const bl=baselineSerie(pts,28,nome==='%PB'?5:3);return bl?{nome,un,sinal,dec,atual:bl.atual,desvio:bl.desvio,n:bl.n}:null}).filter(Boolean);
+  return spec.map(([nome,un,sinal,pts,dec])=>{const bl=baselineSerie(pts,28,nome==='%PB'?5:3);
+    return bl?{nome,un,sinal,dec,atual:bl.atual,base:bl.base,lo:bl.lo,hi:bl.hi,
+      status:bl.status,desvio:bl.desvio,n:bl.n,ultimo:bl.ultimo}:null}).filter(Boolean);
 }
 function cardBaseline(pro,comPct){
   const rs=baselinesResumo(pro,comPct); if(!rs.length)return'';
-  const linhas=rs.map(r=>{const d=r.desvio, seta=d>1?'↑':d<-1?'↓':'→';
-    const fav=r.sinal===0?null:(r.sinal>0?d>0:d<0);
-    const cor=fav==null?'var(--ink-2)':(fav?'var(--ok)':(Math.abs(d)>1?'var(--clock)':'var(--ink-2)'));
-    return`<tr><td>${r.nome}</td><td class="n" style="font-weight:700">${r.atual.toFixed(r.dec)}${r.un==='%'?'%':' '+r.un}</td>
-      <td class="n" style="color:${cor}">${seta} ${d>=0?'+':''}${d.toFixed(0)}%</td></tr>`;}).join('');
-  return`<div class="card"><div class="eyebrow">seu estado atual</div>
-    <div class="small muted" style="margin:4px 0 6px">Valor recente comparado à sua linha de base de 28 dias.</div>
-    <table><thead><tr><th>indicador</th><th class="n">agora</th><th class="n">vs base 28d</th></tr></thead><tbody>${linhas}</tbody></table>
-    <div class="xs muted" style="margin-top:8px">Verde = variação favorável para você; vermelho = desfavorável. Peso é neutro (depende do objetivo).</div>
+  const num=(v,r)=>v.toFixed(r.dec)+(r.un==='%'?'%':' '+r.un);
+  const blocos=rs.map(r=>{
+    const d=r.desvio;
+    /* O status é POSICIONAL (dentro ou fora da sua faixa habitual); a cor é
+       SEMÂNTICA (fora da faixa para que lado?). FC de repouso acima da faixa é
+       ruim; VFC acima da faixa é bom; peso é neutro, depende do objetivo. */
+    const fora=r.status!=='normal';
+    const fav=r.sinal===0?null:(r.sinal>0?r.status==='acima':r.status==='abaixo');
+    const cor=!fora?'var(--ink-2)':(fav==null?'var(--ink-2)':(fav?'var(--ok)':'var(--clock)'));
+    const rot=!fora?'NORMAL':(r.status==='acima'?'ACIMA':'ABAIXO');
+    return`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div class="row" style="align-items:baseline;gap:8px">
+        <b class="grow">${r.nome}</b>
+        <span class="t" style="font-size:19px;font-weight:800">${num(r.atual,r)}</span>
+        <span class="tag ${!fora?'o':(fav?'w':'r')}" style="${!fora?'':`background:${cor};border-color:${cor};color:var(--sobre-acento)`}">${rot}</span>
+      </div>
+      <div class="xs muted" style="margin-top:3px">
+        base 28d <b class="t">${num(r.base,r)}</b> · faixa habitual <b class="t">${r.lo.toFixed(r.dec)}–${num(r.hi,r)}</b>
+        · variação <b class="t" style="color:${cor}">${d>=0?'+':''}${d.toFixed(0)}%</b>
+        <span style="opacity:.75">(${r.n} medida(s))</span></div>
+    </div>`;}).join('');
+  return`<div class="card" id="c-baseline"><div class="eyebrow">seu estado atual</div>
+    <div class="small muted" style="margin:4px 0 2px">Cada indicador contra a <b>sua</b> linha de base de 28 dias — não contra tabela de referência.</div>
+    ${blocos}
+    <div class="xs muted" style="margin-top:8px"><b>Faixa habitual</b> = média ± 1 desvio dos seus últimos 28 dias; <b>NORMAL</b> é estar dentro dela. Sem isso, "−1%" não dizia nada: num indicador que oscila 8% ao dia é ruído, num que oscila 1% é muito. A cor segue a direção de cada métrica — FC de repouso acima da faixa é desfavorável, VFC acima é favorável, peso é neutro.</div>
   </div>`;
 }
 /* média dos tiros MAIS RÁPIDOS (topo 20%) numa prova, nos últimos `dias` — melhor
@@ -7796,6 +7866,7 @@ function telaRelatorio(){
        de projeção, de capacidade, de carga ou do corpo — e abre só aquilo. */''}
   ${acc('rel_proj','Projeção e aprendizado','quanto o modelo projeta e o quanto ele acerta com você',`
   ${cardModelo(motor)}
+  ${cardFrescor(pro,comPct)}
   ${cardPredicao(pro,comPct,motor.estado)}
   ${cardAprendizado(pro)}
   ${cardTransferencia(pro,motor,comPct,brk)}`)}
