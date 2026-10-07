@@ -191,7 +191,10 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock)
 .admin-kpis>div{background:var(--card-2);border-radius:var(--r-sm);padding:14px 8px;text-align:center}
 .admin-kpis strong{display:block;font:700 24px/1 var(--mono)}
 .admin-toolbar{display:grid;grid-template-columns:1fr auto;gap:8px;margin:10px 0}
-.report-lead{background:var(--lead-bg);color:var(--lead-ink);border:0;box-shadow:var(--sh-2)}
+/* o cartao-chefe ganha as raias: e o primeiro bloco que o atleta ve */
+.report-lead{color:var(--lead-ink);border:0;box-shadow:var(--sh-2);background:
+  repeating-linear-gradient(115deg,rgba(255,255,255,.045) 0 2px,transparent 2px 24px),
+  linear-gradient(150deg,var(--agua1) 0%,var(--lead-bg) 58%,var(--agua3) 100%)}
 .report-lead .muted{color:var(--lead-2)}
 .report-lead .note{color:var(--ink);border-left-width:0;border-radius:var(--r-sm)}
 .report-meta{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;margin-top:12px;color:var(--lead-2)}
@@ -254,7 +257,7 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .hero{display:block;width:100%;text-align:left;border:0;border-radius:var(--r-lg);padding:18px;margin:14px 0;
   color:var(--lead-ink);background:
     repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 22px),
-    linear-gradient(145deg,#0E4C63 0%,#0B2F42 55%,#122634 100%);
+    linear-gradient(145deg,var(--agua1) 0%,var(--agua2) 55%,var(--agua3) 100%);
   box-shadow:var(--sh-2);text-transform:none;letter-spacing:0;font-family:var(--body);min-height:0}
 .hero.ok{background:
   repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 22px),
@@ -279,6 +282,30 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .kpi-t .v{font-family:var(--mono);font-weight:700;font-size:21px;line-height:1.1}
 .kpi-t .v.mini{font-size:16px;line-height:1.3}   /* cabe a faixa inteira, nas duas linhas */
 .kpi-t .l{font-family:var(--disp);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+/* ── SUPERFÍCIES ───────────────────────────────────────────────────────────
+   Peso visual sem imagem. O app é um arquivo só e roda à beira da piscina,
+   onde o sinal é ruim: uma foto decente custaria centenas de KB justamente
+   onde ela precisa aparecer rápido. As faixas diagonais evocam as raias e
+   pesam zero.
+   `--agua` existe para que o mesmo gradiente sirva nos dois temas: no escuro
+   ele escurece junto, em vez de virar um bloco claro no meio da tela. */
+:root{--agua1:#0E4C63; --agua2:#0B2F42; --agua3:#122634;}
+:root[data-tema="escuro"]{--agua1:#0B3A4C; --agua2:#082431; --agua3:#0C1A24;}
+.sup-agua{color:var(--lead-ink);border:0;background:
+  repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 22px),
+  linear-gradient(145deg,var(--agua1) 0%,var(--agua2) 55%,var(--agua3) 100%)}
+.sup-agua .eyebrow,.sup-agua .muted,.sup-agua .xs{color:var(--lead-2)}
+.sup-agua .eyebrow{color:var(--lead-2)}
+/* brilho discreto para cartão claro que precisa de destaque sem virar bloco */
+.sup-brilho{background:
+  radial-gradient(120% 100% at 0% 0%,var(--card-2) 0%,transparent 60%),var(--card)}
+/* a marca em destaque: o tempo é o herói da tela de Marcas */
+.pb-tile{flex:1 1 150px;min-width:142px;border-radius:14px;padding:12px 13px;
+  background:radial-gradient(130% 120% at 0% 0%,var(--card-2) 0%,transparent 65%),var(--card);
+  border:1px solid var(--line);transition:border-color .12s}
+.pb-tile.alvo{border-color:var(--rope);box-shadow:inset 3px 0 0 var(--rope)}
+.pb-tile .t-num{font-family:var(--mono);font-size:26px;font-weight:800;letter-spacing:-.6px;
+  margin:2px 0;font-variant-numeric:tabular-nums;line-height:1}
 .faixa-eq{display:flex;align-items:center;gap:7px;margin:11px 0 0;font-family:var(--disp);
   font-size:12.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
 .faixa-eq .pt{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
@@ -395,7 +422,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v121';
+const VER='v122';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4706,10 +4733,10 @@ function destaquesMarcas(pro){
     /* faixa etária a que esse tempo pertence — num master, o tempo da faixa
        atual é o que importa; o da juventude não se repete. */
     const fx=r&&r.faixa?` · ${r.faixa}+`:'';
-    return`<div ${hist?`onclick="abrirHistProva('${accId}')" style="cursor:pointer;`:'style="'}flex:1 1 150px;min-width:142px;border:1px solid ${alvo?'var(--rope)':'var(--line)'};border-radius:12px;padding:10px 12px;background:var(--deck)"${hist?' title="ver evolução desta prova"':''}>
+    return`<div class="pb-tile ${alvo?'alvo':''}" ${hist?`onclick="abrirHistProva('${accId}')" style="cursor:pointer"`:''}${hist?' title="ver evolução desta prova"':''}>
       <div class="xs muted" style="display:flex;justify-content:space-between;gap:6px;align-items:baseline">
-        <span>${d}m ${esc(e)}</span><b style="opacity:.75">${pool==='LC50'?'LC50m':'SC25m'}</b></div>
-      <div class="n" style="font-size:23px;font-weight:800;letter-spacing:-.5px;margin:1px 0">${fmt(t,true)}</div>
+        <span>${d}m ${esc(e)}</span><b style="opacity:.75">${pool}</b></div>
+      <div class="t-num">${fmt(t,true)}</div>
       <div class="xs muted">${r?brData(r.data):'melhor tempo'}${fx}${alvo?' · <b style="color:var(--rope)">alvo</b>':''}${hist?' <span style="opacity:.6">›</span>':''}</div>
     </div>`;}).join('');
   return`<div class="card"><div class="eyebrow">melhores tempos</div>
@@ -7239,7 +7266,7 @@ function cardProntidaoComp(pro,motor,comPct){
       ${o.d}m ${esc(o.e)} <span class="xs">${o.pis}</span></button>`).join('')}</div>
     ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b> — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`
       :`<div class="xs muted" style="margin-top:4px">Suas provas-alvo de <b>Marcas</b>. Quando houver competição futura com você inscrito, as provas dela aparecem aqui primeiro.</div>`}</div>`:'';
-  return`<div class="card" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
+  return`<div class="card sup-brilho" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
     <div class="small muted" style="margin-top:3px">Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".</div>
     ${seletor}
     ${topo}
@@ -7794,7 +7821,7 @@ function cabecalhoRelatorio(pro,motor){
      é onde a identificação faz sentido. Aqui ficou só o que é conteúdo — PB
      contra projeção —, para esta não ser mais uma caixa quase vazia ocupando a
      primeira dobra de quem ainda não definiu provas-alvo. */
-  return`<div class="card" data-dom="prova" id="c-provas">
+  return`<div class="card sup-brilho" data-dom="prova" id="c-provas">
     <div class="eyebrow">provas-alvo</div>
     ${preds.length?`<table style="margin:8px 0 0;width:100%">
       <thead><tr><th>prova</th><th class="n">PB</th><th class="n">projeção hoje</th></tr></thead>
