@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v117';
+const VER='v118';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -6032,11 +6032,57 @@ function cardEvolucaoForca(pro){
         <span class="n">e-1RM <b>${e.e1RMInicial!=null?e.e1RMInicial:'—'} → ${e.e1RMRecente!=null?e.e1RMRecente:'—'} kg</b> <span class="xs muted">· melhor ${e.melhorE1RM!=null?e.melhorE1RM:'—'} kg</span></span>
         <span class="n" style="font-weight:700;color:${cor}">${v>0?'+':''}${v!=null?v+'%':'—'}</span></div>
       <div class="xs muted" style="margin-top:3px">tendência <span style="color:${tcor};font-weight:700">${e.tendencia==='insuficiente'?'insuficiente':seta(e.tendencia)}</span> · confiança ${e.confiancaRotulo}</div></div>`;}).join('');
-  return`<div class="card"><div class="eyebrow">evolução de força</div>
-    <div class="small muted" style="margin:4px 0 4px">Progresso por exercício nos últimos ${p.dias} dias. e-1RM = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.</div>
+  /* Cabeçalho: sessões e exercícios primeiro; TONELAGEM como dado secundário.
+     Tonelagem é volume, não força — sobe só por fazer mais séries, e sozinha
+     já sugeriu progresso onde a carga não tinha mudado. */
+  const nSes=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');
+    const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;
+    return x>=0&&x<p.dias&&(typeof tonForcaSessao==='function')&&tonForcaSessao(s)>0;})).length;
+  const ton=(typeof tonelagem==='function')?tonelagem(p.dias):null;
+  const subindo=p.exercicios.filter(e=>e.tendencia==='↑').length;
+  const caindo=p.exercicios.filter(e=>e.tendencia==='↓').length;
+  return`<div class="card" id="c-forca"><div class="eyebrow">evolução de força</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${nSes}</div><div class="l">sessões (${p.dias}d)</div></div>
+      <div class="kpi"><div class="v">${p.exercicios.length}</div><div class="l">exercícios</div></div>
+      <div class="kpi"><div class="v" style="${subindo>caindo?'color:var(--ok)':caindo>subindo?'color:var(--clock)':''}">${subindo}↑ ${caindo}↓</div><div class="l">tendência</div></div>
+    </div>
+    <div class="small muted" style="margin:8px 0 4px">Progresso por exercício. e-1RM = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.</div>
     ${linhas}
+    ${ton&&ton.total?`<div class="xs muted" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><b>Tonelagem no período:</b> ${(ton.total/1000).toFixed(1)} t em ${ton.sessoes} sessão(ões) <span style="opacity:.8">— dado secundário. Tonelagem é volume, não força: ela sobe só por você fazer mais séries, com a mesma carga.</span></div>`:''}
+    ${cardForcaPerformance(pro,p)}
     <div class="xs muted" style="margin-top:8px">Tendência = mediana da 1ª metade vs 2ª metade das sessões (precisa de ≥3). Registre a ficha com as cargas em <b>kg</b> para acompanhar.</div>
   </div>`;
+}
+/* ── FORÇA × PERFORMANCE ───────────────────────────────────────────────────
+   Só aparece com dado suficiente dos DOIS lados, e descreve CO-OCORRÊNCIA —
+   nunca causa. Força subindo junto com %PB subindo pode ser a força, pode ser
+   o taper, pode ser os dois, pode ser nenhum: um app que mede carga e tempo
+   não tem como separar isso, e dizer "a força melhorou o seu tempo" seria
+   inventar a parte que falta. */
+function cardForcaPerformance(pro,p){
+  const dias=p.dias||90, h0=new Date(hoje()+'T00:00:00');
+  const idade=d=>(h0-new Date((d||'')+'T00:00:00'))/86400000;
+  const comF=p.exercicios.filter(e=>e.tendencia==='↑'||e.tendencia==='↓'||e.tendencia==='→');
+  if(comF.length<2)return'';
+  const esf=(ESF||[]).filter(e=>e.pct==null?false:true);
+  /* %PB por metade do período, dos tiros fortes */
+  const pts=((typeof ESF!=='undefined'&&ESF)||[]).map(e=>{const pb=pbDe(pro,e.dist,e.estilo);
+    return pb?{d:idade(e.data),pct:pb/e.tempo*100}:null}).filter(x=>x&&x.d>=0&&x.d<dias);
+  if(pts.length<6)return'';
+  const meio=dias/2;
+  const velha=pts.filter(x=>x.d>=meio), nova=pts.filter(x=>x.d<meio);
+  if(velha.length<3||nova.length<3)return'';
+  const md=a=>a.reduce((t,x)=>t+x.pct,0)/a.length;
+  const dPct=+(md(nova)-md(velha)).toFixed(1);
+  const subindo=comF.filter(e=>e.tendencia==='↑').length, caindo=comF.filter(e=>e.tendencia==='↓').length;
+  const dirF=subindo>caindo?'subiu':caindo>subindo?'caiu':'ficou estável';
+  const dirP=dPct>0.8?'subiu':dPct<-0.8?'caiu':'ficou estável';
+  const junto=(dirF===dirP&&dirF!=='ficou estável');
+  return`<div class="note" style="margin-top:10px">
+    <b>Força × performance (${dias}d):</b> a força ${dirF} (${subindo}↑ / ${caindo}↓ entre ${comF.length} exercícios) e o seu %PB nos tiros ${dirP} (${dPct>0?'+':''}${dPct} pontos entre a 1ª e a 2ª metade do período).
+    ${junto?' As duas coisas andaram <b>no mesmo sentido</b>.':' As duas <b>não</b> andaram no mesmo sentido.'}
+    <span class="xs muted" style="display:block;margin-top:4px">Isto é co-ocorrência observada, não causa: taper, volume na água, sono e idade entram na mesma conta e o app não consegue separá-los. ${pts.length} tiro(s) e ${comF.length} exercício(s) na janela.</span></div>`;
 }
 /* ---------- exames laboratoriais ---------- */
 /* ─────────────────────────────────────────────────────────────
@@ -7896,11 +7942,22 @@ function telaRelatorio(){
   ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
   ${acc('rel_corpo','Corpo, força e histórico','exames, composição e evolução em competições',`
   ${cardEvolucaoForca(pro)}
-  ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
-    <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
-    ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
-  ${pro.bioimp?.length?`<div class="card"><div class="eyebrow">bioimpedância</div>
-    <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
+  ${pro.exames?.length?(()=>{const ex=[...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0];
+    const k=Math.floor((new Date(hoje()+'T00:00:00')-new Date(ex.data+'T00:00:00'))/86400000);
+    const nf=flagsExame(ex).length;
+    return`<div class="card" id="c-exames"><div class="eyebrow">exames laboratoriais</div>
+    <div class="small muted">Último em ${brData(ex.data)} · há ${k} dia(s)${pro.exames.length>1?` · ${pro.exames.length} coleta(s) registradas`:''}</div>
+    ${resumoExame(ex)}
+    <div class="note" style="margin-top:10px"><b>O que o app faz com isto:</b> ${nf?`${nf} marcador(es) fora da faixa geram <b>alertas no relatório</b>, para você levar ao médico.`:'nenhum marcador fora da faixa de referência.'} Os exames <b>não entram</b> na projeção de tempo, na prontidão competitiva nem em nenhum score.
+      <span class="xs muted" style="display:block;margin-top:4px">Isto não é diagnóstico nem substitui consulta: é o seu valor, a data e a faixa de referência do laboratório, reunidos num lugar.${k>180?' <b>Esta coleta tem mais de 6 meses</b> — vale como histórico, não como estado de hoje.':''}</span></div></div>`;})():''}
+  ${pro.bioimp?.length?`<div class="card" id="c-bio"><div class="eyebrow">bioimpedância</div>
+    <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}${pro.bioimp.length>1?` · ${pro.bioimp.length} medições`:''}</div>
+    ${(()=>{const c=motor.composicao;
+      if(!c)return'';
+      const rot={medida:['ok','<b>Medida válida.</b> A gordura% do aparelho está em faixa plausível, então ela alimenta o eixo <b>Composição</b> da assinatura de sprint.'],
+        estimada:['','<b>Estimada, não medida.</b> A gordura% do aparelho ficou fora de faixa plausível; o app refez a conta pela sua <b>água corporal</b> (massa magra ≈ água ÷ 0,732), método aceito. Por ser estimativa, <b>não gera score</b> e o eixo Composição sai do radar.'],
+        suspeita:['warn','<b>Suspeita.</b> A gordura% do aparelho é implausível e não há água corporal para refazer a conta — o número exibido vem de tabela por idade/sexo, não de uma medição sua. <b>Não entra em nenhum score</b>, nem no radar, nem na projeção.']}[c.status]||['',''];
+      return`<div class="note ${rot[0]}" style="margin-top:8px">${rot[1]}${c.motivo?` <span class="xs muted">(${esc(c.motivo)})</span>`:''}</div>`;})()}
     ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);const tm=tmbDe(b),imc=imcDe(b);
       return`${marc.length?`<table style="margin-top:6px"><tbody>${marc.map(([k,nome,un])=>`<tr><td>${nome}</td><td class="n" style="text-align:right;font-weight:700">${b[k]} <span class="xs muted">${un}</span></td></tr>`).join('')}</tbody></table>`:''}
       ${(tm!=null||imc!=null)?`<div class="note" style="margin-top:8px">${imc!=null?`IMC <b>${imc}</b>. `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
