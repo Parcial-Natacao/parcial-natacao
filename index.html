@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v116';
+const VER='v119';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5603,8 +5603,19 @@ async function coletarEsforcos(opts){
   const alvo=_alvoId();
   const metas=S.tridx.filter(t=>(t.para||[]).includes(alvo)&&noPrazo(t.data));
   const lista=dias?metas:metas.slice(0,25);
+  const falhas=[];
   for(const meta of lista){
-    const t=await DB.get(kTr(_alvoEq(),meta.id)); if(!t)continue;
+    /* Um treino problemático não pode zerar a consolidação dos outros 60. A
+       leitura é por documento, então o erro é por documento: anotamos qual e
+       seguimos. Era isto que transformava um dado estranho em "não foi
+       possível montar o relatório", sem dizer de onde vinha. */
+    let t=null;
+    try{ t=await DB.get(kTr(_alvoEq(),meta.id)); }
+    catch(e){ falhas.push(meta.id); continue; }
+    if(!t)continue;
+    if(!t.data&&meta.data)t.data=meta.data;      /* sem data o esforço quebra a ordenação */
+    if(!t.data)continue;
+    try{
     if(!treinoFeito(t,alvo))continue;   /* só consolida treino marcado como feito */
     const sj=t.sessao&&t.sessao[alvo];
     if(sj&&sj.rpe!=null&&sj.dur)ses.push({data:t.data||meta.data,tipo:'natação',load:sj.rpe*sj.dur});
@@ -5635,10 +5646,14 @@ async function coletarEsforcos(opts){
            grande do tempo num sprint. */
         out.push({data:t.data,pis:t.piscina==='LC50'?'LC50':'SC25',dist:i.dist,estilo:i.estilo,tags:i.tags,tempo:x,p1,forte:i.forte,vol:i.vol})});
     }
+    }catch(e){ falhas.push(meta.id); try{console.warn('[consolidação] treino',meta.id,e)}catch(_){} }
   }
   SESSOES=ses;
-  return out.sort((a,b)=>a.data.localeCompare(b.data));
+  if(falhas.length)try{console.warn('[consolidação]',falhas.length,'treino(s) ignorado(s):',falhas)}catch(_){}
+  ESF_FALHAS=falhas;
+  return out.sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
 }
+let ESF_FALHAS=[];
 let ESF=null, ESF_ERRO=null, SESSOES=[];
 /* Carga total (session-RPE = duração × RPE) por modalidade, últimos N dias */
 function cargaTotal(dias){
@@ -6032,11 +6047,57 @@ function cardEvolucaoForca(pro){
         <span class="n">e-1RM <b>${e.e1RMInicial!=null?e.e1RMInicial:'—'} → ${e.e1RMRecente!=null?e.e1RMRecente:'—'} kg</b> <span class="xs muted">· melhor ${e.melhorE1RM!=null?e.melhorE1RM:'—'} kg</span></span>
         <span class="n" style="font-weight:700;color:${cor}">${v>0?'+':''}${v!=null?v+'%':'—'}</span></div>
       <div class="xs muted" style="margin-top:3px">tendência <span style="color:${tcor};font-weight:700">${e.tendencia==='insuficiente'?'insuficiente':seta(e.tendencia)}</span> · confiança ${e.confiancaRotulo}</div></div>`;}).join('');
-  return`<div class="card"><div class="eyebrow">evolução de força</div>
-    <div class="small muted" style="margin:4px 0 4px">Progresso por exercício nos últimos ${p.dias} dias. e-1RM = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.</div>
+  /* Cabeçalho: sessões e exercícios primeiro; TONELAGEM como dado secundário.
+     Tonelagem é volume, não força — sobe só por fazer mais séries, e sozinha
+     já sugeriu progresso onde a carga não tinha mudado. */
+  const nSes=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');
+    const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;
+    return x>=0&&x<p.dias&&(typeof tonForcaSessao==='function')&&tonForcaSessao(s)>0;})).length;
+  const ton=(typeof tonelagem==='function')?tonelagem(p.dias):null;
+  const subindo=p.exercicios.filter(e=>e.tendencia==='↑').length;
+  const caindo=p.exercicios.filter(e=>e.tendencia==='↓').length;
+  return`<div class="card" id="c-forca"><div class="eyebrow">evolução de força</div>
+    <div class="grid3" style="margin-top:8px">
+      <div class="kpi"><div class="v">${nSes}</div><div class="l">sessões (${p.dias}d)</div></div>
+      <div class="kpi"><div class="v">${p.exercicios.length}</div><div class="l">exercícios</div></div>
+      <div class="kpi"><div class="v" style="${subindo>caindo?'color:var(--ok)':caindo>subindo?'color:var(--clock)':''}">${subindo}↑ ${caindo}↓</div><div class="l">tendência</div></div>
+    </div>
+    <div class="small muted" style="margin:8px 0 4px">Progresso por exercício. e-1RM = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.</div>
     ${linhas}
+    ${ton&&ton.total?`<div class="xs muted" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><b>Tonelagem no período:</b> ${(ton.total/1000).toFixed(1)} t em ${ton.sessoes} sessão(ões) <span style="opacity:.8">— dado secundário. Tonelagem é volume, não força: ela sobe só por você fazer mais séries, com a mesma carga.</span></div>`:''}
+    ${cardForcaPerformance(pro,p)}
     <div class="xs muted" style="margin-top:8px">Tendência = mediana da 1ª metade vs 2ª metade das sessões (precisa de ≥3). Registre a ficha com as cargas em <b>kg</b> para acompanhar.</div>
   </div>`;
+}
+/* ── FORÇA × PERFORMANCE ───────────────────────────────────────────────────
+   Só aparece com dado suficiente dos DOIS lados, e descreve CO-OCORRÊNCIA —
+   nunca causa. Força subindo junto com %PB subindo pode ser a força, pode ser
+   o taper, pode ser os dois, pode ser nenhum: um app que mede carga e tempo
+   não tem como separar isso, e dizer "a força melhorou o seu tempo" seria
+   inventar a parte que falta. */
+function cardForcaPerformance(pro,p){
+  const dias=p.dias||90, h0=new Date(hoje()+'T00:00:00');
+  const idade=d=>(h0-new Date((d||'')+'T00:00:00'))/86400000;
+  const comF=p.exercicios.filter(e=>e.tendencia==='↑'||e.tendencia==='↓'||e.tendencia==='→');
+  if(comF.length<2)return'';
+  const esf=(ESF||[]).filter(e=>e.pct==null?false:true);
+  /* %PB por metade do período, dos tiros fortes */
+  const pts=((typeof ESF!=='undefined'&&ESF)||[]).map(e=>{const pb=pbDe(pro,e.dist,e.estilo);
+    return pb?{d:idade(e.data),pct:pb/e.tempo*100}:null}).filter(x=>x&&x.d>=0&&x.d<dias);
+  if(pts.length<6)return'';
+  const meio=dias/2;
+  const velha=pts.filter(x=>x.d>=meio), nova=pts.filter(x=>x.d<meio);
+  if(velha.length<3||nova.length<3)return'';
+  const md=a=>a.reduce((t,x)=>t+x.pct,0)/a.length;
+  const dPct=+(md(nova)-md(velha)).toFixed(1);
+  const subindo=comF.filter(e=>e.tendencia==='↑').length, caindo=comF.filter(e=>e.tendencia==='↓').length;
+  const dirF=subindo>caindo?'subiu':caindo>subindo?'caiu':'ficou estável';
+  const dirP=dPct>0.8?'subiu':dPct<-0.8?'caiu':'ficou estável';
+  const junto=(dirF===dirP&&dirF!=='ficou estável');
+  return`<div class="note" style="margin-top:10px">
+    <b>Força × performance (${dias}d):</b> a força ${dirF} (${subindo}↑ / ${caindo}↓ entre ${comF.length} exercícios) e o seu %PB nos tiros ${dirP} (${dPct>0?'+':''}${dPct} pontos entre a 1ª e a 2ª metade do período).
+    ${junto?' As duas coisas andaram <b>no mesmo sentido</b>.':' As duas <b>não</b> andaram no mesmo sentido.'}
+    <span class="xs muted" style="display:block;margin-top:4px">Isto é co-ocorrência observada, não causa: taper, volume na água, sono e idade entram na mesma conta e o app não consegue separá-los. ${pts.length} tiro(s) e ${comF.length} exercício(s) na janela.</span></div>`;
 }
 /* ---------- exames laboratoriais ---------- */
 /* ─────────────────────────────────────────────────────────────
@@ -6677,7 +6738,59 @@ function baselineSerie(pts,janela,recentes){
   if(!at.length||base.length<3)return null;
   const avg=a=>a.reduce((t,x)=>t+x.v,0)/a.length;
   const a=avg(at), b=avg(base);
-  return {atual:a,base:b,desvio:b?(a-b)/b*100:0,n:base.length};
+  /* FAIXA HABITUAL (média ± 1 desvio da janela). "VFC 42 ms → −1%" não diz se
+     42 é normal PARA ESTA PESSOA: −1% pode ser ruído num indicador que oscila
+     8% ao dia, e pode ser muito num que oscila 1%. A faixa é o que transforma
+     o número em leitura. */
+  const vs=base.map(p=>p.v);
+  const sd=vs.length>1?Math.sqrt(vs.reduce((t,x)=>t+(x-b)*(x-b),0)/(vs.length-1)):0;
+  const lo=b-sd, hi=b+sd;
+  return {atual:a,base:b,lo,hi,sd,
+    status: sd>0?(a<lo?'abaixo':a>hi?'acima':'normal'):'normal',
+    desvio:b?(a-b)/b*100:0,n:base.length,
+    ultimo:s[0]?s[0].data:null};
+}
+/* ── FASE 10 — IDADE DOS DADOS ─────────────────────────────────────────────
+   Dado velho não é dado ruim: ele continua valendo para histórico. O que ele
+   não pode é pesar como se fosse de hoje na leitura do ESTADO ATUAL. Cada
+   fonte tem o seu próprio prazo, porque elas mudam em ritmos diferentes — VFC
+   muda todo dia, bioimpedância não muda em uma semana, exame menos ainda. */
+const FRESCOR=[
+  {id:'tiros',   rot:'Performance (tiros)', atual:14, parcial:42},
+  {id:'carga',   rot:'Carga de treino',     atual:7,  parcial:28},
+  {id:'garmin',  rot:'Relógio (VFC/FC/sono)',atual:3,  parcial:14},
+  {id:'bio',     rot:'Bioimpedância',       atual:60, parcial:180},
+  {id:'exames',  rot:'Exames laboratoriais',atual:180,parcial:365}
+];
+function frescorDados(pro,comPct){
+  const h0=new Date(hoje()+'T00:00:00');
+  const dias=d=>d?Math.floor((h0-new Date(d+'T00:00:00'))/86400000):null;
+  const ult=a=>{const v=(a||[]).map(x=>x&&x.data).filter(Boolean).sort(); return v.length?v[v.length-1]:null};
+  const fontes={
+    tiros: ult(comPct),
+    carga: ult([...(SESSOES||[]),...((pro.seco||[]).filter(s=>s.rpe!=null&&s.dur))]),
+    garmin: ult(pro.garmin),
+    bio: ult(pro.bioimp),
+    exames: ult(pro.exames)
+  };
+  return FRESCOR.map(f=>{
+    const d=fontes[f.id], k=dias(d);
+    return{...f,data:d,dias:k,
+      uso: k==null?'sem dado':(k<=f.atual?'estado atual':(k<=f.parcial?'peso reduzido':'só histórico'))};
+  });
+}
+function cardFrescor(pro,comPct){
+  const rs=frescorDados(pro,comPct);
+  const cor=u=>u==='estado atual'?'var(--ok)':u==='peso reduzido'?'var(--rope-ink)':u==='sem dado'?'var(--ink-3)':'var(--clock)';
+  const linhas=rs.map(r=>`<tr><td>${r.rot}</td>
+    <td class="n">${r.dias==null?'—':(r.dias===0?'hoje':r.dias===1?'ontem':r.dias+'d')}</td>
+    <td class="xs" style="text-align:right;color:${cor(r.uso)};font-weight:700">${r.uso}</td></tr>`).join('');
+  const velhos=rs.filter(r=>r.uso==='só histórico').length;
+  return`<div class="card" id="c-frescor"><div class="eyebrow">idade dos dados</div>
+    <div class="small muted" style="margin:4px 0 6px">Há quanto tempo cada fonte foi atualizada, e se ela ainda descreve o seu <b>estado de hoje</b>.</div>
+    <table><thead><tr><th>fonte</th><th class="n">última</th><th style="text-align:right">uso</th></tr></thead><tbody>${linhas}</tbody></table>
+    <div class="xs muted" style="margin-top:8px">Cada fonte tem o seu prazo porque mudam em ritmos diferentes: VFC muda todo dia, bioimpedância não muda numa semana, exame menos ainda. <b>Dado antigo não é dado ruim</b> — ele continua valendo para o histórico e para as tendências; o que ele não pode é pesar como se fosse de hoje.${velhos?` <b>${velhos} fonte(s)</b> já só entram como histórico.`:''}</div>
+  </div>`;
 }
 function baselinesResumo(pro,comPct){
   const gar=pro.garmin||[], bio=(pro.bioimp||[]).filter(b=>!bioSuspeita(b));
@@ -6689,19 +6802,37 @@ function baselinesResumo(pro,comPct){
     ['Massa magra','kg',1, bio.filter(b=>b.peso!=null&&b.gordura!=null).map(b=>({data:b.data,v:+(b.peso*(1-b.gordura/100)).toFixed(1)})),1],
     ['%PB','%',1, (comPct||[]).map(e=>({data:e.data,v:e.pct})),0]
   ];
-  return spec.map(([nome,un,sinal,pts,dec])=>{const bl=baselineSerie(pts,28,nome==='%PB'?5:3);return bl?{nome,un,sinal,dec,atual:bl.atual,desvio:bl.desvio,n:bl.n}:null}).filter(Boolean);
+  return spec.map(([nome,un,sinal,pts,dec])=>{const bl=baselineSerie(pts,28,nome==='%PB'?5:3);
+    return bl?{nome,un,sinal,dec,atual:bl.atual,base:bl.base,lo:bl.lo,hi:bl.hi,
+      status:bl.status,desvio:bl.desvio,n:bl.n,ultimo:bl.ultimo}:null}).filter(Boolean);
 }
 function cardBaseline(pro,comPct){
   const rs=baselinesResumo(pro,comPct); if(!rs.length)return'';
-  const linhas=rs.map(r=>{const d=r.desvio, seta=d>1?'↑':d<-1?'↓':'→';
-    const fav=r.sinal===0?null:(r.sinal>0?d>0:d<0);
-    const cor=fav==null?'var(--ink-2)':(fav?'var(--ok)':(Math.abs(d)>1?'var(--clock)':'var(--ink-2)'));
-    return`<tr><td>${r.nome}</td><td class="n" style="font-weight:700">${r.atual.toFixed(r.dec)}${r.un==='%'?'%':' '+r.un}</td>
-      <td class="n" style="color:${cor}">${seta} ${d>=0?'+':''}${d.toFixed(0)}%</td></tr>`;}).join('');
-  return`<div class="card"><div class="eyebrow">seu estado atual</div>
-    <div class="small muted" style="margin:4px 0 6px">Valor recente comparado à sua linha de base de 28 dias.</div>
-    <table><thead><tr><th>indicador</th><th class="n">agora</th><th class="n">vs base 28d</th></tr></thead><tbody>${linhas}</tbody></table>
-    <div class="xs muted" style="margin-top:8px">Verde = variação favorável para você; vermelho = desfavorável. Peso é neutro (depende do objetivo).</div>
+  const num=(v,r)=>v.toFixed(r.dec)+(r.un==='%'?'%':' '+r.un);
+  const blocos=rs.map(r=>{
+    const d=r.desvio;
+    /* O status é POSICIONAL (dentro ou fora da sua faixa habitual); a cor é
+       SEMÂNTICA (fora da faixa para que lado?). FC de repouso acima da faixa é
+       ruim; VFC acima da faixa é bom; peso é neutro, depende do objetivo. */
+    const fora=r.status!=='normal';
+    const fav=r.sinal===0?null:(r.sinal>0?r.status==='acima':r.status==='abaixo');
+    const cor=!fora?'var(--ink-2)':(fav==null?'var(--ink-2)':(fav?'var(--ok)':'var(--clock)'));
+    const rot=!fora?'NORMAL':(r.status==='acima'?'ACIMA':'ABAIXO');
+    return`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div class="row" style="align-items:baseline;gap:8px">
+        <b class="grow">${r.nome}</b>
+        <span class="t" style="font-size:19px;font-weight:800">${num(r.atual,r)}</span>
+        <span class="tag ${!fora?'o':(fav?'w':'r')}" style="${!fora?'':`background:${cor};border-color:${cor};color:var(--sobre-acento)`}">${rot}</span>
+      </div>
+      <div class="xs muted" style="margin-top:3px">
+        base 28d <b class="t">${num(r.base,r)}</b> · faixa habitual <b class="t">${r.lo.toFixed(r.dec)}–${num(r.hi,r)}</b>
+        · variação <b class="t" style="color:${cor}">${d>=0?'+':''}${d.toFixed(0)}%</b>
+        <span style="opacity:.75">(${r.n} medida(s))</span></div>
+    </div>`;}).join('');
+  return`<div class="card" id="c-baseline"><div class="eyebrow">seu estado atual</div>
+    <div class="small muted" style="margin:4px 0 2px">Cada indicador contra a <b>sua</b> linha de base de 28 dias — não contra tabela de referência.</div>
+    ${blocos}
+    <div class="xs muted" style="margin-top:8px"><b>Faixa habitual</b> = média ± 1 desvio dos seus últimos 28 dias; <b>NORMAL</b> é estar dentro dela. Sem isso, "−1%" não dizia nada: num indicador que oscila 8% ao dia é ruído, num que oscila 1% é muito. A cor segue a direção de cada métrica — FC de repouso acima da faixa é desfavorável, VFC acima é favorável, peso é neutro.</div>
   </div>`;
 }
 /* média dos tiros MAIS RÁPIDOS (topo 20%) numa prova, nos últimos `dias` — melhor
@@ -7764,8 +7895,28 @@ function cardPlanoAcao(pro,motor,diag,comPct){
     ${comp.length?comp.map(f=>`<div class="note ${f.t}" style="margin-bottom:8px">${f.txt}</div>`).join(''):'<div class="small muted">Registre resultados de competição (em Marcas) para indicadores específicos por prova.</div>'}
   </div>`;
 }
+/* ── UM CARTÃO QUEBRADO NÃO PODE DERRUBAR O RELATÓRIO ──────────────────────
+   O relatório monta mais de vinte cartões numa única expressão. Qualquer um
+   que lance — um campo inesperado, um dado antigo com outra forma — levava a
+   PÁGINA INTEIRA, e a tela só dizia "não foi possível montar", sem dizer qual.
+   Agora cada cartão é isolado: o que falha vira um aviso no lugar dele, com a
+   mensagem real, e os outros continuam de pé. */
+function sc(nome,fn){
+  try{ return fn()||''; }
+  catch(e){
+    try{ console.warn('[relatório] falhou:',nome,e); }catch(_){}
+    return`<div class="card"><div class="eyebrow">${esc(nome)}</div>
+      <div class="note warn" style="margin-top:6px"><b>Esta seção não pôde ser montada.</b>
+      <span class="t xs" style="display:block;margin-top:4px">${esc((e&&e.message)||String(e))}</span>
+      <span class="xs muted" style="display:block;margin-top:4px">O resto do relatório continua válido. Me mostre esta mensagem e eu corrijo.</span></div></div>`;
+  }
+}
 function telaRelatorio(){
-  if(ESF_ERRO)return`<div class="empty"><div class="big">Não foi possível montar o relatório</div><p class="muted">Confira a conexão e tente novamente.</p><button class="primary" onclick="ESF_ERRO=null;ESF=null;render()">Tentar novamente</button></div>`;
+  if(ESF_ERRO)return`<div class="empty"><div class="big">Não foi possível montar o relatório</div>
+    <p class="muted">A consolidação dos treinos falhou.</p>
+    ${ESF_ERRO&&ESF_ERRO!==true?`<p class="small t" style="color:var(--clock);word-break:break-word">${esc((ESF_ERRO.message)||String(ESF_ERRO))}</p>`:''}
+    <p class="xs muted">Se a mensagem acima aparecer sempre, me mostre: ela diz exatamente onde parou.</p>
+    <button class="primary" onclick="ESF_ERRO=null;ESF=null;render()">Tentar novamente</button></div>`;
   if(!ESF){coletarEsforcos({dias:120}).then(e=>{ESF=e;ESF_ERRO=null;render()}).catch(e=>{console.warn(e);ESF_ERRO=e||true;render()});return`<div class="empty"><div class="big">Consolidando…</div><div class="small muted">Analisando os últimos 120 dias</div></div>`}
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
@@ -7781,28 +7932,29 @@ function telaRelatorio(){
     <button class="sm ghost" onclick="abrirImpressao()">PDF</button>
     ${!S.laudoAtleta?`<button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>`:''}
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
-  ${cardPrioridadeSemana(pro,motor,diag)}
-  ${cardKPIs(pro,motor,sem)}
-  ${cardProntidaoComp(pro,motor,comPct)}
-  ${cabecalhoRelatorio(pro,motor)}
-  ${cardResumoExec(pro,motor,comPct)}
-  ${cardFingerprint(motor)}
-  ${cardCorrelacoes(pro,comPct)}
-  ${cardPlanoAcao(pro,motor,diag,comPct)}
+  ${sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))}
+  ${sc('indicadores do topo',()=>cardKPIs(pro,motor,sem))}
+  ${sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct))}
+  ${sc('provas-alvo',()=>cabecalhoRelatorio(pro,motor))}
+  ${sc('resumo',()=>cardResumoExec(pro,motor,comPct))}
+  ${sc('assinatura de sprint',()=>cardFingerprint(motor))}
+  ${sc('correlações',()=>cardCorrelacoes(pro,comPct))}
+  ${sc('indicadores para decisão',()=>cardPlanoAcao(pro,motor,diag,comPct))}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>Ver detalhamento e dados de apoio</summary><div>
   ${/* Eram vinte e poucos cartões de peso igual, um atrás do outro. Agrupados
        por PERGUNTA, não por origem do dado: o atleta chega aqui querendo saber
        de projeção, de capacidade, de carga ou do corpo — e abre só aquilo. */''}
   ${acc('rel_proj','Projeção e aprendizado','quanto o modelo projeta e o quanto ele acerta com você',`
-  ${cardModelo(motor)}
-  ${cardPredicao(pro,comPct,motor.estado)}
-  ${cardAprendizado(pro)}
-  ${cardTransferencia(pro,motor,comPct,brk)}`)}
+  ${sc('modelo',()=>cardModelo(motor))}
+  ${sc('idade dos dados',()=>cardFrescor(pro,comPct))}
+  ${sc('projeção',()=>cardPredicao(pro,comPct,motor.estado))}
+  ${sc('aprendizado do modelo',()=>cardAprendizado(pro))}
+  ${sc('treino → prova',()=>cardTransferencia(pro,motor,comPct,brk))}`)}
   ${acc('rel_cap','Capacidade e splits','onde está a sua velocidade e onde ela escapa',`
-  ${cardEstado(pro,comPct,sem)}
-  ${cardBaseline(pro,comPct)}
-  ${cardMudancas(pro,comPct)}
+  ${sc('estado',()=>cardEstado(pro,comPct,sem))}
+  ${sc('seu estado atual',()=>cardBaseline(pro,comPct))}
+  ${sc('mudanças',()=>cardMudancas(pro,comPct))}
   <div class="card"><div class="eyebrow">panorama</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
@@ -7816,27 +7968,38 @@ function telaRelatorio(){
     <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b>${(function(){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);if(!a.length)return'';const d=a.reduce((t,x)=>t+x,0)/a.length;return` · queda de velocidade média <b class="t">${d.toFixed(1)}%</b>`})()}</div>
   </div>`:''}`)}
   ${acc('rel_carga','Carga e recuperação','quanto você treinou e como o corpo respondeu',`
-  ${cardCarga()}
-  ${cardCargaTotal()}
-  ${cardFadiga()}
-  ${cardProntidaoSubj()}
+  ${sc('volume',()=>cardCarga())}
+  ${sc('carga total',()=>cardCargaTotal())}
+  ${sc('fadiga',()=>cardFadiga())}
+  ${sc('check-in',()=>cardProntidaoSubj())}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
   ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
   ${acc('rel_corpo','Corpo, força e histórico','exames, composição e evolução em competições',`
-  ${cardEvolucaoForca(pro)}
-  ${pro.exames?.length?`<div class="card"><div class="eyebrow">exames laboratoriais</div>
-    <div class="small muted">Último em ${brData([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
-    ${resumoExame([...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
-  ${pro.bioimp?.length?`<div class="card"><div class="eyebrow">bioimpedância</div>
-    <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}</div>
+  ${sc('força',()=>cardEvolucaoForca(pro))}
+  ${pro.exames?.length?(()=>{const ex=[...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0];
+    const k=Math.floor((new Date(hoje()+'T00:00:00')-new Date(ex.data+'T00:00:00'))/86400000);
+    const nf=flagsExame(ex).length;
+    return`<div class="card" id="c-exames"><div class="eyebrow">exames laboratoriais</div>
+    <div class="small muted">Último em ${brData(ex.data)} · há ${k} dia(s)${pro.exames.length>1?` · ${pro.exames.length} coleta(s) registradas`:''}</div>
+    ${resumoExame(ex)}
+    <div class="note" style="margin-top:10px"><b>O que o app faz com isto:</b> ${nf?`${nf} marcador(es) fora da faixa geram <b>alertas no relatório</b>, para você levar ao médico.`:'nenhum marcador fora da faixa de referência.'} Os exames <b>não entram</b> na projeção de tempo, na prontidão competitiva nem em nenhum score.
+      <span class="xs muted" style="display:block;margin-top:4px">Isto não é diagnóstico nem substitui consulta: é o seu valor, a data e a faixa de referência do laboratório, reunidos num lugar.${k>180?' <b>Esta coleta tem mais de 6 meses</b> — vale como histórico, não como estado de hoje.':''}</span></div></div>`;})():''}
+  ${pro.bioimp?.length?`<div class="card" id="c-bio"><div class="eyebrow">bioimpedância</div>
+    <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}${pro.bioimp.length>1?` · ${pro.bioimp.length} medições`:''}</div>
+    ${(()=>{const c=motor.composicao;
+      if(!c)return'';
+      const rot={medida:['ok','<b>Medida válida.</b> A gordura% do aparelho está em faixa plausível, então ela alimenta o eixo <b>Composição</b> da assinatura de sprint.'],
+        estimada:['','<b>Estimada, não medida.</b> A gordura% do aparelho ficou fora de faixa plausível; o app refez a conta pela sua <b>água corporal</b> (massa magra ≈ água ÷ 0,732), método aceito. Por ser estimativa, <b>não gera score</b> e o eixo Composição sai do radar.'],
+        suspeita:['warn','<b>Suspeita.</b> A gordura% do aparelho é implausível e não há água corporal para refazer a conta — o número exibido vem de tabela por idade/sexo, não de uma medição sua. <b>Não entra em nenhum score</b>, nem no radar, nem na projeção.']}[c.status]||['',''];
+      return`<div class="note ${rot[0]}" style="margin-top:8px">${rot[1]}${c.motivo?` <span class="xs muted">(${esc(c.motivo)})</span>`:''}</div>`;})()}
     ${(function(b){const marc=BIO_M.filter(([k])=>b[k]!=null);const tm=tmbDe(b),imc=imcDe(b);
       return`${marc.length?`<table style="margin-top:6px"><tbody>${marc.map(([k,nome,un])=>`<tr><td>${nome}</td><td class="n" style="text-align:right;font-weight:700">${b[k]} <span class="xs muted">${un}</span></td></tr>`).join('')}</tbody></table>`:''}
       ${(tm!=null||imc!=null)?`<div class="note" style="margin-top:8px">${imc!=null?`IMC <b>${imc}</b>. `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
       ${flagsBio(b).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
     })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
-  ${cardComposicaoRelativa(pro)}
-  ${cardEvolucao(pro,'evolução em competições')}
+  ${sc('composição',()=>cardComposicaoRelativa(pro))}
+  ${sc('evolução em competições',()=>cardEvolucao(pro,'evolução em competições'))}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}`)}
   </div></details><div style="height:20px"></div>`;
