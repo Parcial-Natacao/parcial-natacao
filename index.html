@@ -381,7 +381,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v118';
+const VER='v119';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5603,8 +5603,19 @@ async function coletarEsforcos(opts){
   const alvo=_alvoId();
   const metas=S.tridx.filter(t=>(t.para||[]).includes(alvo)&&noPrazo(t.data));
   const lista=dias?metas:metas.slice(0,25);
+  const falhas=[];
   for(const meta of lista){
-    const t=await DB.get(kTr(_alvoEq(),meta.id)); if(!t)continue;
+    /* Um treino problemático não pode zerar a consolidação dos outros 60. A
+       leitura é por documento, então o erro é por documento: anotamos qual e
+       seguimos. Era isto que transformava um dado estranho em "não foi
+       possível montar o relatório", sem dizer de onde vinha. */
+    let t=null;
+    try{ t=await DB.get(kTr(_alvoEq(),meta.id)); }
+    catch(e){ falhas.push(meta.id); continue; }
+    if(!t)continue;
+    if(!t.data&&meta.data)t.data=meta.data;      /* sem data o esforço quebra a ordenação */
+    if(!t.data)continue;
+    try{
     if(!treinoFeito(t,alvo))continue;   /* só consolida treino marcado como feito */
     const sj=t.sessao&&t.sessao[alvo];
     if(sj&&sj.rpe!=null&&sj.dur)ses.push({data:t.data||meta.data,tipo:'natação',load:sj.rpe*sj.dur});
@@ -5635,10 +5646,14 @@ async function coletarEsforcos(opts){
            grande do tempo num sprint. */
         out.push({data:t.data,pis:t.piscina==='LC50'?'LC50':'SC25',dist:i.dist,estilo:i.estilo,tags:i.tags,tempo:x,p1,forte:i.forte,vol:i.vol})});
     }
+    }catch(e){ falhas.push(meta.id); try{console.warn('[consolidação] treino',meta.id,e)}catch(_){} }
   }
   SESSOES=ses;
-  return out.sort((a,b)=>a.data.localeCompare(b.data));
+  if(falhas.length)try{console.warn('[consolidação]',falhas.length,'treino(s) ignorado(s):',falhas)}catch(_){}
+  ESF_FALHAS=falhas;
+  return out.sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
 }
+let ESF_FALHAS=[];
 let ESF=null, ESF_ERRO=null, SESSOES=[];
 /* Carga total (session-RPE = duração × RPE) por modalidade, últimos N dias */
 function cargaTotal(dias){
@@ -7880,8 +7895,28 @@ function cardPlanoAcao(pro,motor,diag,comPct){
     ${comp.length?comp.map(f=>`<div class="note ${f.t}" style="margin-bottom:8px">${f.txt}</div>`).join(''):'<div class="small muted">Registre resultados de competição (em Marcas) para indicadores específicos por prova.</div>'}
   </div>`;
 }
+/* ── UM CARTÃO QUEBRADO NÃO PODE DERRUBAR O RELATÓRIO ──────────────────────
+   O relatório monta mais de vinte cartões numa única expressão. Qualquer um
+   que lance — um campo inesperado, um dado antigo com outra forma — levava a
+   PÁGINA INTEIRA, e a tela só dizia "não foi possível montar", sem dizer qual.
+   Agora cada cartão é isolado: o que falha vira um aviso no lugar dele, com a
+   mensagem real, e os outros continuam de pé. */
+function sc(nome,fn){
+  try{ return fn()||''; }
+  catch(e){
+    try{ console.warn('[relatório] falhou:',nome,e); }catch(_){}
+    return`<div class="card"><div class="eyebrow">${esc(nome)}</div>
+      <div class="note warn" style="margin-top:6px"><b>Esta seção não pôde ser montada.</b>
+      <span class="t xs" style="display:block;margin-top:4px">${esc((e&&e.message)||String(e))}</span>
+      <span class="xs muted" style="display:block;margin-top:4px">O resto do relatório continua válido. Me mostre esta mensagem e eu corrijo.</span></div></div>`;
+  }
+}
 function telaRelatorio(){
-  if(ESF_ERRO)return`<div class="empty"><div class="big">Não foi possível montar o relatório</div><p class="muted">Confira a conexão e tente novamente.</p><button class="primary" onclick="ESF_ERRO=null;ESF=null;render()">Tentar novamente</button></div>`;
+  if(ESF_ERRO)return`<div class="empty"><div class="big">Não foi possível montar o relatório</div>
+    <p class="muted">A consolidação dos treinos falhou.</p>
+    ${ESF_ERRO&&ESF_ERRO!==true?`<p class="small t" style="color:var(--clock);word-break:break-word">${esc((ESF_ERRO.message)||String(ESF_ERRO))}</p>`:''}
+    <p class="xs muted">Se a mensagem acima aparecer sempre, me mostre: ela diz exatamente onde parou.</p>
+    <button class="primary" onclick="ESF_ERRO=null;ESF=null;render()">Tentar novamente</button></div>`;
   if(!ESF){coletarEsforcos({dias:120}).then(e=>{ESF=e;ESF_ERRO=null;render()}).catch(e=>{console.warn(e);ESF_ERRO=e||true;render()});return`<div class="empty"><div class="big">Consolidando…</div><div class="small muted">Analisando os últimos 120 dias</div></div>`}
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
@@ -7897,29 +7932,29 @@ function telaRelatorio(){
     <button class="sm ghost" onclick="abrirImpressao()">PDF</button>
     ${!S.laudoAtleta?`<button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>`:''}
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
-  ${cardPrioridadeSemana(pro,motor,diag)}
-  ${cardKPIs(pro,motor,sem)}
-  ${cardProntidaoComp(pro,motor,comPct)}
-  ${cabecalhoRelatorio(pro,motor)}
-  ${cardResumoExec(pro,motor,comPct)}
-  ${cardFingerprint(motor)}
-  ${cardCorrelacoes(pro,comPct)}
-  ${cardPlanoAcao(pro,motor,diag,comPct)}
+  ${sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))}
+  ${sc('indicadores do topo',()=>cardKPIs(pro,motor,sem))}
+  ${sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct))}
+  ${sc('provas-alvo',()=>cabecalhoRelatorio(pro,motor))}
+  ${sc('resumo',()=>cardResumoExec(pro,motor,comPct))}
+  ${sc('assinatura de sprint',()=>cardFingerprint(motor))}
+  ${sc('correlações',()=>cardCorrelacoes(pro,comPct))}
+  ${sc('indicadores para decisão',()=>cardPlanoAcao(pro,motor,diag,comPct))}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>Ver detalhamento e dados de apoio</summary><div>
   ${/* Eram vinte e poucos cartões de peso igual, um atrás do outro. Agrupados
        por PERGUNTA, não por origem do dado: o atleta chega aqui querendo saber
        de projeção, de capacidade, de carga ou do corpo — e abre só aquilo. */''}
   ${acc('rel_proj','Projeção e aprendizado','quanto o modelo projeta e o quanto ele acerta com você',`
-  ${cardModelo(motor)}
-  ${cardFrescor(pro,comPct)}
-  ${cardPredicao(pro,comPct,motor.estado)}
-  ${cardAprendizado(pro)}
-  ${cardTransferencia(pro,motor,comPct,brk)}`)}
+  ${sc('modelo',()=>cardModelo(motor))}
+  ${sc('idade dos dados',()=>cardFrescor(pro,comPct))}
+  ${sc('projeção',()=>cardPredicao(pro,comPct,motor.estado))}
+  ${sc('aprendizado do modelo',()=>cardAprendizado(pro))}
+  ${sc('treino → prova',()=>cardTransferencia(pro,motor,comPct,brk))}`)}
   ${acc('rel_cap','Capacidade e splits','onde está a sua velocidade e onde ela escapa',`
-  ${cardEstado(pro,comPct,sem)}
-  ${cardBaseline(pro,comPct)}
-  ${cardMudancas(pro,comPct)}
+  ${sc('estado',()=>cardEstado(pro,comPct,sem))}
+  ${sc('seu estado atual',()=>cardBaseline(pro,comPct))}
+  ${sc('mudanças',()=>cardMudancas(pro,comPct))}
   <div class="card"><div class="eyebrow">panorama</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${int.length}</div><div class="l">tiros em intensidade</div></div>
@@ -7933,15 +7968,15 @@ function telaRelatorio(){
     <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b>${(function(){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);if(!a.length)return'';const d=a.reduce((t,x)=>t+x,0)/a.length;return` · queda de velocidade média <b class="t">${d.toFixed(1)}%</b>`})()}</div>
   </div>`:''}`)}
   ${acc('rel_carga','Carga e recuperação','quanto você treinou e como o corpo respondeu',`
-  ${cardCarga()}
-  ${cardCargaTotal()}
-  ${cardFadiga()}
-  ${cardProntidaoSubj()}
+  ${sc('volume',()=>cardCarga())}
+  ${sc('carga total',()=>cardCargaTotal())}
+  ${sc('fadiga',()=>cardFadiga())}
+  ${sc('check-in',()=>cardProntidaoSubj())}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
   ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
   ${acc('rel_corpo','Corpo, força e histórico','exames, composição e evolução em competições',`
-  ${cardEvolucaoForca(pro)}
+  ${sc('força',()=>cardEvolucaoForca(pro))}
   ${pro.exames?.length?(()=>{const ex=[...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0];
     const k=Math.floor((new Date(hoje()+'T00:00:00')-new Date(ex.data+'T00:00:00'))/86400000);
     const nf=flagsExame(ex).length;
@@ -7963,8 +7998,8 @@ function telaRelatorio(){
       ${(tm!=null||imc!=null)?`<div class="note" style="margin-top:8px">${imc!=null?`IMC <b>${imc}</b>. `:''}${tm!=null?`TMB estimada: <b>${tm} kcal/dia</b>.`:''} <span class="xs muted">estimativa por composição corporal</span></div>`:''}
       ${flagsBio(b).map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
     })([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0])}</div>`:''}
-  ${cardComposicaoRelativa(pro)}
-  ${cardEvolucao(pro,'evolução em competições')}
+  ${sc('composição',()=>cardComposicaoRelativa(pro))}
+  ${sc('evolução em competições',()=>cardEvolucao(pro,'evolução em competições'))}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}`)}
   </div></details><div style="height:20px"></div>`;
