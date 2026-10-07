@@ -130,7 +130,21 @@ body{margin:0;background:var(--deck);color:var(--ink);font-family:var(--body);fo
 h1,h2,h3{font-family:var(--disp);font-weight:700;margin:0;line-height:1.06}
 h1{font-size:30px;text-transform:uppercase} h2{font-size:23px;text-transform:uppercase}
 h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
-.eyebrow{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+/* O rotulo mais repetido do app. Em 12px, cinza e com .18em de espacamento
+   ele lia como etiqueta de formulario: presente em tudo, hierarquia em nada.
+   Maior, mais escuro e menos esparramado, ele volta a ser TITULO. */
+.eyebrow{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink)}
+/* TRILHO DE COR POR DOMINIO. O relatorio e uma coluna de vinte retangulos
+   brancos iguais; a cor na borda da o mapa que faltava e deixa claro, ao
+   rolar, se aquilo fala de prova, de treino, de carga ou de corpo. */
+.card[data-dom]{position:relative;padding-left:19px}
+.card[data-dom]::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--dom)}
+.card[data-dom="prova"]{--dom:var(--rope)}
+.card[data-dom="perf"]{--dom:var(--water)}
+.card[data-dom="carga"]{--dom:var(--clock)}
+.card[data-dom="corpo"]{--dom:var(--ok)}
+.card[data-dom]>.eyebrow:first-child::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--dom);margin-right:7px;vertical-align:.08em}
 .t{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .muted{color:var(--ink-2)} .small{font-size:14px} .xs{font-size:12.5px}
 .center{text-align:center}
@@ -230,8 +244,8 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .empty .big{font-family:var(--disp);font-size:22px;text-transform:uppercase;color:var(--ink);margin-bottom:6px}
 .bar{height:9px;background:var(--line);border-radius:5px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--water)}
-.kpi .v{font-family:var(--mono);font-weight:700;font-size:25px;line-height:1}
-.kpi .l{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.kpi .v{font-family:var(--mono);font-weight:700;font-size:29px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi .l{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-top:4px}
 /* ── Cartão do treino da vez ───────────────────────────────────────────────
    O fundo é feito em CSS, não com foto: o app é um arquivo só, e uma imagem
    de piscina decente custaria centenas de KB para carregar à beira da piscina,
@@ -311,7 +325,7 @@ svg.chart{width:100%;height:auto;display:block}
 .note.ok{border-color:var(--ok);background:var(--ok-bg)}
 /* acordeão (seções recolhíveis) — achata cards aninhados no corpo p/ ficar clean */
 .acc-h{cursor:pointer;display:flex;align-items:center;gap:10px;padding:13px 15px;width:100%;border:0;background:none;color:inherit;text-align:left;border-radius:0;text-transform:none;letter-spacing:0}
-.acc-h .tit{font-family:var(--disp);text-transform:uppercase;letter-spacing:.04em;font-size:15px;font-weight:700}
+.acc-h .tit{font-family:var(--disp);text-transform:uppercase;letter-spacing:.03em;font-size:17px;font-weight:700}
 .acc-chev{font-family:var(--disp);font-size:20px;color:var(--ink-2);transition:transform .15s;display:inline-block}
 .accbody{padding:2px 15px 15px}
 .accbody>.card,.accbody .card{border:0;box-shadow:none;margin:0;padding:0;background:none}
@@ -381,7 +395,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v120';
+const VER='v121';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5712,7 +5726,7 @@ function cardCargaTotal(){
   const natShow=c.natacao+(usaEstim?c.natExtrap:0);
   const totShow=usaEstim?c.totalAjust:c.total;
   const pN=totShow?Math.round(natShow/totShow*100):0;
-  return`<div class="card"><div class="eyebrow">carga total — 28 dias${usaEstim?' <span class="xs muted">(inclui estimativa)</span>':''}</div>
+  return`<div class="card" data-dom="carga"><div class="eyebrow">carga total — 28 dias${usaEstim?' <span class="xs muted">(inclui estimativa)</span>':''}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${totShow.toLocaleString('pt-BR')}</div><div class="l">total (UA)</div></div>
       <div class="kpi"><div class="v">${natShow.toLocaleString('pt-BR')}</div><div class="l">natação ${pN}%</div></div>
@@ -5811,7 +5825,7 @@ function cardFadiga(){
   else if(a>1.5||f.monotonia>2.2){nivel='alerta de fadiga';cor='var(--clock)';txt='Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+' — fadiga acumulada, padrão associado a overtraining. <i>Leitura para o técnico sobre reduzir a carga.</i>';}
   else if(a>=0.8){nivel='carga sustentável';cor='var(--ok)';txt='Carga em faixa saudável, compatível com manter ou progredir.';}
   else {nivel='carga baixa';cor='';txt='Carga abaixo da habitual — há margem em relação ao que o seu corpo já tolerou.';}
-  return`<div class="card" id="c-fadiga"><div class="eyebrow">fadiga e overtraining</div>
+  return`<div class="card" data-dom="carga" id="c-fadiga"><div class="eyebrow">fadiga e overtraining</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${f.cronica}</div><div class="l">fitness (crônica/sem)</div></div>
       <div class="kpi"><div class="v">${f.aguda}</div><div class="l">fadiga (aguda 7d)</div></div>
@@ -6056,7 +6070,7 @@ function cardEvolucaoForca(pro){
   const ton=(typeof tonelagem==='function')?tonelagem(p.dias):null;
   const subindo=p.exercicios.filter(e=>e.tendencia==='↑').length;
   const caindo=p.exercicios.filter(e=>e.tendencia==='↓').length;
-  return`<div class="card" id="c-forca"><div class="eyebrow">evolução de força</div>
+  return`<div class="card" data-dom="corpo" id="c-forca"><div class="eyebrow">evolução de força</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${nSes}</div><div class="l">sessões (${p.dias}d)</div></div>
       <div class="kpi"><div class="v">${p.exercicios.length}</div><div class="l">exercícios</div></div>
@@ -6667,7 +6681,7 @@ function cardCarga(){
      Aqui a conta é sobre METROS NADADOS (t.vol do índice de treinos); lá é
      sobre carga de sessão (duração × RPE). São grandezas diferentes com a
      mesma forma de cálculo, e carregavam o mesmo rótulo. */
-  return`<div class="card" id="c-volume"><div class="eyebrow">volume agudo / volume habitual</div>
+  return`<div class="card" data-dom="carga" id="c-volume"><div class="eyebrow">volume agudo / volume habitual</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${r.toFixed(2)}</div><div class="l">razão</div></div>
       <div class="kpi"><div class="v">${(c.ag/1000).toFixed(1)}k</div><div class="l">agudo (7 dias)</div></div>
@@ -6715,7 +6729,7 @@ function correlacoes(pro,comPct){
 function cardCorrelacoes(pro,comPct){
   const c=correlacoes(pro,comPct);
   if(!c.rec&&!c.carga)return'';
-  let html=`<div class="card"><div class="eyebrow">correlações</div>`;
+  let html=`<div class="card" data-dom="perf"><div class="eyebrow">correlações</div>`;
   if(c.rec){const r=c.rec, lin=(nome,o)=>o&&o.n>=2?`<tr><td>${nome}</td><td class="n">${o.n}</td><td class="n" style="font-weight:700">${o.pct.toFixed(0)}%</td></tr>`:'';
     html+=`<h3 style="margin:8px 0 4px">Recuperação × desempenho</h3>
       <table><thead><tr><th>recuperação</th><th class="n">tiros</th><th class="n">%PB méd</th></tr></thead><tbody>${lin('boa',r.bom)}${lin('neutra',r.neutro)}${lin('ruim',r.ruim)}</tbody></table>
@@ -6724,8 +6738,12 @@ function cardCorrelacoes(pro,comPct){
     html+=`<h3 style="margin:12px 0 4px">Carga × desempenho</h3>
       <table><thead><tr><th>carga semanal</th><th class="n">volume</th><th class="n">%PB méd</th></tr></thead><tbody>
       ${cg.faixas.map(f=>`<tr><td>${f.nome}</td><td class="n">${(f.load/1000).toFixed(1)}k</td><td class="n" style="font-weight:700">${f.pct.toFixed(0)}%</td></tr>`).join('')}</tbody></table>
-      ${cg.melhor?`<div class="note" style="margin-top:8px">Seus melhores %PB aparecem na carga <b>${cg.melhor.nome}</b> (~${(cg.melhor.load/1000).toFixed(1)}k/semana) — faixa aparentemente mais produtiva para você.</div>`:''}`;}
-  html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico — quanto mais dados, mais confiável. É associação, não causa.</div></div>`;
+      ${cg.melhor?`<div class="note" style="margin-top:8px">Melhor %PB observado na faixa de carga <b>${cg.melhor.nome}</b> (~${(cg.melhor.load/1000).toFixed(1)}k/semana). <b>Associação observada</b> — os dados ainda não bastam para estabelecer uma faixa ótima individual.</div>`:''}`;}
+  /* FASE 8 — a tabela trazia n e média; faltava a DISPERSÃO. Duas faixas com
+     a mesma média e espalhamentos diferentes não dizem a mesma coisa, e sem
+     isso a leitura vira "esta faixa é melhor" a partir de ruído. */
+  const disp=(o)=>o&&o.dp!=null?` ±${o.dp.toFixed(1)}`:'';
+  html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico. <b>n</b> é o número de tiros em cada faixa — compare as médias só quando os dois lados tiverem amostra parecida. Diferença de poucos pontos entre faixas com n pequeno é ruído, não efeito. <b>É associação, nunca causa</b>: o que separa as faixas não é só a carga.</div></div>`;
   return html;
 }
 /* ── BASELINE INDIVIDUAL MÓVEL ──────────────────────────────────────────────
@@ -6786,7 +6804,7 @@ function cardFrescor(pro,comPct){
     <td class="n">${r.dias==null?'—':(r.dias===0?'hoje':r.dias===1?'ontem':r.dias+'d')}</td>
     <td class="xs" style="text-align:right;color:${cor(r.uso)};font-weight:700">${r.uso}</td></tr>`).join('');
   const velhos=rs.filter(r=>r.uso==='só histórico').length;
-  return`<div class="card" id="c-frescor"><div class="eyebrow">idade dos dados</div>
+  return`<div class="card" data-dom="perf" id="c-frescor"><div class="eyebrow">idade dos dados</div>
     <div class="small muted" style="margin:4px 0 6px">Há quanto tempo cada fonte foi atualizada, e se ela ainda descreve o seu <b>estado de hoje</b>.</div>
     <table><thead><tr><th>fonte</th><th class="n">última</th><th style="text-align:right">uso</th></tr></thead><tbody>${linhas}</tbody></table>
     <div class="xs muted" style="margin-top:8px">Cada fonte tem o seu prazo porque mudam em ritmos diferentes: VFC muda todo dia, bioimpedância não muda numa semana, exame menos ainda. <b>Dado antigo não é dado ruim</b> — ele continua valendo para o histórico e para as tendências; o que ele não pode é pesar como se fosse de hoje.${velhos?` <b>${velhos} fonte(s)</b> já só entram como histórico.`:''}</div>
@@ -6829,7 +6847,7 @@ function cardBaseline(pro,comPct){
         · variação <b class="t" style="color:${cor}">${d>=0?'+':''}${d.toFixed(0)}%</b>
         <span style="opacity:.75">(${r.n} medida(s))</span></div>
     </div>`;}).join('');
-  return`<div class="card" id="c-baseline"><div class="eyebrow">seu estado atual</div>
+  return`<div class="card" data-dom="corpo" id="c-baseline"><div class="eyebrow">seu estado atual</div>
     <div class="small muted" style="margin:4px 0 2px">Cada indicador contra a <b>sua</b> linha de base de 28 dias — não contra tabela de referência.</div>
     ${blocos}
     <div class="xs muted" style="margin-top:8px"><b>Faixa habitual</b> = média ± 1 desvio dos seus últimos 28 dias; <b>NORMAL</b> é estar dentro dela. Sem isso, "−1%" não dizia nada: num indicador que oscila 8% ao dia é ruído, num que oscila 1% é muito. A cor segue a direção de cada métrica — FC de repouso acima da faixa é desfavorável, VFC acima é favorável, peso é neutro.</div>
@@ -7221,7 +7239,7 @@ function cardProntidaoComp(pro,motor,comPct){
       ${o.d}m ${esc(o.e)} <span class="xs">${o.pis}</span></button>`).join('')}</div>
     ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b> — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`
       :`<div class="xs muted" style="margin-top:4px">Suas provas-alvo de <b>Marcas</b>. Quando houver competição futura com você inscrito, as provas dela aparecem aqui primeiro.</div>`}</div>`:'';
-  return`<div class="card" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
+  return`<div class="card" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
     <div class="small muted" style="margin-top:3px">Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".</div>
     ${seletor}
     ${topo}
@@ -7239,7 +7257,7 @@ function cardTransferencia(pro,motor,comPct,brk){
   const ref=motor.provaRef; if(!ref)return'';
   const t=motor.transf;
   const nome=`${ref.d}m ${ref.e} ${ref.pis}`;
-  if(!t||!t.n)return`<div class="card" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
+  if(!t||!t.n)return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
     <p class="small muted" style="margin-top:6px">${(t&&t.semBase&&t.semBase.length)
       ? `Você tem <b>${t.semBase.length} prova(s)</b> de ${esc(nome)} registrada(s), mas <b>nenhum tiro lançado antes delas</b> — a mais recente é de ${brData(t.semBase[t.semBase.length-1])}. A conversão compara o que você nadou na prova com o que vinha nadando no treino; sem o lado do treino não há o que comparar, e estimar por cima disso seria inventar a metade que falta. A partir das próximas competições, com os tiros que você já vem registrando, o número aparece sozinho.`
       : `Ainda não dá para medir a sua conversão: é preciso ter, na mesma prova, um resultado de competição <b>e</b> tiros registrados antes dele. Registre as competições em <b>Marcas</b>.`}</p></div>`;
@@ -7270,7 +7288,7 @@ function cardTransferencia(pro,motor,comPct,brk){
                  :`Na prova o segundo 25 custa <b>${fmt(dt-dp,true)} a menos</b> que no treino.`)} <i>Leitura para o técnico.</i></div>`;
     }
   }
-  return`<div class="card" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
+  return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${sinal(t.mediana)}</div><div class="l">conversão (mediana)</div></div>
       <div class="kpi"><div class="v" style="opacity:.75">${sinal(t.p25)} / ${sinal(t.p75)}</div><div class="l">quartis</div></div>
@@ -7289,7 +7307,7 @@ function cardAprendizado(pro){
   const pbs=pro.pbs||{};
   const pis=pbs[`${a.d} ${a.e} LC50`]?'LC50':'SC25';
   const p=precisaoModelo(pro,a.d,a.e,pis);
-  if(!p||!p.n)return`<div class="card"><div class="eyebrow">aprendizado do modelo</div>
+  if(!p||!p.n)return`<div class="card" data-dom="prova"><div class="eyebrow">aprendizado do modelo</div>
     <p class="small muted" style="margin-top:6px">Ainda não há competição registrada para comparar com a previsão. <b>Registre seus resultados em Marcas</b> — a cada prova o app passa a saber o quanto costuma errar com você, e a projeção deixa de ser um palpite genérico.</p></div>`;
   const sinal=v=>(v>0?'+':'')+ (Math.abs(v)>=1000?fmt(Math.abs(v),true):(v/1000).toFixed(2)+'s');
   const linhas=p.itens.map(x=>{
@@ -7315,7 +7333,7 @@ function cardAprendizado(pro){
         ? `<b>Você tem nadado ${dir} que a previsão</b> — em média ${Math.abs(vies).toFixed(2)}s. Com ${p.n} provas comparadas isso já é tendência, e o app corrige nas próximas projeções.`
         : `<b>Tendência preliminar:</b> você nadou ${dir} que a previsão em ${p.n} provas, média ${Math.abs(vies).toFixed(2)}s. ${est.rotulo} — o app corrige em parte, com peso reduzido pela amostra.`));
   const qc=qualidadeCalib(p);
-  return`<div class="card"><div class="eyebrow">aprendizado do modelo — ${a.d}m ${esc(a.e)} ${pis}</div>
+  return`<div class="card" data-dom="prova"><div class="eyebrow">aprendizado do modelo — ${a.d}m ${esc(a.e)} ${pis}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${p.n}</div><div class="l">prova(s) comparada(s)</div></div>
       <div class="kpi"><div class="v">${abs.toFixed(2)}s</div><div class="l">erro absoluto médio</div></div>
@@ -7352,7 +7370,7 @@ function cardPredicao(pro,comPct,est){
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
       <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div></div>`;}).join('');
-  return`<div class="card"><div class="eyebrow">projeção de tempo — provas-alvo</div>
+  return`<div class="card" data-dom="prova"><div class="eyebrow">projeção de tempo — provas-alvo</div>
     <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
     ${linhas}
     <div class="xs muted" style="margin-top:8px">A <b>largura da faixa</b> é a incerteza. Até 2 provas comparadas ela vem de quanto dado existe; a partir de 3, passa a sair do <b>seu histórico de erro</b> — aperta quando o modelo vem acertando e alarga quando a faixa vem estourando. <b>Qualidade dos dados</b> mede quanta informação o modelo tem e o quanto ele já acertou com você — não é probabilidade.${semCal?' <b>Registre seus resultados em Marcas</b>: sem competição registrada o modelo não sabe o seu ganho real treino→prova e mantém a faixa larga.':''}</div>
@@ -7637,7 +7655,11 @@ function prontidaoCompetitiva(pro,comPct,motor,d,e,pis){
 function fingerprintDims(velPct,manutCV,pront,composicao,tend,espec){
   const cl=v=>Math.max(0,Math.min(100,v));
   const qCV=manutCV==null?'':(manutCV<2?'ótima':manutCV<3.5?'boa':manutCV<5?'ok':'a melhorar');
-  const tScore=tend?Math.round(cl(50+(tend.mag||0)*10)):null;   /* 50=neutro; ±5% satura em 0/100 */
+  /* FASE 12 — nada satura em 0 ou 100. Uma tendência de +5% virava "Tendência
+     = 100", que lê como perfeição e não é: é a direção da capacidade, e ela
+     não tem teto. O eixo vai a 90 e para, porque 100 num radar afirma que não
+     há mais o que melhorar naquela dimensão. */
+  const tScore=tend?Math.round(Math.max(8,Math.min(90,50+(tend.mag||0)*8))):null;
   return[
     {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
     {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
@@ -7681,7 +7703,7 @@ function cardFingerprint(m){
     const yy=y+(Math.abs(dy)<8?(dy<0?-6:12):dy<0?-4:11);
     return`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="${an}" font-size="9.5" font-family="Barlow,sans-serif" fill="var(--ink-2)">${d.eixo}</text>`;}).join('');
   const legenda=dims.map(d=>`<tr><td>${d.eixo}</td><td class="n" style="font-weight:700">${d.score!=null?d.score:'—'}</td><td class="xs muted" style="padding-left:8px">${d.txt}</td></tr>`).join('');
-  return`<div class="card"><div class="eyebrow">assinatura de sprint</div>
+  return`<div class="card" data-dom="perf"><div class="eyebrow">assinatura de sprint</div>
     <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo (mais longe do centro = melhor).</div>
     <div style="display:flex;justify-content:center"><svg viewBox="0 0 250 196" style="width:100%;max-width:290px">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
@@ -7726,7 +7748,7 @@ function motorPerformance(pro,comPct,sem,brk){
 }
 function cardModelo(m){
   const iv=m.inventario, c=m.cobertura, nf=c>=70?'ampla':c>=40?'parcial':'inicial';
-  return`<div class="card" id="c-modelo"><div class="row"><div class="eyebrow">modelo de performance</div><div class="grow"></div>
+  return`<div class="card" data-dom="perf" id="c-modelo"><div class="row"><div class="eyebrow">modelo de performance</div><div class="grow"></div>
       <div class="kpi" style="text-align:right"><div class="v" style="${c>=70?'color:var(--ok)':c<40?'color:var(--clock)':''}">${c}%</div><div class="l">cobertura</div></div></div>
     <div class="small muted" style="margin-top:4px">Base: ${iv.tiros} tiro(s) · ${iv.competicoes} resultado(s) · ${iv.garmin} dia(s) de relógio · ${iv.exames} exame(s) · ${iv.bio} bioimpedância(s) · ${iv.seco} fora d'água.</div>
     <div class="xs muted" style="margin-top:6px">Cobertura ${nf}: mede <b>quanto dado existe</b>, e sobe conforme você registra. Não diz quanto o modelo acerta — isso é a <b>confiabilidade</b>, que aparece em cada projeção, separada por prova e piscina.</div>
@@ -7772,7 +7794,7 @@ function cabecalhoRelatorio(pro,motor){
      é onde a identificação faz sentido. Aqui ficou só o que é conteúdo — PB
      contra projeção —, para esta não ser mais uma caixa quase vazia ocupando a
      primeira dobra de quem ainda não definiu provas-alvo. */
-  return`<div class="card" id="c-provas">
+  return`<div class="card" data-dom="prova" id="c-provas">
     <div class="eyebrow">provas-alvo</div>
     ${preds.length?`<table style="margin:8px 0 0;width:100%">
       <thead><tr><th>prova</th><th class="n">PB</th><th class="n">projeção hoje</th></tr></thead>
@@ -7983,18 +8005,18 @@ function telaRelatorio(){
   ${sc('check-in',()=>cardProntidaoSubj())}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
-  ${pro.garmin?.length?`<div class="card" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
+  ${pro.garmin?.length?`<div class="card" data-dom="corpo" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
   ${acc('rel_corpo','Corpo, força e histórico','exames, composição e evolução em competições',`
   ${sc('força',()=>cardEvolucaoForca(pro))}
   ${pro.exames?.length?(()=>{const ex=[...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0];
     const k=Math.floor((new Date(hoje()+'T00:00:00')-new Date(ex.data+'T00:00:00'))/86400000);
     const nf=flagsExame(ex).length;
-    return`<div class="card" id="c-exames"><div class="eyebrow">exames laboratoriais</div>
+    return`<div class="card" data-dom="corpo" id="c-exames"><div class="eyebrow">exames laboratoriais</div>
     <div class="small muted">Último em ${brData(ex.data)} · há ${k} dia(s)${pro.exames.length>1?` · ${pro.exames.length} coleta(s) registradas`:''}</div>
     ${resumoExame(ex)}
     <div class="note" style="margin-top:10px"><b>O que o app faz com isto:</b> ${nf?`${nf} marcador(es) fora da faixa geram <b>alertas no relatório</b>, para você levar ao médico.`:'nenhum marcador fora da faixa de referência.'} Os exames <b>não entram</b> na projeção de tempo, na prontidão competitiva nem em nenhum score.
       <span class="xs muted" style="display:block;margin-top:4px">Isto não é diagnóstico nem substitui consulta: é o seu valor, a data e a faixa de referência do laboratório, reunidos num lugar.${k>180?' <b>Esta coleta tem mais de 6 meses</b> — vale como histórico, não como estado de hoje.':''}</span></div></div>`;})():''}
-  ${pro.bioimp?.length?`<div class="card" id="c-bio"><div class="eyebrow">bioimpedância</div>
+  ${pro.bioimp?.length?`<div class="card" data-dom="corpo" id="c-bio"><div class="eyebrow">bioimpedância</div>
     <div class="small muted">Último em ${brData([...pro.bioimp].sort((a,b)=>b.data.localeCompare(a.data))[0].data)}${pro.bioimp.length>1?` · ${pro.bioimp.length} medições`:''}</div>
     ${(()=>{const c=motor.composicao;
       if(!c)return'';
