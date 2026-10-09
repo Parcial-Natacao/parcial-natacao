@@ -282,6 +282,29 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .kpi-t .v{font-family:var(--mono);font-weight:700;font-size:21px;line-height:1.1}
 .kpi-t .v.mini{font-size:16px;line-height:1.3}   /* cabe a faixa inteira, nas duas linhas */
 .kpi-t .l{font-family:var(--disp);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+/* ── O RELATÓRIO COMO DOCUMENTO ────────────────────────────────────────────
+   Cabeçalho que identifica, seções numeradas, prosa antes do número e fecho
+   de metodologia. É o que separa um relatório que se entrega ao técnico de uma
+   tela de aplicativo que se rola. */
+.doc-cap{margin:14px 0 6px}
+.doc-cap h1{font-size:27px;line-height:1.05;letter-spacing:-.01em}
+.doc-sub{font-size:14.5px;color:var(--ink-2);margin-top:5px}
+.doc-ident{width:100%;margin-top:13px;border-top:2px solid var(--ink);border-bottom:1px solid var(--line)}
+.doc-ident td{padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+.doc-ident tr:last-child td{border-bottom:0}
+.doc-ident td.rot{width:42%;color:var(--ink-2);font-family:var(--disp);font-size:12.5px;
+  letter-spacing:.08em;text-transform:uppercase;padding-right:10px}
+.doc-sec{margin:24px 0 0}
+.doc-h{display:flex;align-items:baseline;gap:9px;font-size:21px;margin:0 0 3px}
+.doc-n{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--ink-3);
+  border:1.5px solid var(--line-forte);border-radius:7px;padding:1px 7px;flex:0 0 auto}
+.doc-sec[data-dom="prova"] .doc-n{color:var(--rope-ink);border-color:var(--rope)}
+.doc-sec[data-dom="perf"] .doc-n{color:var(--water);border-color:var(--water)}
+.doc-sec[data-dom="carga"] .doc-n{color:var(--clock);border-color:var(--clock)}
+.doc-lead{font-size:14.5px;color:var(--ink-2);margin:0 0 4px;max-width:62ch}
+.doc-meta{margin:26px 0 0;padding-top:14px;border-top:2px solid var(--ink)}
+.doc-meta h3{font-size:15px;margin-bottom:6px}
+.doc-meta p{font-size:13px;color:var(--ink-2);margin:0 0 7px;max-width:70ch;line-height:1.5}
 /* ── SUPERFÍCIES ───────────────────────────────────────────────────────────
    Peso visual sem imagem. O app é um arquivo só e roda à beira da piscina,
    onde o sinal é ruim: uma foto decente custaria centenas de KB justamente
@@ -344,6 +367,7 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .btnlink.out{background:var(--card);color:var(--ink)}
 .destin{display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink)}
 .hide{display:none!important}
+.doc-rodape{display:none}   /* so existe no papel */
 .ficha th,.ficha td{border:1px solid var(--line);text-align:center;padding:6px 3px;font-size:13.5px}
 .ficha td.nome{text-align:left;font-weight:600}
 svg.chart{width:100%;height:auto;display:block}
@@ -406,7 +430,19 @@ svg.chart{width:100%;height:auto;display:block}
   svg,table,.grid3{break-inside:avoid}
   details:not([open])>*:not(summary){display:block!important}
   details summary{display:none!important}
-  @page{margin:14mm 12mm}
+  /* o documento impresso quebra por SEÇÃO, não no meio de uma ideia */
+  .doc-sec{break-inside:auto;page-break-inside:auto;margin-top:16px}
+  .doc-h,.doc-lead{break-after:avoid;page-break-after:avoid}
+  .doc-cap h1{font-size:22px}
+  .doc-ident{margin-bottom:4px}
+  .doc-meta{break-before:auto}
+  .acc-h{padding:10px 0!important}
+  .accbody{padding:0!important}
+  /* rodapé repetido: num PDF que circula entre técnico e atleta, cada folha
+     solta precisa dizer de quem é e de quando */
+  .doc-rodape{position:fixed;bottom:0;left:0;right:0;font-size:9.5px;color:var(--ink-3);
+    border-top:1px solid var(--line);padding-top:3px;display:block!important}
+  @page{margin:16mm 12mm 14mm}
 }
 </style>
 
@@ -441,7 +477,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v123';
+const VER='v124';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7988,6 +8024,69 @@ function sc(nome,fn){
       <span class="xs muted" style="display:block;margin-top:4px">O resto do relatório continua válido. Me mostre esta mensagem e eu corrijo.</span></div></div>`;
   }
 }
+/* ── O RELATÓRIO É UM DOCUMENTO, NÃO UM PAINEL ─────────────────────────────
+   O modelo que o Bruno quer reproduzir abre identificando a prova, o atleta e
+   a janela — e só depois mostra número. Um painel de cartões soltos obriga
+   quem lê (sobretudo o técnico, que recebe o PDF sem contexto) a montar essa
+   moldura de cabeça. */
+function cabecalhoDocumento(pro,motor){
+  const nome=nomeLaudo();
+  const ops=(typeof opcoesProva==='function')?opcoesProva(pro):[];
+  const prox=ops.filter(o=>o.origem==='comp')[0]||null;
+  const ref=motor.provaRef;
+  const dias=prox?Math.round((new Date(prox.data+'T00:00:00')-new Date(hoje()+'T00:00:00'))/86400000):null;
+  const p=(motor.predicoes||[])[0];
+  const idade=(typeof anos==='function'&&S.u&&!S.laudoAtleta)?anos(S.u):null;
+  const alvos=((typeof provasAlvo==='function')?provasAlvo(pro):[]).map(a=>`${a.d} m ${a.e}`);
+  const iv=motor.inventario||{};
+  const linha=(r,v)=>`<tr><td class="rot">${r}</td><td><b>${v}</b></td></tr>`;
+  return`<div class="doc-cap">
+    <h1>Relatório de performance — natação</h1>
+    <div class="doc-sub">${prox
+      ? `${esc(prox.comp)} — ${brData(prox.data)}${prox.pis?` · piscina de ${prox.pis==='LC50'?'50':'25'} m`:''}`
+      : `Emitido em ${brData(hoje())} · janela de análise: últimos 120 dias`}</div>
+    <table class="doc-ident"><tbody>
+      ${linha('Atleta',esc(nome)+(idade>0?` (${idade} anos)`:''))}
+      ${linha('Provas-alvo',alvos.length?alvos.join(' · '):'—')}
+      ${linha('Prova em foco',ref?`${ref.d} m ${esc(ref.e)} · ${ref.pis}`:'—')}
+      ${linha('Projeção para hoje',p?`${fmt(p.low,true)}–${fmt(p.high,true)} <span class="xs" style="font-weight:400">(PB ${fmt(p.pb,true)})</span>`:'sem prova-alvo definida')}
+      ${linha('Base de dados',`${iv.tiros||0} tiros · ${iv.competicoes||0} competições · ${iv.garmin||0} dias de relógio`)}
+      ${linha('Janela até a prova',dias!=null?(dias<=0?'esta semana':`~${dias} dia(s)`):'sem competição marcada')}
+    </tbody></table>
+  </div>`;
+}
+/* Seção numerada: é o que dá ao documento a espinha que o painel não tinha.
+   A numeração NÃO pode ser fixa. Seção sem dado não é renderizada — e com
+   número fixo o documento saía "1, 2, 3, 4, 6", que num relatório parece
+   página faltando. O contador só anda quando a seção de fato existe. */
+let _N_APOIO=7;   /* numero da secao de apoio, definido depois de saber quantas secoes existem */
+function montarSecoes(lista){
+  let n=0, html='';
+  for(const [titulo,sub,corpo,dom] of lista){
+    if(!corpo||!String(corpo).trim())continue;
+    n++;
+    html+=`<section class="doc-sec"${dom?` data-dom="${dom}"`:''}>
+      <h2 class="doc-h"><span class="doc-n">${n}</span>${esc(titulo)}</h2>
+      ${sub?`<p class="doc-lead">${esc(sub)}</p>`:''}
+      ${corpo}</section>`;
+  }
+  return{html,n};
+}
+/* Fecho do documento: de onde vieram os números e o que eles não são. O modelo
+   termina assim, e é o que separa relatório de tela de aplicativo. */
+function secaoMetodologia(pro,motor){
+  const iv=motor.inventario||{};
+  const fr=(typeof frescorDados==='function')?frescorDados(pro,[]):[];
+  const velhas=fr.filter(f=>f.uso==='só histórico').map(f=>f.rot.toLowerCase());
+  return`<div class="doc-meta">
+    <h3>Metodologia e ressalvas</h3>
+    <p>Janela de análise: <b>últimos 120 dias</b> de treinos consolidados (${iv.tiros||0} tiros cronometrados), ${iv.competicoes||0} resultado(s) de competição e ${iv.garmin||0} dia(s) de dados do relógio. Os tempos de treino são convertidos para condição de prova aplicando <b>saída de bloco e taper</b>, e depois calibrados pelas suas competições anteriores — a projeção não é o seu tempo de treino.</p>
+    <p><b>Cobertura</b> mede quanto dos dados esperados existe; <b>confiabilidade</b> mede o quanto o modelo já acertou na sua prova. Nenhum dos dois é probabilidade: não há calibração estatística que autorize lê-los assim.</p>
+    <p>Correlações descrevem <b>associação observada no seu histórico</b>, nunca causa. Amostras pequenas aparecem marcadas como tal, e o app evita conclusão forte com uma ou duas observações.</p>
+    <p>Dado marcado como suspeito — bioimpedância implausível, duração fora de faixa — <b>não alimenta score, radar nem projeção</b>; continua visível, identificado. ${velhas.length?`Hoje ${velhas.join(' e ')} ${velhas.length>1?'entram':'entra'} apenas como histórico, por idade do dado.`:''}</p>
+    <p><b>O app não prescreve treino.</b> Ele indica direção de carga — reduzir, manter ou aumentar — e sinaliza o que merece leitura. O conteúdo do treino é decisão do técnico; indicadores de saúde não substituem avaliação clínica.</p>
+  </div>`;
+}
 function telaRelatorio(){
   if(ESF_ERRO)return`<div class="empty"><div class="big">Não foi possível montar o relatório</div>
     <p class="muted">A consolidação dos treinos falhou.</p>
@@ -8005,30 +8104,38 @@ function telaRelatorio(){
   const motor=motorPerformance(pro,comPct,sem,brk);
   return`
   ${S.laudoAtleta?`<div class="row noprint" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltarLaudo()">‹ Equipe</button></div>`:''}
-  <div class="row noprint" style="margin:${S.laudoAtleta?'2px':'16px'} 0 6px"><h2>${S.laudoAtleta?'Relatório · '+esc(prim(S.laudoNome||'')):'Relatório'}</h2><div class="grow"></div>
+  ${/* o título do DOCUMENTO está logo abaixo; aqui ficam só as ações */''}
+  <div class="row noprint" style="margin:${S.laudoAtleta?'2px':'14px'} 0 0"><div class="grow"></div>
     <button class="sm ghost" onclick="abrirImpressao()">PDF</button>
     ${!S.laudoAtleta?`<button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>`:''}
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
-  ${sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))}
-  ${sc('indicadores do topo',()=>cardKPIs(pro,motor,sem))}
-  ${sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct))}
-  ${sc('provas-alvo',()=>cabecalhoRelatorio(pro,motor))}
-  ${sc('resumo',()=>cardResumoExec(pro,motor,comPct))}
-  ${sc('assinatura de sprint',()=>cardFingerprint(motor))}
-  ${sc('correlações',()=>cardCorrelacoes(pro,comPct))}
-  ${sc('indicadores para decisão',()=>cardPlanoAcao(pro,motor,diag,comPct))}
+  ${sc('cabeçalho',()=>cabecalhoDocumento(pro,motor))}
+  ${(()=>{const S_=montarSecoes([
+    ['Síntese e prioridade','O que os dados apontam como mais importante nesta semana, e com quanta base.',
+      sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))+sc('indicadores do topo',()=>cardKPIs(pro,motor,sem)),'prova'],
+    ['Prontidão competitiva','Não é como você está hoje: é o quanto você está preparado para nadar esta prova.',
+      sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct)),'prova'],
+    ['Marcas e projeção','O seu melhor tempo contra o tempo provável de hoje, por prova e piscina.',
+      sc('provas-alvo',()=>cabecalhoRelatorio(pro,motor)),'prova'],
+    ['Capacidade atual','Onde está a sua velocidade, quanto dela se sustenta e para onde ela vem andando.',
+      sc('resumo',()=>cardResumoExec(pro,motor,comPct))+sc('assinatura de sprint',()=>cardFingerprint(motor)),'perf'],
+    ['Associações observadas','Cruzamentos do seu próprio histórico. Associação, nunca causa.',
+      sc('correlações',()=>cardCorrelacoes(pro,comPct)),'perf'],
+    ['Indicadores para decisão','Leitura dos dados para o técnico decidir. O app não prescreve treino.',
+      sc('indicadores para decisão',()=>cardPlanoAcao(pro,motor,diag,comPct)),'carga']
+  ]); _N_APOIO=S_.n+1; return S_.html;})()}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
-  <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>Ver detalhamento e dados de apoio</summary><div>
+  <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>${_N_APOIO} — Dados de apoio e detalhamento</summary><div>
   ${/* Eram vinte e poucos cartões de peso igual, um atrás do outro. Agrupados
        por PERGUNTA, não por origem do dado: o atleta chega aqui querendo saber
        de projeção, de capacidade, de carga ou do corpo — e abre só aquilo. */''}
-  ${acc('rel_proj','Projeção e aprendizado','quanto o modelo projeta e o quanto ele acerta com você',`
+  ${acc('rel_proj',_N_APOIO+'.1 Projeção e aprendizado','como o modelo projeta e o quanto ele acerta com você',`
   ${sc('modelo',()=>cardModelo(motor))}
   ${sc('idade dos dados',()=>cardFrescor(pro,comPct))}
   ${sc('projeção',()=>cardPredicao(pro,comPct,motor.estado))}
   ${sc('aprendizado do modelo',()=>cardAprendizado(pro))}
   ${sc('treino → prova',()=>cardTransferencia(pro,motor,comPct,brk))}`)}
-  ${acc('rel_cap','Capacidade e splits','onde está a sua velocidade e onde ela escapa',`
+  ${acc('rel_cap',_N_APOIO+'.2 Capacidade e splits','onde está a sua velocidade e onde ela escapa',`
   ${sc('estado',()=>cardEstado(pro,comPct,sem))}
   ${sc('seu estado atual',()=>cardBaseline(pro,comPct))}
   ${sc('mudanças',()=>cardMudancas(pro,comPct))}
@@ -8044,7 +8151,7 @@ function telaRelatorio(){
     ${graficoBarras(brk.slice(-10).map(e=>({rot:brCurta(e.data),v:e.delta})))}
     <div class="small muted" style="margin-top:8px">Média das últimas ${Math.min(brk.length,10)} repetições: <b class="t">+${fmt(brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10),true)}</b>${(function(){const a=brk.slice(-10).map(e=>{const s1=e.p1/1000,s2=(e.tempo-e.p1)/1000;return(s1>0&&s2>0)?((25/s1-25/s2)/(25/s1)*100):null}).filter(x=>x!=null);if(!a.length)return'';const d=a.reduce((t,x)=>t+x,0)/a.length;return` · queda de velocidade média <b class="t">${d.toFixed(1)}%</b>`})()}</div>
   </div>`:''}`)}
-  ${acc('rel_carga','Carga e recuperação','quanto você treinou e como o corpo respondeu',`
+  ${acc('rel_carga',_N_APOIO+'.3 Carga e recuperação','quanto você treinou e como o corpo respondeu',`
   ${sc('volume',()=>cardCarga())}
   ${sc('carga total',()=>cardCargaTotal())}
   ${sc('fadiga',()=>cardFadiga())}
@@ -8052,7 +8159,7 @@ function telaRelatorio(){
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
   ${pro.garmin?.length?`<div class="card" data-dom="corpo" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
-  ${acc('rel_corpo','Corpo, força e histórico','exames, composição e evolução em competições',`
+  ${acc('rel_corpo',_N_APOIO+'.4 Corpo, força e histórico','exames, composição e evolução em competições',`
   ${sc('força',()=>cardEvolucaoForca(pro))}
   ${pro.exames?.length?(()=>{const ex=[...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0];
     const k=Math.floor((new Date(hoje()+'T00:00:00')-new Date(ex.data+'T00:00:00'))/86400000);
@@ -8079,7 +8186,9 @@ function telaRelatorio(){
   ${sc('evolução em competições',()=>cardEvolucao(pro,'evolução em competições'))}
   ${pro.seco?.length?`<div class="card"><div class="eyebrow">fora d'água</div>
     <div class="small">${pro.seco.length} registro(s) · último em ${brData(pro.seco[0].data)} (${esc(pro.seco[0].tipo)})</div></div>`:''}`)}
-  </div></details><div style="height:20px"></div>`;
+  </div></details>
+  ${sc('metodologia',()=>secaoMetodologia(pro,motor))}
+  <div style="height:20px"></div>`;
 }
 function volumePorSemana(){
   const m={};
@@ -8190,6 +8299,11 @@ function imprimirRelatorio(modo){
     n.removeAttribute('ontoggle');n.removeAttribute('onchange');});
   clone.querySelectorAll('details').forEach(d=>d.setAttribute('open',''));
   if(modo==='enxuto'){ const d=clone.querySelector('.report-details'); if(d)d.remove(); }
+  /* rodapé de folha: um PDF que circula entre técnico e atleta precisa que
+     cada página solta diga de quem é e de quando */
+  const rod=document.createElement('div'); rod.className='doc-rodape';
+  rod.textContent=`${nomeLaudo()} — relatório de performance · ${brData(hoje())} · PARCIAL ${VER}`;
+  clone.appendChild(rod);
   setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
   const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
   const nome=nomeLaudo();
