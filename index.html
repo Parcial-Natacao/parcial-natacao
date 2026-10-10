@@ -477,7 +477,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v124';
+const VER='v125';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2121,9 +2121,16 @@ function aplicarParciais(blocos,piscina,parcial25){
    MARCAS E ZONAS
    ===================================================================== */
 const pbKey=(d,e,p)=>`${d} ${e} ${p||'SC25'}`;
-function pbDe(dados,dist,estilo){
+/* `pis` é opcional e MUDA a resposta: o PB da piscina em que o esforço foi
+   nadado é o único denominador comparável. Sem ele, um tiro de 50 m numa
+   piscina de 25 m (uma virada) era dividido pelo melhor PB de qualquer
+   piscina — às vezes o de 50 m, que não tem virada nenhuma — e o %PB saía
+   sistematicamente distorcido para um dos lados. Quando não existe PB na
+   piscina do esforço, voltamos ao melhor disponível, que é melhor que nada. */
+function pbDe(dados,dist,estilo,pis){
   if(!dados)return null;
   const p=dados.pbs||{};
+  if(pis&&p[`${dist} ${estilo} ${pis}`]!=null)return p[`${dist} ${estilo} ${pis}`];
   const c=Object.entries(p).filter(([k])=>{const[d,e]=k.split(' ');return +d===dist&&e===estilo}).map(([,v])=>v);
   if(c.length)return Math.min(...c);
   const p50=Object.entries(p).find(([k])=>k.startsWith(`50 ${estilo}`));
@@ -5318,7 +5325,7 @@ function veredictoProntidao(score){
   if(score==null)return {nivel:'sem check-in',cor:'var(--ink-2)',txt:'Faça o check-in diário na aba Saúde para acompanhar a prontidão sem relógio.'};
   if(score>=75)return {nivel:'pronto',cor:'var(--ok)',txt:'Bem recuperado — dá para treinar forte e progredir a carga.'};
   if(score>=50)return {nivel:'moderado',cor:'var(--rope)',txt:'Prontidão média — mantenha a carga, evite picos e cuide do sono.'};
-  return {nivel:'baixa prontidão',cor:'var(--clock)',txt:'Sinais de fadiga/estresse — priorize recuperação; cuidado ao subir a carga (risco de overtraining).'};
+  return {nivel:'baixa prontidão',cor:'var(--clock)',txt:'Indicadores abaixo da sua faixa habitual. Leitura de estado, não diagnóstico — vale considerar recuperação antes de progredir carga.'};
 }
 function cardProntidaoSubj(){
   const p=prontidaoSubj(7); if(!p)return'';
@@ -5904,17 +5911,20 @@ function cardFadiga(){
   const f=fadigaCarga(); if(!f)return'';
   const a=f.acwr; let nivel,cor,txt;
   if(a==null){nivel='dados iniciais';cor='var(--ink-2)';txt='Ainda sem carga habitual suficiente para comparar. Preencha RPE e duração nos treinos.';}
-  else if(a>1.5||f.monotonia>2.2){nivel='alerta de fadiga';cor='var(--clock)';txt='Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+' — fadiga acumulada, padrão associado a overtraining. <i>Leitura para o técnico sobre reduzir a carga.</i>';}
+  else if(a>1.5||f.monotonia>2.2){nivel='carga recente elevada';cor='var(--clock)';txt='Carga dos últimos 7 dias acima da sua referência das 4 semanas anteriores'+(f.monotonia>2.2?', com baixa variação entre os dias':'')+'. É uma leitura de carga, não um diagnóstico: razão alta isolada não caracteriza overtraining. <i>Interpretar junto com prontidão e sintomas — decisão do técnico.</i>';}
   else if(a>=0.8){nivel='carga sustentável';cor='var(--ok)';txt='Carga em faixa saudável, compatível com manter ou progredir.';}
   else {nivel='carga baixa';cor='';txt='Carga abaixo da habitual — há margem em relação ao que o seu corpo já tolerou.';}
-  return`<div class="card" data-dom="carga" id="c-fadiga"><div class="eyebrow">fadiga e overtraining</div>
+  return`<div class="card" data-dom="carga" id="c-fadiga"><div class="eyebrow">carga aguda × habitual (UA)</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${f.cronica}</div><div class="l">fitness (crônica/sem)</div></div>
       <div class="kpi"><div class="v">${f.aguda}</div><div class="l">fadiga (aguda 7d)</div></div>
       <div class="kpi"><div class="v" style="${a!=null&&a>1.5?'color:var(--clock)':''}">${a!=null?a.toFixed(2):'—'}</div><div class="l">fadiga / fitness</div></div>
     </div>
     <div class="note" style="margin-top:10px;border-color:${cor}"><b>${nivel[0].toUpperCase()+nivel.slice(1)}:</b> ${txt}</div>
-    <div class="xs muted" style="margin-top:6px">Junta natação + treinos fora d'água (carga = duração × RPE). Esta razão e a de <b>volume</b> não são a mesma coisa: aqui a conta é sobre duração × RPE, lá sobre metros nadados. <b>Fitness</b> = carga habitual (média semanal de 28 dias); <b>fadiga</b> = últimos 7 dias; monotonia ${f.monotonia}. Interprete com a prontidão — leitura de apoio, não diagnóstico.</div>
+    <div class="xs muted" style="margin-top:6px">
+      <b>Fórmula, janela e unidade:</b> carga de sessão = <b>duração (min) × RPE (0–10)</b>, em unidades arbitrárias (UA). <b>Fadiga</b> = soma dos <b>últimos 7 dias</b>. <b>Fitness</b> = soma dos <b>últimos 28 dias ÷ 4</b> (média semanal) — médias simples, sem suavização exponencial. <b>Monotonia</b> = média ÷ desvio-padrão da carga diária dos 7 dias (teto 5), hoje ${f.monotonia}.
+      <span style="display:block;margin-top:4px">Junta natação e treinos fora d'água. <b>Origem:</b> RPE e duração são <b>digitados por você</b> em cada sessão — não vêm do relógio. Treino sem os dois não entra na conta (veja a cobertura no cartão de carga total).</span>
+      <span style="display:block;margin-top:4px">Esta razão <b>não é</b> a de volume: aqui a conta é sobre duração × RPE; lá, sobre metros nadados. As duas não são intercambiáveis nem comparáveis entre si. Razão isolada é descritor de carga — não diagnostica overtraining nem lesão.</span></div>
   </div>`;
 }
 /* ── FADIGA POR ATLETA (visão do técnico) ────────────────────────────────────
@@ -5965,7 +5975,7 @@ function veredictoFadiga(f){
   if(!f)return {nivel:'sem dados',cor:'var(--ink-2)',txt:'Sem carga registrada suficiente. Peça ao atleta para marcar RPE e duração dos treinos (piscina e fora d\'água).'};
   const a=f.acwr;
   if(a==null)return {nivel:'dados iniciais',cor:'var(--ink-2)',txt:'Ainda sem carga habitual (crônica) para comparar. Faltam algumas semanas de registro.'};
-  if(a>1.5||f.monotonia>2.2)return {nivel:'alerta de fadiga',cor:'var(--clock)',txt:'Carga recente bem acima da habitual'+(f.monotonia>2.2?' e treinos muito monótonos':'')+'. Atleta próximo de overtraining — faça gestão de carga (dia leve/recuperação) antes de progredir.'};
+  if(a>1.5||f.monotonia>2.2)return {nivel:'carga recente elevada',cor:'var(--clock)',txt:'Carga dos últimos 7 dias acima da referência das 4 semanas anteriores'+(f.monotonia>2.2?', com baixa variação entre os dias':'')+'. Leitura de carga, não diagnóstico — avaliar com prontidão e sintomas.'};
   if(a>=0.8)return {nivel:'carga sustentável',cor:'var(--ok)',txt:'Carga em faixa saudável — dá para manter ou subir a carga aos poucos.'};
   return {nivel:'carga baixa',cor:'',txt:'Carga abaixo da habitual — há margem em relação ao que o seu corpo já tolerou.'};
 }
@@ -6178,7 +6188,7 @@ function cardForcaPerformance(pro,p){
   if(comF.length<2)return'';
   const esf=(ESF||[]).filter(e=>e.pct==null?false:true);
   /* %PB por metade do período, dos tiros fortes */
-  const pts=((typeof ESF!=='undefined'&&ESF)||[]).map(e=>{const pb=pbDe(pro,e.dist,e.estilo);
+  const pts=((typeof ESF!=='undefined'&&ESF)||[]).map(e=>{const pb=pbDe(pro,e.dist,e.estilo,e.pis);
     return pb?{d:idade(e.data),pct:pb/e.tempo*100}:null}).filter(x=>x&&x.d>=0&&x.d<dias);
   if(pts.length<6)return'';
   const meio=dias/2;
@@ -6393,7 +6403,7 @@ async function gerarLaudoIA(){
   try{
     const pro=S.pro||{}, esf=ESF||await coletarEsforcos({dias:120});
     const int=esf.filter(x=>!['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
-    const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
+    const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo,x.pis);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
     const brk=int.filter(x=>x.p1!=null&&x.dist===50).map(x=>({...x,delta:x.tempo-2*x.p1}));
     const motor=motorPerformance(pro,comPct,volumePorSemana(),brk);
     const d=await chamarIA({acao:'laudo',dados:dadosParaLaudo(motor)});
@@ -6636,7 +6646,10 @@ function estadoPerformance(pro,comPct,sem){
     const p=prontidaoSubj(7);
     if(p&&p.media!=null)pr={score:p.media,mot:[],dias:p.n||0,fonte:'check-in'};
   }
-  /* Capacidade: quão perto do melhor tempo os tiros recentes estão saindo */
+  /* Velocidade média: %PB MÉDIO dos últimos 15 tiros, de TODAS as provas. Não
+     confundir com o eixo Velocidade do radar, que é a média dos MELHORES 20%
+     das provas-alvo. Mesma fórmula (PB ÷ tempo × 100, onde mais rápido = maior),
+     recortes diferentes -- e os rótulos agora dizem qual é qual. */
   let cap=null;
   if(comPct.length){const a=comPct.slice(-15);cap={score:Math.round(cl(md(a,'pct'),0,100)),n:a.length};}
   /* Tendência: evolução em competição PONDERADA PELA MAGNITUDE + tendência do %PB.
@@ -6680,7 +6693,7 @@ function cardEstado(pro,comPct,sem){
       if(e.cap){const c=cf(e.cap.n,12,6);ps.push(`Capacidade <b style="color:${c.c}">${c.t}</b> <span class="xs muted">(${e.cap.n} tiros)</span>`);}
       if(e.tend){const base=Math.max(e.tend.nEv,e.tend.nPct>=8?2:e.tend.nPct>=4?1:0);const c=cf(base,3,1);ps.push(`Tendência <b style="color:${c.c}">${c.t}</b>`);}
       return ps.length?`<div class="small" style="margin-top:8px"><b>Confiança</b> — ${ps.join(' · ')}</div>`:'';})()}
-    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Capacidade</b>: quão perto do seu melhor tempo você está nadando. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio; a confiança sobe conforme você acumula dados.</span></div>
+    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Velocidade média</b>: média de %PB dos seus <b>últimos 15 tiros</b>, de todas as provas. É diferente do eixo <b>Velocidade</b> da assinatura de sprint, que usa só os <b>melhores 20%</b> dos tiros <b>das provas-alvo</b> — dois recortes do mesmo cálculo, por isso os números não batem. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio; a confiança sobe conforme você acumula dados.</span></div>
   </div>`;
 }
 /* Carga aguda × crônica (ACWR): volume dos últimos 7 dias / média semanal em 28 dias.
@@ -6750,9 +6763,19 @@ function cardComposicaoRelativa(pro){
       <div class="kpi"><div class="v">${c.massaMagra}<span class="xs muted"> kg</span></div><div class="l">massa magra</div></div>
       <div class="kpi"><div class="v">${ref?fmt(ref.tempo,true):'—'}</div><div class="l">${ref?ref.prova:'melhor tempo'}</div></div>
     </div>
-    <div class="row" style="justify-content:space-between;margin-top:10px"><span class="small">Gordura ${c.estimada?'estimada':'medida'}</span><span class="small t" style="font-weight:800">~${c.gordura}%</span></div>
-    ${c.estimada?`<div class="note" style="margin-top:8px">${c.motivo.charAt(0).toUpperCase()+c.motivo.slice(1)}. Massa magra e composição vêm dessa estimativa${c.fonte==='água corporal'?' — que usa um dado confiável do seu exame':''}. Se tiver uma medição de gordura confiável (dobras/DEXA), registre-a que eu passo a usar.</div>`:''}
-    <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). Perder peso mantendo a massa magra melhora a relação peso/potência — costuma refletir em velocidade.</div>
+    <div class="row" style="justify-content:space-between;margin-top:10px">
+      <span class="small">Gordura ${c.status==='medida'?'medida':'<b>estimada</b>'}</span>
+      <span class="small t" style="font-weight:800;${c.status!=='medida'?'opacity:.7':''}">~${c.gordura}%</span></div>
+    ${c.status!=='medida'?`<div class="note warn" style="margin-top:8px">
+      <b>Este número é estimado, não medido.</b> ${esc(c.motivo.charAt(0).toUpperCase()+c.motivo.slice(1))}.
+      ${c.fonte==='água corporal'
+        ?'Fórmula: massa magra ≈ água corporal ÷ 0,732 (hidratação média do tecido magro); a gordura sai por diferença. É método aceito, mas pressupõe hidratação normal no dia da medição.'
+        :'Fórmula: tabela por idade e sexo — não é uma medição sua.'}
+      <span class="xs muted" style="display:block;margin-top:4px">Valor original do aparelho preservado no registro, para auditoria. Estimativa <b>não alimenta score, radar nem projeção</b>. Com uma medição confiável (dobras ou DEXA) registrada, o app passa a usá-la.</span></div>`:''}
+    ${/* Sem evidência individual, recomendar perda de peso é extrapolar. O app
+         mede tempo e composição; não mediu, NESTE atleta, que um kg a menos
+         virou décimo. A relação peso/potência é literatura, não achado dele. */''}
+    <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). <b>O app não recomenda perda de peso</b>: não há, no seu histórico, medição que ligue variação de peso a variação de tempo. Composição aqui é descrição, não meta — mudanças de peso em atleta master são assunto do técnico e de nutricionista.</div>
   </div>`;
 }
 function cardCarga(){
@@ -7243,7 +7266,14 @@ function predicao(pro,comPct,est){
         banda:`${sinal(dLow)} / ${sinal(dHigh)} vs PB`,fatores:fat});
     }
   }
-  const fim=out.sort((x,y)=>y.qual-x.qual||x.d-y.d).slice(0,4);
+  /* A PROVA EM FOCO NUNCA PODE SER CORTADA NEM PERDER O PRIMEIRO LUGAR.
+     A ordenação era só por qualidade do dado, e o `slice(0,4)` podia até
+     descartar a prova escolhida. Como quatro lugares do relatório liam
+     `predicoes[0]` como "a projeção", o cabeçalho dizia 50 peito SC25 e
+     mostrava a faixa do 100 — a prova que por acaso tinha mais dado. */
+  const fc=(typeof provaEmFoco==='function')?provaEmFoco(pro):null;
+  const kFoco=fc?`${fc.d} ${fc.e} ${fc.pis}`:null;
+  const fim=out.sort((x,y)=>(y.prova===kFoco?1:0)-(x.prova===kFoco?1:0)||y.qual-x.qual||x.d-y.d).slice(0,4);
   /* guarda o que está sendo previsto HOJE: é o que permite, depois da prova,
      comparar com o que o atleta de fato viu — e não com uma reconstrução. */
   try{ if(!S.laudoAtleta)registrarPrevisao(pro,fim); }catch(_){}
@@ -7432,6 +7462,17 @@ function cardAprendizado(pro){
     <div class="xs muted" style="margin-top:4px">Qualidade da calibração: ${esc(qc.porque)}. Mede o quanto o histórico sustenta a projeção desta prova — não é probabilidade.</div>
     <table style="margin-top:10px"><thead><tr><th>prova</th><th class="n">previsto</th><th class="n">realizado</th><th class="n">erro</th></tr></thead>
       <tbody>${linhas}</tbody></table>
+    ${(()=>{/* P2 — RASTREABILIDADE. "3 provas comparáveis, a mais recente em
+        28/06/2025" ao lado de um resultado de 15/04/2026 em Marcas parece
+        contradição, e não é: só entra no log a prova que tinha TIROS ANTES
+        dela para reconstruir a previsão. Sem dizer isso, o relatório parecia
+        estar ignorando competições — ou inventando datas. */
+      const todas=((pro.resultados||[]).filter(r=>r&&r.tempo>0&&r.data&&r.dist===a.d&&r.estilo===a.e&&(r.piscina||'SC25')===pis));
+      const dentro=new Set((p.itens||[]).map(x=>x.data));
+      const fora=todas.filter(r=>!dentro.has(r.data)).sort((x,y)=>y.data.localeCompare(x.data));
+      if(!fora.length)return'';
+      return`<div class="note" style="margin-top:8px"><b>${fora.length} de ${todas.length} competição(ões) desta prova ficaram fora desta comparação</b>, a mais recente em ${brData(fora[0].data)}${fora[0].comp?` (${esc(fora[0].comp)})`:''}.
+        <span class="xs muted" style="display:block;margin-top:4px">Motivo: só entra aqui a prova que tinha <b>tiros registrados antes dela</b> — sem o lado do treino não há previsão para comparar com o resultado. Elas continuam valendo em <b>Marcas</b> e no histórico de evolução; o que não dá é medir erro de previsão onde não houve previsão possível.</span></div>`;})()}
     ${p.nFaixa?`<div class="xs muted" style="margin-top:6px"><b>Cobertura da faixa:</b> ${Math.round(p.cobertura*100)}% das provas caíram dentro do intervalo previsto (${p.nFaixa} com faixa registrada). Perto de 100% com faixa estreita é o ideal; 100% com faixa larga só quer dizer que o app não se comprometeu.</div>`:''}
     <div class="xs muted" style="margin-top:6px"><b>Erro negativo (verde) = você nadou MAIS RÁPIDO que o previsto</b>; positivo = mais devagar. Base: ${esc(p.esc)}.${p.previstas<p.n?` ${p.n-p.previstas} linha(s) marcada(s) <b>rec</b> foram reconstruídas a partir dos treinos daquela época, não são previsões que você chegou a ver.`:''}</div>
   </div>`;
@@ -7743,7 +7784,7 @@ function fingerprintDims(velPct,manutCV,pront,composicao,tend,espec){
      há mais o que melhorar naquela dimensão. */
   const tScore=tend?Math.round(Math.max(8,Math.min(90,50+(tend.mag||0)*8))):null;
   return[
-    {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB':'s/ dado'},
+    {eixo:'Velocidade', score: velPct!=null?Math.round(cl(velPct)):null, txt: velPct!=null?velPct.toFixed(0)+'% do PB (melhores 20% das provas-alvo)':'s/ dado'},
     {eixo:'Manutenção', score: manutCV!=null?Math.round(cl(100-manutCV*12)):null, txt: manutCV!=null?'variação '+manutCV.toFixed(1)+'% ('+qCV+')':'s/ dado'},
     {eixo:'Recuperação', score: pront!=null?Math.round(cl(pront)):null, txt: pront!=null?'prontidão '+pront:'s/ dado'},
     /* Especificidade entra no lugar que a Composição deixou: ela é MEDIDA do
@@ -7789,7 +7830,7 @@ function cardFingerprint(m){
     <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo (mais longe do centro = melhor).</div>
     <div style="display:flex;justify-content:center"><svg viewBox="0 0 250 196" style="width:100%;max-width:290px">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
-    <div class="xs muted" style="margin-top:6px"><b>Velocidade</b>=%PB dos seus melhores tiros · <b>Manutenção</b>=constância dos tempos numa série (menor variação = melhor) · <b>Recuperação</b>=prontidão · <b>Especificidade</b>=exposição a ritmo de prova nos últimos 28 dias (tiros ≥92% do PB, com peso para a recência)${dims.some(d=>d.eixo==='Composição')?' · <b>Composição</b>=%gordura medida':''} · <b>Tendência</b>=direção da capacidade. Eixo sem dado confiável <b>sai</b> do gráfico; eixo sem medida fica no centro.</div>
+    <div class="xs muted" style="margin-top:6px"><b>Velocidade</b>=%PB dos melhores 20% dos tiros das provas-alvo (PB ÷ tempo × 100: mais rápido = maior) · <b>Manutenção</b>=constância dos tempos numa série (menor variação = melhor) · <b>Recuperação</b>=prontidão · <b>Especificidade</b>=exposição a ritmo de prova nos últimos 28 dias (tiros ≥92% do PB, com peso para a recência)${dims.some(d=>d.eixo==='Composição')?' · <b>Composição</b>=%gordura medida':''} · <b>Tendência</b>=direção da capacidade. Eixo sem dado confiável <b>sai</b> do gráfico; eixo sem medida fica no centro.</div>
   </div>`;
 }
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
@@ -7816,7 +7857,10 @@ function motorPerformance(pro,comPct,sem,brk){
   const secForca=((pro.seco||[]).filter(s=>{const h=new Date(hoje()+'T00:00:00');const x=(h-new Date((s.data||'')+'T00:00:00'))/86400000;return x>=0&&x<90&&tonForcaSessao(s)>0;})).length;
   const forca={sessoes:secForca,tonelagem:ton90,progressao:progF,exercicios:progF.exercicios.map(e=>({id:e.idExercicio,nome:e.nome,e1rmAtual:e.e1RMRecente,e1rmPct:e.variacaoPct,melhorE1RM:e.melhorE1RM,e1RMRecente:e.e1RMRecente,tendencia:e.tendencia,confianca:e.confianca}))};
   const fadiga=(typeof fadigaCarga==='function')?fadigaCarga():null;
-  /* P3 — prova principal como referência da especificidade e da transferência */
+  /* REFERÊNCIA CANÔNICA. Quem precisa da projeção "da prova em foco" lê
+     `predicaoFoco` — nunca `predicoes[0]`, que é apenas a de melhor dado.
+     Quando não há projeção para a prova escolhida, isto é `null`, e a tela
+     mostra indisponibilidade em vez da projeção de outra prova. */
   /* a prova em foco e a que o atleta escolheu no cartao de prontidao competitiva;
      sem escolha, a primeira inscricao futura e, na falta, a primeira prova-alvo */
   const foco=(typeof provaEmFoco==='function')?provaEmFoco(pro):null;
@@ -7824,9 +7868,11 @@ function motorPerformance(pro,comPct,sem,brk){
   /* a piscina vem da escolha quando ela existe — a inscrição já diz em que
      piscina a prova vai ser nadada, e é essa que interessa */
   const pisP=alvoP?(alvoP.pis||((pro.pbs||{})[`${alvoP.d} ${alvoP.e} LC50`]&&!(pro.pbs||{})[`${alvoP.d} ${alvoP.e} SC25`]?'LC50':'SC25')):null;
+  const provaRefK=alvoP?(alvoP.d+' '+alvoP.e+' '+pisP):null;
   const espec=alvoP?especificidadeProva(comPct,alvoP.d,alvoP.e):null;
   const transf=alvoP?transferenciaProva(pro,comPct,alvoP.d,alvoP.e,pisP):null;
-  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:predicao(pro,comPct,est),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend,espec),mudancas:mudancas28d(pro,comPct),forca,fadiga,espec,transf,provaRef:alvoP?{d:alvoP.d,e:alvoP.e,pis:pisP}:null,inventario:inv,cobertura,confianca:cobertura};   /* "confianca" fica como apelido: o laudo por IA e dados já gravados leem esse nome */
+  const _PRED=predicao(pro,comPct,est);
+  return {estado:est,carga,cargaTotal:(typeof cargaTotal==='function'?cargaTotal(28):null),tonelagem28d:(typeof tonelagem==='function'?tonelagem(28):null),correlacoes:corr,speedDrop:sd,composicao,baselines:baselinesResumo(pro,comPct),predicoes:_PRED,predicaoFoco:(provaRefK?(_PRED.find(x=>x.prova===provaRefK)||null):null),fingerprint:fingerprintDims(velocFingerprint(pro,comPct),manutencaoCV(comPct),est.pr?est.pr.score:null,composicao,est.tend,espec),mudancas:mudancas28d(pro,comPct),forca,fadiga,espec,transf,provaRef:alvoP?{d:alvoP.d,e:alvoP.e,pis:pisP}:null,inventario:inv,cobertura,confianca:cobertura};   /* "confianca" fica como apelido: o laudo por IA e dados já gravados leem esse nome */
 }
 function cardModelo(m){
   const iv=m.inventario, c=m.cobertura, nf=c>=70?'ampla':c>=40?'parcial':'inicial';
@@ -7891,7 +7937,7 @@ function cabecalhoRelatorio(pro,motor){
    nadaria hoje, se a carga está acima do habitual, e se o corpo respondeu.
    Cada um leva ao cartão que o explica — o resumo vira o índice. */
 function cardKPIs(pro,motor,sem){
-  const p=(motor.predicoes||[])[0];
+  const p=motor.predicaoFoco;   /* a da PROVA EM FOCO, nunca a de melhor dado */
   const f=(typeof fadigaCarga==='function')?fadigaCarga():null;
   const pg=prontidaoGarmin(pro,sem);
   const a=f&&f.acwr;
@@ -7940,7 +7986,7 @@ function cardResumoExec(pro,motor,comPct){
   return`<div class="card"><div class="eyebrow">resumo</div>
     <p class="small" style="margin:6px 0 12px;line-height:1.5">${narr}</p>
     <div class="grid3">
-      <div class="kpi"><div class="v">${cap!=null?cap+'%':'—'}</div><div class="l">capacidade (%PB)</div></div>
+      <div class="kpi"><div class="v">${cap!=null?cap+'%':'—'}</div><div class="l">velocidade média (15 tiros)</div></div>
       <div class="kpi"><div class="v" style="${tend?`color:${tend.cor||''}`:''}">${tend?tend.dir:'—'}</div><div class="l">tendência</div></div>
       <div class="kpi"><div class="v" style="color:${pr==null?'':pr>=75?'var(--ok)':pr<55?'var(--clock)':''}">${pr!=null?pr:'—'}</div><div class="l">prontidão</div></div>
     </div>
@@ -7974,7 +8020,7 @@ function cardPrioridadeSemana(pro,motor,diag){
     <div class="eyebrow" style="margin-top:9px">prioridade desta semana</div>
     <h2 style="margin:5px 0 8px">${esc(ri.nivel)}</h2><p style="margin:0">${ri.txt}</p>
     ${foco?`<div class="note ${foco.t}" style="margin-top:12px">${foco.txt}</div>`:''}</div>
-    ${(()=>{const p=(motor.predicoes||[])[0];
+    ${(()=>{const p=motor.predicaoFoco;
       /* Dois números distintos, lado a lado, com nomes distintos: quanto dado
          existe, e quanto o modelo acerta na prova que importa. Eram a mesma
          palavra — e um dizia 100% enquanto o outro dizia 67%. */
@@ -7992,7 +8038,7 @@ function cardPlanoAcao(pro,motor,diag,comPct){
   const comp=[];
   if(regr.length)comp.push({t:'warn',txt:`Performance competitiva em queda nas últimas provas: <b>${regr.join(', ')}</b>. <i>Avaliação pelo técnico.</i>`});
   if(evoluiu.length)comp.push({t:'ok',txt:`Performance competitiva em evolução: <b>${evoluiu.join(', ')}</b>.`});
-  const pred=(motor.predicoes||[])[0];
+  const pred=motor.predicaoFoco;
   if(pred){const q=pred.prova.split(' ');const nm=`${q[0]}m ${q[1]} · ${q[2]==='LC50'?'50m':'25m'}`;
     comp.push({t:'',txt:`Projeção de hoje para <b>${nm}</b>: <b>${fmt(pred.low,true)}–${fmt(pred.high,true)}</b> (seu PB ${fmt(pred.pb,true)}). Encurtar essa diferença passa por sustentar o ritmo nos metros finais e chegar descansado à prova.`});}
   const ri=recomendaIntensidade(motor);
@@ -8035,7 +8081,7 @@ function cabecalhoDocumento(pro,motor){
   const prox=ops.filter(o=>o.origem==='comp')[0]||null;
   const ref=motor.provaRef;
   const dias=prox?Math.round((new Date(prox.data+'T00:00:00')-new Date(hoje()+'T00:00:00'))/86400000):null;
-  const p=(motor.predicoes||[])[0];
+  const p=motor.predicaoFoco;
   const idade=(typeof anos==='function'&&S.u&&!S.laudoAtleta)?anos(S.u):null;
   const alvos=((typeof provasAlvo==='function')?provasAlvo(pro):[]).map(a=>`${a.d} m ${a.e}`);
   const iv=motor.inventario||{};
@@ -8049,7 +8095,9 @@ function cabecalhoDocumento(pro,motor){
       ${linha('Atleta',esc(nome)+(idade>0?` (${idade} anos)`:''))}
       ${linha('Provas-alvo',alvos.length?alvos.join(' · '):'—')}
       ${linha('Prova em foco',ref?`${ref.d} m ${esc(ref.e)} · ${ref.pis}`:'—')}
-      ${linha('Projeção para hoje',p?`${fmt(p.low,true)}–${fmt(p.high,true)} <span class="xs" style="font-weight:400">(PB ${fmt(p.pb,true)})</span>`:'sem prova-alvo definida')}
+      ${linha('Projeção para hoje',p
+        ?`${fmt(p.low,true)}–${fmt(p.high,true)} <span class="xs" style="font-weight:400">(PB ${fmt(p.pb,true)} · ${p.prova.split(' ').slice(-1)[0]})</span>`
+        :(ref?`<span style="font-weight:400">indisponível para ${ref.d} m ${esc(ref.e)} ${ref.pis}</span><div class="xs" style="font-weight:400">${((pro.pbs||{})[`${ref.d} ${ref.e} ${ref.pis}`])?'faltam tiros recentes desta prova':'sem PB registrado nesta prova e piscina'}</div>`:'sem prova-alvo definida'))}
       ${linha('Base de dados',`${iv.tiros||0} tiros · ${iv.competicoes||0} competições · ${iv.garmin||0} dias de relógio`)}
       ${linha('Janela até a prova',dias!=null?(dias<=0?'esta semana':`~${dias} dia(s)`):'sem competição marcada')}
     </tbody></table>
@@ -8097,7 +8145,7 @@ function telaRelatorio(){
   const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
   const int=ESF.filter(e=>!tec.includes(e));
-  const comPct=int.map(e=>{const pb=pbDe(pro,e.dist,e.estilo);return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
+  const comPct=int.map(e=>{const pb=pbDe(pro,e.dist,e.estilo,e.pis);return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
   const brk=int.filter(e=>e.p1!=null&&e.dist===50).map(e=>({...e,delta:e.tempo-2*e.p1}));
   const sem=volumePorSemana();
   const diag=diagnostico(comPct,brk,sem,pro);
@@ -8330,7 +8378,7 @@ async function compartilharRelatorio(){
   const e=ESF||await coletarEsforcos({dias:120});
   const tec=e.filter(x=>['pernada','técnica','braçada','filipina'].some(t=>x.tags.includes(t)));
   const int=e.filter(x=>!tec.includes(x));
-  const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
+  const comPct=int.map(x=>{const pb=pbDe(pro,x.dist,x.estilo,x.pis);return{...x,pct:pb?pb/x.tempo*100:null}}).filter(x=>x.pct);
   const brk=int.filter(x=>x.p1!=null&&x.dist===50).map(x=>({...x,delta:x.tempo-2*x.p1}));
   const diag=diagnostico(comPct,brk,volumePorSemana(),pro);
   const semTags=s=>String(s).replace(/<[^>]+>/g,'');
