@@ -381,6 +381,13 @@ svg.chart{width:100%;height:auto;display:block}
 .accbody{padding:2px 15px 15px}
 .accbody>.card,.accbody .card{border:0;box-shadow:none;margin:0;padding:0;background:none}
 .accbody .card+.card{margin-top:12px}
+/* O cartão dentro do acordeão é ACHATADO (padding:0, sem borda, sem fundo) para
+   não virar caixa dentro de caixa. Só que esse `padding:0` tem a mesma
+   especificidade do `padding-left:19px` do trilho e vem depois — ganhava, e o
+   espaço reservado à barra de cor sumia. A barra, que é absoluta em left:0,
+   passava POR CIMA da primeira letra de cada linha: no relatório do Bruno as
+   iniciais de "Projeção", "Tempo" e "50 peito" estavam escondidas atrás dela. */
+.accbody .card[data-dom]{padding-left:13px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:390px){
   .grid2{grid-template-columns:1fr}
@@ -477,7 +484,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v126';
+const VER='v127';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7301,11 +7308,19 @@ function melhorPct(comPct,d,e,dias){
    de histórico de prova ALARGAM a faixa) e nunca exclui o seu PB sem sinal de
    destreino. O % ao lado é QUALIDADE DOS DADOS, não probabilidade. */
 function raceEst(comPct,pbs,d,e,ate){
+  /* A referência é SEMPRE a mesma (curta quando existe), e isso é intencional:
+     esta função estima a CAPACIDADE a partir dos tiros, e quem escala para a
+     piscina da prova é `predicao`, usando o PB daquela piscina. O problema era
+     o rótulo: ele dizia "~78% do PB" sem dizer de qual, e as linhas de 100
+     SC25 e 100 LC50 apareciam com o mesmo número, parecendo contradição no
+     relatório. Agora o texto nomeia a piscina de referência. */
+  const refPis=dd=>pbs[`${dd} ${e} SC25`]!=null?'SC25':(pbs[`${dd} ${e} LC50`]!=null?'LC50':null);
   const pbAny=dd=>pbs[`${dd} ${e} SC25`]||pbs[`${dd} ${e} LC50`]||null;
   const fade=dd=>{const cur=pbAny(dd),half=pbAny(dd/2);return (cur&&half)?cur/(2*half):(dd<=50?1.04:dd<=100?1.10:1.11);};
   const cands=[], fat=[];
   const bt=melhorTempo(comPct,d,e,120,ate);
-  if(bt!=null){const pb=pbAny(d);cands.push(bt);fat.push(`Melhores tiros de ${d}${pb?` (~${(pb/bt*100).toFixed(0)}% do PB)`:''}`);}
+  if(bt!=null){const pb=pbAny(d),rp=refPis(d);cands.push(bt);
+    fat.push(`Melhores tiros de ${d}${pb?` (~${(pb/bt*100).toFixed(0)}% do PB de ${d} ${rp})`:''}`);}
   if(d>25){const sub=raceEst(comPct,pbs,d/2,e,ate); if(sub){cands.push(sub.est*2*fade(d));fat.push(`${d/2} projetado (${fmt(sub.est,true)}) ×2 c/ seu desgaste`);}}
   if(!cands.length)return null;
   return {est:Math.min(...cands),cands,fat};
