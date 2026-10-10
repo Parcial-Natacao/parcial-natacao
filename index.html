@@ -477,7 +477,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v125';
+const VER='v126';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3045,6 +3045,21 @@ function telaTreinosAtleta(){
   ${heroTreino(meus)}
   ${faixaSemana()}
   ${futuros?`<div class="xs muted" style="margin:2px 0 8px">${futuros===1?'Há 1 treino programado':'Há '+futuros+' treinos programados'} para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
+  ${(()=>{/* O check-in de hoje é o único dado que SÓ existe se o atleta parar e
+      responder — e ele é a base da prontidão subjetiva e da concordância com o
+      relógio. Lembrar na tela de início, que é onde ele entra todo dia, e sumir
+      sozinho assim que responder: aviso que fica depois de resolvido vira
+      ruído e ensina a ignorar. */
+    if(!temPro())return'';
+    const hj=(S.pro&&S.pro.garmin||[]).find(x=>x.data===hoje());
+    if(checkinScore(hj)!=null)return'';
+    const h=new Date().getHours();
+    return`<button class="card tight" data-dom="corpo" style="width:100%;text-align:left;border-radius:var(--r);margin:10px 0" onclick="irPara('garmin')">
+      <div class="row" style="align-items:center;gap:10px">
+        <span style="font-size:22px;line-height:1">♡</span>
+        <span class="grow"><b>Check-in de hoje</b>
+          <div class="xs muted">${h<12?'Como você acordou?':h<18?'Como está o corpo hoje?':'Como foi o dia?'} Sono, energia, dor, estresse e humor — menos de um minuto.</div></span>
+        <span class="tag o">responder</span></div></button>`;})()}
   ${(()=>{const p=pendenciasSeco(), n=p.length; if(!n)return'';
     const auto=p.filter(x=>x.auto).length;
     return`<div class="note warn" style="margin:8px 0">
@@ -3267,9 +3282,283 @@ async function abrirDiagnostico(){
       ? `<b>${antigos.length} documento(s) sem os campos de segurança.</b> Ou a migração ainda não rodou, ou alguém está usando uma versão antiga do app (toda gravação nova grava esses campos). <b>Não publique as regras novas enquanto este número não for zero.</b><div class="xs muted" style="margin-top:4px">Ex.: ${antigos.slice(0,4).map(esc).join(', ')}${antigos.length>4?'…':''}</div>`
       : '<b>Tudo migrado.</b> Nenhum documento sem campos de segurança — pode publicar as regras novas.'}</div>
     <button class="sm ghost full" onclick="migrarCamposSeguranca()">Migrar campos de segurança</button>
+    <div class="sep"></div><div class="eyebrow">suíte de testes</div>
+    <div class="xs muted" style="margin:4px 0 6px">Roda contra as funções reais do app, no mesmo ambiente. Cada regressão consertada tem um caso — e e isso que impede o conserto de hoje de voltar depois.</div>
+    <button class="sm primary full" onclick="abrirTestes()">Rodar testes</button>
     <div id="migStatus" class="xs muted" style="margin-top:6px">Toque no botão acima. O andamento aparece aqui.</div>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUÍTE DE TESTES
+
+   Por que ela vive dentro do index.html: o app é UM arquivo, sem build e sem
+   módulos. Um test runner externo precisaria extrair as funções do HTML ou
+   duplicá-las — e teste que roda sobre uma cópia do código não testa o código.
+   Aqui ela roda no mesmo ambiente de produção, contra as funções de verdade.
+
+   Cobertura: cada regressão consertada desta conversa tem um caso. É isso que
+   impede o conserto de hoje de voltar no mês que vem.
+   Abrir: Conta › Diagnóstico › Rodar testes. Só o desenvolvedor vê.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const _T=[];                                     /* casos registrados */
+const teste=(grupo,nome,fn)=>_T.push({grupo,nome,fn});
+function _assert(){
+  const falhas=[];
+  const eq=(a,b,msg)=>{const A=JSON.stringify(a),B=JSON.stringify(b);
+    if(A!==B)falhas.push(`${msg||''} esperado ${B}, veio ${A}`)};
+  const ok=(v,msg)=>{if(!v)falhas.push(msg||'esperado verdadeiro')};
+  const quase=(a,b,tol,msg)=>{if(a==null||Math.abs(a-b)>(tol??0.5))falhas.push(`${msg||''} esperado ~${b}, veio ${a}`)};
+  return{falhas,eq,ok,quase};
+}
+/* Isola o estado global: os testes mexem em S/ESF/SESSOES e não podem deixar
+   o app num estado inventado depois de rodar. */
+async function rodarTestes(){
+  const bk={pro:S.pro,u:S.u,tridx:S.tridx,cidx:S.cidx,acc:S.acc,provaPC:S.provaPC,
+    esf:typeof ESF!=='undefined'?ESF:null,ses:typeof SESSOES!=='undefined'?SESSOES:null,
+    compFut:typeof _compFut!=='undefined'?_compFut:null};
+  const res=[];
+  for(const c of _T){
+    const a=_assert();
+    try{ await c.fn(a); }
+    catch(e){ a.falhas.push('EXCEÇÃO: '+((e&&e.message)||String(e))); }
+    res.push({...c,falhas:a.falhas});
+  }
+  S.pro=bk.pro;S.u=bk.u;S.tridx=bk.tridx;S.cidx=bk.cidx;S.acc=bk.acc;S.provaPC=bk.provaPC;
+  if(bk.esf!==null)ESF=bk.esf; if(bk.ses!==null)SESSOES=bk.ses; if(bk.compFut!==null)_compFut=bk.compFut;
+  return res;
+}
+async function abrirTestes(){
+  if(!ehDev())return toast('Só o desenvolvedor roda os testes');
+  sheet(`<h2>Suíte de testes</h2><div class="small muted">Rodando ${_T.length} caso(s) contra as funções reais…</div>`);
+  const res=await rodarTestes();
+  const falhos=res.filter(r=>r.falhas.length);
+  const grupos=[...new Set(res.map(r=>r.grupo))];
+  sheet(`<h2>Suíte de testes</h2>
+    <div class="note ${falhos.length?'warn':'ok'}" style="margin:8px 0">
+      <b>${res.length-falhos.length} de ${res.length} passaram.</b>
+      ${falhos.length?` ${falhos.length} falhou(aram) — a lista abaixo diz o quê.`:' Nenhuma regressão nas funções cobertas.'}</div>
+    ${grupos.map(g=>{const rs=res.filter(r=>r.grupo===g);
+      return`<div class="eyebrow" style="margin-top:12px">${esc(g)} · ${rs.filter(r=>!r.falhas.length).length}/${rs.length}</div>
+      ${rs.map(r=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+        <span style="color:${r.falhas.length?'var(--clock)':'var(--ok)'};font-weight:800">${r.falhas.length?'✕':'✓'}</span>
+        <span class="small"> ${esc(r.nome)}</span>
+        ${r.falhas.map(f=>`<div class="xs t" style="color:var(--clock);margin-left:16px">${esc(f)}</div>`).join('')}
+      </div>`).join('')}`;}).join('')}
+    <button class="ghost full" style="margin-top:14px" onclick="abrirTestes()">Rodar de novo</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`);
+}
+/* ── auxiliares dos casos ─────────────────────────────────────────────────── */
+const _dAtras=k=>{const d=new Date();d.setDate(d.getDate()-k);return isoDia(d)};
+const _daqui=k=>{const d=new Date();d.setDate(d.getDate()+k);return isoDia(d)};
+const _tiro=(k,dist,t,pis,p1)=>({data:_dAtras(k),pis:pis||'SC25',dist,estilo:'peito',tags:[],
+  tempo:parseTempo(t),p1:p1?parseTempo(p1):null,forte:true,vol:dist*4});
+const _comPct=(pro,arr)=>arr.map(e=>{const pb=pbDe(pro,e.dist,e.estilo,e.pis);
+  return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
+function _atleta(extra){
+  S.u={id:'A1',nome:'Teste',email:'barbato.bruno@gmail.com',equipe:'t',equipeNome:'T',
+    perfil:'pro',esporte:'Natação',aprovado:true,nascimento:'1984-03-10'};
+  S.tridx=[];S.cidx=[];_compFut={};S.provaPC=null;SESSOES=[];
+  S.pro=Object.assign({pbs:{},alvos:[],garmin:[],exames:[],bioimp:[],seco:[],resultados:[]},extra||{});
+  return S.pro;
+}
+
+/* ── DURAÇÃO — a confusão hh:mm × mm:ss (v96/v102) ───────────────────────── */
+teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
+teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
+teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
+teste('duração','1:15:30 é hh:mm:ss',a=>a.quase(durMin('1:15:30'),75.5,0.01));
+teste('duração','número puro são minutos',a=>a.quase(durMin('90'),90,0.01));
+
+/* ── DATA LOCAL — toISOString virava o dia às 21h (v108) ─────────────────── */
+teste('data','hoje() usa o fuso local',a=>{
+  const d=new Date(); a.eq(hoje(),`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,'hoje');});
+teste('data','semana começa na segunda',a=>{
+  const s=semanaDe('2026-10-07');   /* quarta */
+  a.eq(s[0],'2026-10-05','primeiro dia'); a.eq(s[6],'2026-10-11','último dia'); a.eq(s.length,7,'tamanho');});
+
+/* ── BROKEN — os três lugares onde a palavra aparece (v96 a v101) ────────── */
+teste('broken','palavra na própria série',a=>{const b=parseBroken('3x broken 50 peito','PRINCIPAL');
+  a.ok(!!b,'detectou'); a.eq(b&&b.dist,50,'prova'); a.eq(b&&b.rodadas,3,'rodadas');});
+teste('broken','palavra no título do bloco',a=>{
+  const b=parseBroken('25m peito forte / 10" parado / 25m peito forte','PRINCIPAL – 3x BROKEN');
+  a.ok(!!b,'detectou'); a.eq(b&&b.dist,50,'prova'); a.eq(b&&b.trechos,[25,25],'trechos');
+  a.eq(b&&b.desc,10,'pausa'); a.eq(b&&b.rodadas,3,'rodadas');});
+teste('broken','palavra em linha própria do bloco',a=>{
+  const b=parseBroken('25m peito forte / 10" parado / 25m peito forte','PRINCIPAL 3x BROKEN');
+  a.ok(!!b,'detectou pelo contexto'); a.eq(b&&b.dist,50,'prova');});
+teste('broken','"c/5\' entre blocos" não é a pausa do broken',a=>{
+  const b=parseBroken('25m forte / 10" parado / 25m forte (c/5\' entre cada bloco)','P 3x BROKEN');
+  a.eq(b&&b.desc,10,'pausa em segundos');});
+teste('broken','trechos desiguais (50+25+25)',a=>{
+  const b=parseBroken('Broken 100: 50m forte / 15" / 25m forte / 15" / 25m forte','PRINCIPAL');
+  a.eq(b&&b.dist,100,'prova'); a.eq(b&&b.trechos,[50,25,25],'trechos');});
+teste('broken','série comum dentro de bloco BROKEN não vira broken',a=>{
+  a.eq(parseBroken("4x25m progressivo c/1'",'PRINCIPAL – 3x BROKEN'),null,'4x25 progressivo');
+  a.eq(parseBroken('8x50 livre saida 1:10','PRINCIPAL – 3x BROKEN'),null,'8x50 com saída');});
+teste('broken','2×100 sai das opções de um broken de 200',a=>{
+  a.eq(intervalosBroken(200),[25,50],'200'); a.eq(intervalosBroken(100),[25,50],'100');
+  a.eq(intervalosBroken(50),[25],'50');});
+teste('broken','cronômetro vence a soma dos trechos',a=>{
+  const r={tempos:[parseTempo('14.02'),parseTempo('16.31')],tot:parseTempo('30.29')};
+  a.eq(tempoBroken(r,2),parseTempo('30.29'),'com total');
+  a.eq(tempoBroken({tempos:r.tempos},2),parseTempo('30.33'),'sem total');});
+
+/* ── %PB — denominador tem que ser da MESMA piscina (v125) ───────────────── */
+teste('%PB','usa o PB da piscina do esforço',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35'),'50 peito LC50':parseTempo('32.80')}});
+  a.eq(pbDe(pro,50,'peito','SC25'),parseTempo('31.35'),'SC25');
+  a.eq(pbDe(pro,50,'peito','LC50'),parseTempo('32.80'),'LC50');});
+teste('%PB','sem PB na piscina, recua para o melhor',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')}});
+  a.eq(pbDe(pro,50,'peito','LC50'),parseTempo('31.35'),'recuo');});
+teste('%PB','mais rápido = percentual maior',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')}});
+  const pb=pbDe(pro,50,'peito','SC25');
+  a.quase(pb/parseTempo('30.00')*100,100,0.01,'no PB');
+  a.ok(pb/parseTempo('33.00')*100<100,'mais lento abaixo de 100');});
+
+/* ── PROJEÇÃO — a prova em foco manda (v125) ─────────────────────────────── */
+teste('projeção','foco vence qualidade de dado',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35'),'100 peito SC25':parseTempo('1:07.28')},
+    alvos:['50 peito','100 peito']});
+  const ex=[]; for(let k=0;k<20;k++)ex.push(_tiro(k*3,100,'1:14.0'));
+  for(let k=0;k<3;k++)ex.push(_tiro(k*5,50,'33.5'));
+  const cp=_comPct(pro,ex); S.provaPC='50|peito|SC25';
+  const m=motorPerformance(pro,cp,[],[]);
+  a.eq(m.provaRef&&m.provaRef.d,50,'provaRef');
+  a.ok(m.predicaoFoco,'tem predicaoFoco');
+  a.eq(m.predicaoFoco&&m.predicaoFoco.prova,'50 peito SC25','foco');
+  a.eq(m.predicoes[0].prova,'50 peito SC25','primeira da lista');});
+teste('projeção','sem dado da prova em foco devolve null, não a de outra',a=>{
+  const pro=_atleta({pbs:{'100 peito SC25':parseTempo('1:07.28'),'50 peito LC50':parseTempo('32.80')},
+    alvos:['100 peito','50 peito']});
+  const ex=[]; for(let k=0;k<20;k++)ex.push(_tiro(k*3,100,'1:14.0'));
+  const m=motorPerformance(pro,_comPct(pro,ex),[],[]);
+  S.provaPC='50|peito|LC50';
+  const m2=motorPerformance(pro,_comPct(pro,ex),[],[]);
+  a.eq(m2.predicaoFoco,null,'sem projeção da prova em foco');
+  a.ok(m2.predicoes.length>0,'mas há outras projeções');});
+teste('projeção','percentuais batem com os limites exibidos',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')},alvos:['50 peito']});
+  const ex=[]; for(let k=0;k<10;k++)ex.push(_tiro(k*4,50,'33.4'));
+  const m=motorPerformance(pro,_comPct(pro,ex),[],[]);
+  const p=m.predicaoFoco; a.ok(p,'tem projeção');
+  if(p){ a.quase(p.deltaLowPct,(p.low-p.pb)/p.pb*100,0.06,'delta baixo');
+    a.quase(p.deltaHighPct,(p.high-p.pb)/p.pb*100,0.06,'delta alto');
+    a.eq(p.referencia,'PB','referência declarada'); }});
+
+/* ── CALIBRAÇÃO — n=1 não é viés (v112) ─────────────────────────────────── */
+teste('calibração','n=1 é sinal inicial, não tendência',a=>{
+  a.eq(estagioCalib(1).chave,'sinal','n=1'); a.ok(!estagioCalib(1).forte,'não forte');
+  a.eq(estagioCalib(3).chave,'inicial','n=3'); a.ok(!estagioCalib(3).forte,'n=3 não forte');
+  a.ok(estagioCalib(8).forte,'n=8 é forte');});
+teste('calibração','faixa não muda com n<3 e aperta com histórico bom',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')},alvos:['50 peito']});
+  const ex=[]; for(let k=0;k<10;k++)ex.push(_tiro(k*4,50,'33.4'));
+  const cp=_comPct(pro,ex);
+  const mkLog=n=>Array.from({length:n},(_,k)=>{const c=parseTempo('31.90'),r=parseTempo('31.35')+(k%2?40:-40);
+    return{k:'50|peito|SC25|L'+k,d:50,es:'peito',pis:'SC25',data:_dAtras(40+k*20),central:c,
+      low:Math.round(c*.985),high:Math.round(c*1.03),real:r,erro:r-c,
+      erroPct:+(((r-c)/r)*100).toFixed(2),dentro:true,origem:'prevista'}});
+  const larg=n=>{pro.calibLog=mkLog(n); const m=motorPerformance(pro,cp,[],[]);
+    return m.predicaoFoco?m.predicaoFoco.high-m.predicaoFoco.low:null};
+  const l0=larg(0), l1=larg(1), l8=larg(8);
+  a.eq(l1,l0,'n=1 não mexe na faixa');
+  a.ok(l8<l0,'n=8 com erro pequeno aperta a faixa');});
+
+/* ── TRANSFERÊNCIA — forma única e prova sem base (v113/v116/v120) ───────── */
+teste('transferência','prova sem tiro antes não lança exceção',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')},alvos:['50 peito'],
+    resultados:[{dist:50,estilo:'peito',piscina:'SC25',data:_dAtras(120),tempo:parseTempo('31.90'),comp:'X'}]});
+  const ex=[_tiro(1,50,'32.6'),_tiro(5,50,'33.1')];   /* todos DEPOIS da prova */
+  const t=transferenciaProva(pro,_comPct(pro,ex),50,'peito','SC25');
+  a.ok(t,'devolve objeto'); a.eq(t&&t.n,0,'nenhuma convertida');
+  a.eq(t&&t.semBase&&t.semBase.length,1,'uma sem base');
+  a.ok(t&&t.estagio,'tem estagio (era o campo que faltava e lançava)');
+  a.eq(transfScore(t),null,'componente ausente, não zero');});
+teste('transferência','converte quando há tiro antes da prova',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')},alvos:['50 peito'],
+    resultados:[{dist:50,estilo:'peito',piscina:'SC25',data:_dAtras(20),tempo:parseTempo('31.00'),comp:'X'}]});
+  const ex=[_tiro(25,50,'33.40'),_tiro(30,50,'33.80')];
+  const t=transferenciaProva(pro,_comPct(pro,ex),50,'peito','SC25');
+  a.eq(t&&t.n,1,'uma convertida'); a.ok(t&&t.mediana<0,'competiu mais rápido que o tiro');
+  a.eq(t&&t.itens[0].qualidade,'direta','janela direta');});
+
+/* ── ESPECIFICIDADE — distância vizinha conta (v116) ────────────────────── */
+teste('especificidade','tiros de 50 contam para o 100',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35'),'100 peito SC25':parseTempo('1:10.12')}});
+  const ex=[]; for(let k=0;k<7;k++)ex.push(_tiro(k,50,'32.9'));
+  const cp=_comPct(pro,ex);
+  const e50=especificidadeProva(cp,50,'peito'), e100=especificidadeProva(cp,100,'peito');
+  a.ok(e50.score>=90,'própria prova alta'); a.ok(e100.score>0,'100 aproveita os 50');
+  a.ok(e100.score<e50.score,'vizinha vale menos'); a.eq(e100.naProva,0,'nenhum na própria');});
+teste('especificidade','sem ritmo de prova dá zero, sem tiro dá indisponível',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')}});
+  const fracos=_comPct(pro,[_tiro(2,50,'36.0'),_tiro(5,50,'35.5')]);
+  a.eq(especificidadeProva(fracos,50,'peito').score,0,'nenhum ≥92%');
+  a.eq(especificidadeProva([],50,'peito').score,null,'sem tiro é null, não 0');});
+
+/* ── COMPOSIÇÃO — quarentena (v111/v125) ────────────────────────────────── */
+teste('composição','gordura plausível alimenta score',a=>{
+  const c=composicaoEstim({bioimp:[{data:_dAtras(10),peso:78,gordura:12.5,agua:60}]});
+  a.eq(c.status,'medida','status'); a.ok(c.usavelParaScore,'usável'); a.ok(c.score>0,'tem score');});
+teste('composição','implausível com água vira estimativa SEM score',a=>{
+  const c=composicaoEstim({bioimp:[{data:_dAtras(10),peso:78,gordura:3.9,agua:62}]});
+  a.eq(c.status,'estimada','status'); a.ok(!c.usavelParaScore,'não usável');
+  a.eq(c.score,null,'sem score');});
+teste('composição','implausível sem água é suspeita',a=>{
+  const c=composicaoEstim({bioimp:[{data:_dAtras(10),peso:78,gordura:3.9,agua:null}]});
+  a.eq(c.status,'suspeita','status'); a.eq(c.score,null,'sem score');});
+teste('composição','eixo sai do radar e o passo angular acompanha',a=>{
+  const t={dir:'↑',mag:2,detalhe:''};
+  const com=fingerprintDims(90,1.5,70,{gordura:12.5,score:80,usavelParaScore:true},t,{score:70,txt:'x'});
+  const sem=fingerprintDims(90,1.5,70,{gordura:7.7,score:null,usavelParaScore:false},t,{score:70,txt:'x'});
+  a.ok(com.some(d=>d.eixo==='Composição'),'com dado válido o eixo existe');
+  a.ok(!sem.some(d=>d.eixo==='Composição'),'sem dado válido o eixo sai');
+  a.ok(sem.some(d=>d.eixo==='Especificidade'),'especificidade presente');});
+teste('composição','nenhum eixo satura em 100',a=>{
+  const d=fingerprintDims(100,0,100,null,{dir:'↑',mag:99},{score:100,txt:'x'});
+  a.ok(d.every(x=>x.score==null||x.score<=90||x.eixo!=='Tendência'),'tendência limitada');
+  a.ok((d.find(x=>x.eixo==='Tendência')||{}).score<=90,'tendência ≤ 90');});
+
+/* ── CARGA — monotonia explodindo (v114) ────────────────────────────────── */
+teste('carga','monotonia tem teto e ainda discrimina',a=>{
+  const cen=f=>{SESSOES=Array.from({length:24},(_,k)=>({data:_dAtras(k),tipo:'n',load:f(k)}));
+    return fadigaCarga()};
+  const igual=cen(()=>420), variado=cen(k=>[600,200,550,180,620,0,0][k%7]);
+  a.ok(igual.monotonia<=5,'teto de 5'); a.ok(variado.monotonia<2,'polarizado é baixo');
+  a.ok(igual.monotonia>variado.monotonia,'discrimina');});
+teste('carga','as duas razões são grandezas diferentes',a=>{
+  SESSOES=Array.from({length:24},(_,k)=>({data:_dAtras(k),tipo:'n',load:400}));
+  const f=fadigaCarga(); a.ok(f&&f.acwr!=null,'fadiga/fitness existe');
+  S.tridx=[]; a.eq(cargaACWR(),null,'volume sem treino no índice é null');});
+
+/* ── PENDÊNCIAS — não cobrar treino futuro (v110) ────────────────────────── */
+teste('pendências','sessão futura sem RPE não é cobrada',a=>{
+  _atleta({seco:[{id:'f',data:_daqui(3),tipo:'Musculação',rpe:null,dur:null,durTxt:''},
+                 {id:'p',data:_dAtras(3),tipo:'Corrida',rpe:null,dur:40,durTxt:'40'}]});
+  const p=pendenciasSeco();
+  a.eq(p.length,1,'só a passada'); a.eq(p[0]&&p[0].id,'p','qual');});
+teste('pendências','duração lida errado é apontada e corrigível',a=>{
+  _atleta({seco:[{id:'d',data:_dAtras(2),tipo:'Musculação',rpe:7,dur:1.17,durTxt:'1:10'}]});
+  const s=duracoesSuspeitas();
+  a.eq(s.length,1,'detectou'); a.quase(s[0]&&s[0].para,70,0.5,'corrige para 70 min');
+  a.ok(s[0]&&s[0].exato,'exato, veio do texto');});
+
+/* ── RELATÓRIO — numeração e agenda (v124/v126) ─────────────────────────── */
+teste('relatório','numeração não pula quando falta seção',a=>{
+  const r=montarSecoes([['A','',  '<p>x</p>'],['B','',''],['C','','<p>y</p>']]);
+  a.eq(r.n,2,'duas seções'); a.ok(!/>3</.test(r.html),'não existe seção 3');
+  a.ok(/doc-n">1</.test(r.html)&&/doc-n">2</.test(r.html),'numeradas 1 e 2');});
+teste('relatório','competição na agenda conta mesmo sem inscrição',a=>{
+  _atleta(); S.cidx=[{id:'c1',nome:'Brasileiro',data:_daqui(16),piscina:'LC50'}]; _compFut={};
+  const c=proximaCompeticao();
+  a.ok(c,'achou a competição'); a.eq(c&&c.nome,'Brasileiro','qual');
+  a.eq(opcoesProva(S.pro).filter(o=>o.origem==='comp').length,0,'sem inscrição, sem opção de prova');});
+teste('relatório','competição passada não vira próxima',a=>{
+  _atleta(); S.cidx=[{id:'c0',nome:'Antiga',data:_dAtras(30),piscina:'SC25'}];
+  a.eq(proximaCompeticao(),null,'nenhuma futura');});
+
 /* ── Fase 2 do P0: migração dos campos de segurança ─────────────────────────
    Reescreve dono/equipe/perfil/aprovado como campos REAIS em todos os
    documentos. Os dados (`v`) não são tocados. Precisa rodar DEPOIS que todos
@@ -6878,12 +7167,33 @@ function baselineSerie(pts,janela,recentes){
    não pode é pesar como se fosse de hoje na leitura do ESTADO ATUAL. Cada
    fonte tem o seu próprio prazo, porque elas mudam em ritmos diferentes — VFC
    muda todo dia, bioimpedância não muda em uma semana, exame menos ainda. */
+/* Os prazos saem da VELOCIDADE DE MUDANÇA de cada medida, não de preferência:
+   uma fonte deixa de descrever o presente quando o que ela mede já mudou.
+     tiros   — forma específica se altera em semanas; 14 d é cerca de um
+               microciclo e meio.
+     carga   — a janela aguda do próprio modelo é de 7 dias.
+     relógio — VFC e FC de repouso variam dia a dia; 3 d já é média curta.
+     bioimp  — composição corporal em atleta em treino muda de forma
+               mensurável na escala de 4 a 12 semanas, que é o intervalo
+               usual de reavaliação em acompanhamento esportivo. Abaixo de ~4
+               semanas o que se mede costuma ser variação de hidratação, não
+               de tecido — por isso remedir toda semana não aumenta precisão.
+     exames  — hemograma e perfil de ferro em atleta de resistência costumam
+               ser acompanhados a cada 6 meses, e o painel geral anualmente.
+   São FAIXAS DE ACOMPANHAMENTO, não prescrição: a periodicidade de exame
+   quem define é o médico, e a de bioimpedância depende do protocolo do
+   aparelho (jejum, hidratação, sem treino antes). */
 const FRESCOR=[
-  {id:'tiros',   rot:'Performance (tiros)', atual:14, parcial:42},
-  {id:'carga',   rot:'Carga de treino',     atual:7,  parcial:28},
-  {id:'garmin',  rot:'Relógio (VFC/FC/sono)',atual:3,  parcial:14},
-  {id:'bio',     rot:'Bioimpedância',       atual:60, parcial:180},
-  {id:'exames',  rot:'Exames laboratoriais',atual:180,parcial:365}
+  {id:'tiros',   rot:'Performance (tiros)', atual:14, parcial:42,
+    nota:'Forma específica muda em semanas.'},
+  {id:'carga',   rot:'Carga de treino',     atual:7,  parcial:28,
+    nota:'Janela aguda do modelo é de 7 dias.'},
+  {id:'garmin',  rot:'Relógio (VFC/FC/sono)',atual:3,  parcial:14,
+    nota:'VFC e FC de repouso variam dia a dia.'},
+  {id:'bio',     rot:'Bioimpedância',       atual:90, parcial:180,
+    nota:'Reavaliar a cada 4–12 semanas. Repetir em menos de 4 semanas mede hidratação, não tecido — e sempre no mesmo protocolo (jejum, hidratado, sem treino antes).'},
+  {id:'exames',  rot:'Exames laboratoriais',atual:190,parcial:400,
+    nota:'Perfil de ferro em atleta de resistência costuma ser semestral; painel geral, anual. Quem define é o médico.'}
 ];
 function frescorDados(pro,comPct){
   const h0=new Date(hoje()+'T00:00:00');
@@ -6905,9 +7215,9 @@ function frescorDados(pro,comPct){
 function cardFrescor(pro,comPct){
   const rs=frescorDados(pro,comPct);
   const cor=u=>u==='estado atual'?'var(--ok)':u==='peso reduzido'?'var(--rope-ink)':u==='sem dado'?'var(--ink-3)':'var(--clock)';
-  const linhas=rs.map(r=>`<tr><td>${r.rot}</td>
+  const linhas=rs.map(r=>`<tr><td>${r.rot}${r.nota?`<div class="xs muted" style="font-weight:400">${r.nota}</div>`:''}</td>
     <td class="n">${r.dias==null?'—':(r.dias===0?'hoje':r.dias===1?'ontem':r.dias+'d')}</td>
-    <td class="xs" style="text-align:right;color:${cor(r.uso)};font-weight:700">${r.uso}</td></tr>`).join('');
+    <td class="xs" style="text-align:right;color:${cor(r.uso)};font-weight:700">${r.uso}<div class="xs muted" style="font-weight:400">até ${r.atual}d</div></td></tr>`).join('');
   const velhos=rs.filter(r=>r.uso==='só histórico').length;
   return`<div class="card" data-dom="perf" id="c-frescor"><div class="eyebrow">idade dos dados</div>
     <div class="small muted" style="margin:4px 0 6px">Há quanto tempo cada fonte foi atualizada, e se ela ainda descreve o seu <b>estado de hoje</b>.</div>
@@ -7300,6 +7610,17 @@ async function carregarCompFuturas(eq){
   }
   if(reler)_compFutEm=agora;
   for(const k of Object.keys(_compFut))if(!ids.includes(k))delete _compFut[k];
+}
+/* A próxima competição da AGENDA, inscrito ou não. São duas perguntas
+   diferentes e o app tratava como uma: "em que prova estou inscrito" (que
+   define a prova em foco) e "quando é a minha próxima competição" (que define
+   a janela). Quem acabou de lançar a competição ainda não tem prova nem
+   inscrito dentro dela — e o relatório respondia "sem competição marcada",
+   que é falso e desanima justamente quem acabou de registrar. */
+function proximaCompeticao(){
+  const h=hoje();
+  return (S.cidx||[]).filter(c=>c&&c.data&&c.data>=h)
+    .sort((a,b)=>a.data.localeCompare(b.data))[0]||null;
 }
 const chaveProva=o=>`${o.d}|${o.e}|${o.pis}`;
 function opcoesProva(pro){
@@ -7700,9 +8021,9 @@ function pressaoTreinamento(motor){
   const f=(motor&&motor.fadiga)||{}, a=f.acwr, mono=f.monotonia;
   if(a==null)return{score:null,direcao:null,txt:'sem carga habitual registrada para comparar'};
   let s=100, porque=[];
-  if(a>1.3){ s-=Math.min(55,(a-1.3)*110); porque.push(`carga ${a.toFixed(2)}× a habitual`); }
-  else if(a<0.8){ s-=Math.min(35,(0.8-a)*90); porque.push(`carga ${a.toFixed(2)}× a habitual (abaixo)`); }
-  else porque.push(`carga ${a.toFixed(2)}× a habitual`);
+  if(a>1.3){ s-=Math.min(55,(a-1.3)*110); porque.push(`carga 7d/28d ${a.toFixed(2)}× (UA)`); }
+  else if(a<0.8){ s-=Math.min(35,(0.8-a)*90); porque.push(`carga 7d/28d ${a.toFixed(2)}× (UA, abaixo)`); }
+  else porque.push(`carga 7d/28d ${a.toFixed(2)}× (UA)`);
   if(mono!=null&&mono>1.8){ s-=Math.min(25,(mono-1.8)*18); porque.push(`monotonia ${mono}`); }
   const direcao=(a>1.5||(mono!=null&&mono>2.2))?'REDUZIR':(a<0.8?'AUMENTAR':'MANTER');
   return{score:Math.round(Math.max(0,Math.min(100,s))),direcao,txt:porque.join(' · ')};
@@ -8004,7 +8325,7 @@ function recomendaIntensidade(motor){
   if(acwr==null&&pr==null)return{t:'',nivel:'Sem dados de carga',txt:'Faltam dados para recomendar intensidade. Marque RPE e duração dos treinos e faça o check-in diário.'};
   const alto=(acwr!=null&&acwr>1.5)||(mono!=null&&mono>2.2)||(pr!=null&&pr<50);
   if(alto){ const m=[];
-    if(acwr!=null&&acwr>1.5)m.push(`carga recente ${acwr.toFixed(1)}× a habitual`);
+    if(acwr!=null&&acwr>1.5)m.push(`carga de sessão (duração × RPE) dos últimos 7 dias em ${acwr.toFixed(1)}× a média das 4 semanas anteriores`);
     if(mono!=null&&mono>2.2)m.push('treinos muito monótonos');
     if(pr!=null&&pr<50)m.push('prontidão baixa');
     return{t:'warn',nivel:'Reavaliar a carga',txt:`Há sinais que justificam considerar redução temporária (${m.join(', ')}). Confirme o ajuste com o técnico e, se houver sintomas, com um profissional de saúde.`};
@@ -8078,7 +8399,9 @@ function sc(nome,fn){
 function cabecalhoDocumento(pro,motor){
   const nome=nomeLaudo();
   const ops=(typeof opcoesProva==='function')?opcoesProva(pro):[];
-  const prox=ops.filter(o=>o.origem==='comp')[0]||null;
+  const inscrito=ops.filter(o=>o.origem==='comp')[0]||null;
+  const comp=(typeof proximaCompeticao==='function')?proximaCompeticao():null;
+  const prox=inscrito||comp;           /* a agenda manda; a inscrição só detalha */
   const ref=motor.provaRef;
   const dias=prox?Math.round((new Date(prox.data+'T00:00:00')-new Date(hoje()+'T00:00:00'))/86400000):null;
   const p=motor.predicaoFoco;
@@ -8089,7 +8412,7 @@ function cabecalhoDocumento(pro,motor){
   return`<div class="doc-cap">
     <h1>Relatório de performance — natação</h1>
     <div class="doc-sub">${prox
-      ? `${esc(prox.comp)} — ${brData(prox.data)}${prox.pis?` · piscina de ${prox.pis==='LC50'?'50':'25'} m`:''}`
+      ? `${esc(prox.comp||prox.nome||'Próxima competição')} — ${brData(prox.data)}${(prox.pis||prox.piscina)?` · piscina de ${(prox.pis||prox.piscina)==='LC50'?'50':'25'} m`:''}`
       : `Emitido em ${brData(hoje())} · janela de análise: últimos 120 dias`}</div>
     <table class="doc-ident"><tbody>
       ${linha('Atleta',esc(nome)+(idade>0?` (${idade} anos)`:''))}
@@ -8099,7 +8422,9 @@ function cabecalhoDocumento(pro,motor){
         ?`${fmt(p.low,true)}–${fmt(p.high,true)} <span class="xs" style="font-weight:400">(PB ${fmt(p.pb,true)} · ${p.prova.split(' ').slice(-1)[0]})</span>`
         :(ref?`<span style="font-weight:400">indisponível para ${ref.d} m ${esc(ref.e)} ${ref.pis}</span><div class="xs" style="font-weight:400">${((pro.pbs||{})[`${ref.d} ${ref.e} ${ref.pis}`])?'faltam tiros recentes desta prova':'sem PB registrado nesta prova e piscina'}</div>`:'sem prova-alvo definida'))}
       ${linha('Base de dados',`${iv.tiros||0} tiros · ${iv.competicoes||0} competições · ${iv.garmin||0} dias de relógio`)}
-      ${linha('Janela até a prova',dias!=null?(dias<=0?'esta semana':`~${dias} dia(s)`):'sem competição marcada')}
+      ${linha('Janela até a prova',dias==null?'sem competição marcada'
+        :(dias<=0?'é hoje':`~${dias} dia(s)`)
+          +(!inscrito&&comp?`<div class="xs" style="font-weight:400">competição na agenda, <b>sem inscrição sua registrada</b> — a prova em foco veio das suas provas-alvo</div>`:''))}
     </tbody></table>
   </div>`;
 }
