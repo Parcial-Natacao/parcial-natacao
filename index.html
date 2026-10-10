@@ -484,7 +484,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v127';
+const VER='v128';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3565,6 +3565,49 @@ teste('relatório','competição na agenda conta mesmo sem inscrição',a=>{
 teste('relatório','competição passada não vira próxima',a=>{
   _atleta(); S.cidx=[{id:'c0',nome:'Antiga',data:_dAtras(30),piscina:'SC25'}];
   a.eq(proximaCompeticao(),null,'nenhuma futura');});
+teste('relatório','base de dados conta provas, não competições',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35'),'100 peito SC25':parseTempo('1:10.12')},alvos:['50 peito'],
+    resultados:[{dist:50,estilo:'peito',piscina:'SC25',data:_dAtras(60),tempo:parseTempo('31.90'),comp:'Estadual'},
+                {dist:100,estilo:'peito',piscina:'SC25',data:_dAtras(60),tempo:parseTempo('1:11.00'),comp:'Estadual'}]});
+  const ex=[]; for(let k=0;k<6;k++)ex.push(_tiro(k*3,50,'33.4'));
+  const m=motorPerformance(pro,_comPct(pro,ex),[],[]);
+  a.eq(m.inventario.competicoes,2,'duas PROVAS numa competição só');
+  const h=cabecalhoDocumento(pro,m);
+  a.ok(h.indexOf('2 provas em competições')>=0,'rótulo fala de provas');
+  a.ok(h.indexOf('2 competições')<0,'não diz "2 competições"');});
+
+/* ── JANELAS — ↑ no histórico com a semana caindo (v128) ──────────────────── */
+teste('janelas','semana ruim derruba a leitura curta sem mexer na tendência',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')},alvos:['50 peito'],
+    resultados:[{dist:50,estilo:'peito',piscina:'SC25',data:_dAtras(400),tempo:parseTempo('32.50'),comp:'A'},
+                {dist:50,estilo:'peito',piscina:'SC25',data:_dAtras(60),tempo:parseTempo('31.00'),comp:'B'}]});
+  const ex=[]; for(let k=27;k>=9;k-=2)ex.push(_tiro(k,50,'33.4'));   /* 10 tiros bons */
+  for(const k of [6,4,2,1])ex.push(_tiro(k,50,'38.0'));              /* a semana ruim */
+  const e=estadoPerformance(pro,_comPct(pro,ex),[]);
+  a.eq(e.tend&&e.tend.dir,'↑','histórico continua em alta');
+  a.ok(e.tend&&e.tend.curto,'tem leitura curta');
+  a.eq(e.tend&&e.tend.curto.dir,'↓','a semana está caindo');
+  a.ok(e.tend&&e.tend.divergencia,'o app reconhece que as janelas divergem');
+  a.ok(notaJanelas(e.tend).indexOf('divergem')>=0,'e diz isso no relatório');});
+teste('janelas','1 ou 2 tiros na semana não viram leitura',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')}});
+  const ex=[]; for(let k=27;k>=9;k-=2)ex.push(_tiro(k,50,'33.4'));
+  ex.push(_tiro(2,50,'38.0'));
+  a.eq(tendCurtaPct(_comPct(pro,ex)),null,'n<3 é ruído, não leitura');});
+teste('janelas','mudança escondida pelo arredondamento abre casa decimal',a=>{
+  a.eq(decDinamico(57.4,56.8,0),1,'57→57 ganha uma casa');
+  a.eq(decDinamico(7996,3946,0),0,'quem já aparece não ganha casa');});
+teste('janelas','a semana veta a frase "respondeu bem à carga"',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')}});
+  const ex=[]; for(let k=50;k>=30;k-=2)ex.push(_tiro(k,50,'40.0'));  /* mês anterior pior */
+  for(let k=27;k>=9;k-=2)ex.push(_tiro(k,50,'33.4'));                /* mês atual bom */
+  for(const k of [6,4,2,1])ex.push(_tiro(k,50,'36.0'));              /* semana caindo */
+  SESSOES=Array.from({length:56},(_,k)=>({data:_dAtras(k),tipo:'n',load:k<28?800:300}));
+  const m=mudancas28d(pro,_comPct(pro,ex));
+  const cap=m.movers.find(x=>x.nome.indexOf('Capacidade')===0);
+  a.ok(cap&&cap.dPct>0,'a média de 28d subiu');
+  a.ok(m.porque[0].indexOf('não está se sustentando')>=0,'descreve a divergência');
+  a.ok(m.porque[0].indexOf('respondeu bem')<0,'não afirma que respondeu bem à carga');});
 
 /* ── Fase 2 do P0: migração dos campos de segurança ─────────────────────────
    Reescreve dono/equipe/perfil/aprovado como campos REAIS em todos os
@@ -6678,6 +6721,8 @@ function dadosParaLaudo(motor){
     prontidaoDiasDados:motor.estado.pr?motor.estado.pr.dias:null,
     capacidadePctPB:motor.estado.cap?motor.estado.cap.score:null,
     tendencia:motor.estado.tend?motor.estado.tend.dir:null,
+    tendenciaJanela:motor.estado.tend?motor.estado.tend.janela:null,
+    tendenciaCurtaPct:(motor.estado.tend&&motor.estado.tend.curto)?motor.estado.tend.curto.pct:null,
     acwr:motor.carga?+motor.carga.acwr.toFixed(2):null,
     speedDropPct:motor.speedDrop,
     composicao:motor.composicao,
@@ -6923,6 +6968,43 @@ function resumoExame(ex){
     ${flags.map(f=>`<div class="note ${f.t}" style="margin-top:8px">${f.txt}</div>`).join('')}`;
 }
 /* laudo consolidado: liga saúde + composição + treino/desempenho e prioriza ações */
+/* ── JANELAS: a leitura curta e a reconciliação das duas ────────────────────
+   Todo número do relatório fala de uma janela, e janelas diferentes podem
+   apontar para lados diferentes sem que nenhuma esteja errada. Estas duas
+   funções existem para que o relatório DIGA de qual janela cada leitura veio,
+   em vez de deixar o atleta descobrir sozinho que "↑" e "abaixo da base" não
+   estavam medindo a mesma coisa. */
+function tendCurtaPct(comPct){
+  const pts=(comPct||[]).map(x=>({data:x.data,v:x.pct}));
+  if(pts.length<6)return null;
+  const a=janelaStat(pts,0,7,'avg'), b=janelaStat(pts,7,28,'avg');
+  if(a==null||b==null||!(b>0))return null;
+  const h0=new Date(hoje()+'T00:00:00');
+  const n=pts.filter(p=>{const d=(h0-new Date(p.data+'T00:00:00'))/86400000;return d>=0&&d<7}).length;
+  if(n<3)return null;              /* 1 ou 2 tiros na semana não é leitura, é ruído */
+  const dp=(a-b)/b*100;
+  return{pct:+dp.toFixed(1),dir:dp>2?'↑':dp<-2?'↓':'→',atual:Math.round(a),base:Math.round(b),n};
+}
+/* Reconciliação das duas janelas, em duas formas. `linha` é a nota de rodapé do
+   detalhamento, e sai sempre: lá o leitor quer o número. `nota` é a caixa de
+   aviso da síntese, e só sai quando as janelas DE FATO divergem — caixa que
+   aparece em todo relatório vira paisagem e ninguém lê. */
+function notaJanelas(tend,forma){
+  if(!tend||!tend.curto)return'';
+  const c=tend.curto;
+  const longa=`A <b>tendência ${tend.dir}</b> vem do ${tend.janela}.`;
+  const curta=`A <b>leitura curta</b> compara os seus tiros dos <b>últimos 7 dias</b> (%PB médio ${c.atual}%, ${c.n} tiro${c.n>1?'s':''}) com os <b>21 dias anteriores</b> (${c.base}%): <b style="color:${c.dir==='↑'?'var(--ok)':c.dir==='↓'?'var(--clock)':'var(--ink-2)'}">${c.pct>=0?'+':''}${c.pct}%</b>.`;
+  if(forma==='linha'||!tend.divergencia)
+    return`<div class="xs muted" style="margin-top:8px">${longa} ${curta} ${tend.divergencia
+      ? 'As duas <b>divergem</b> — e podem estar as duas certas: são intervalos diferentes. Para decidir a semana vale a curta; para saber se a preparação funciona, a longa.'
+      : 'As duas apontam para o mesmo lado.'}</div>`;
+  return`<div class="note" style="margin-top:10px"><b>Duas leituras, duas janelas — e elas divergem.</b>
+    ${longa} ${curta}
+    As duas podem ser verdadeiras ao mesmo tempo: ${tend.dir==='↑'
+      ? 'você está mais rápido do que <b>era</b>, e mais lento do que <b>estava</b> neste mês'
+      : 'você vem abaixo do seu melhor histórico, mas a semana aponta para cima'}.
+    Para decidir a <b>semana</b>, use a leitura curta; para saber se a <b>preparação</b> está funcionando, a longa.</div>`;
+}
 /* ── ESTADO DE PERFORMANCE (Prontidão · Capacidade · Tendência) ──────────────
    Modelo transparente a partir dos dados que já existem no app. */
 function estadoPerformance(pro,comPct,sem){
@@ -6953,6 +7035,14 @@ function estadoPerformance(pro,comPct,sem){
      (% de queda de tempo por prova), então cair 2 s pesa mais que cair 1 centésimo. */
   let tend=null;
   const ev=(typeof evolucaoProvas==='function')?evolucaoProvas(pro):[];
+  /* LEITURA CURTA (%PB dos últimos 7 dias contra os 21 anteriores).
+     A tendência longa responde "estou mais rápido do que eu era"; ela compara
+     cada prova com a PRIMEIRA vez que foi nadada, sem janela, então pode vir ↑
+     num mês em que tudo piorou. A curta responde "estou mais rápido do que eu
+     estava neste mês". Sem as duas, o relatório mostrava ↑ ao lado de %PB
+     abaixo da base e parecia estar se contradizendo — não estava, mas também
+     não dizia de que janela cada número falava. */
+  const curto=tendCurtaPct(comPct);
   const net=ev.filter(e=>e.melhora).length-ev.filter(e=>!e.melhora).length;   /* contagem (só p/ referência) */
   /* % média de melhora nas competições: (primeiro − último)/primeiro · +=melhorou */
   const mps=ev.map(e=>{const f=e.pts&&e.pts[0]?e.pts[0].v:null,l=e.pts&&e.pts.length?e.pts[e.pts.length-1].v:null;return (f&&l&&f>0)?(f-l)/f*100:0;});
@@ -6964,10 +7054,15 @@ function estadoPerformance(pro,comPct,sem){
   const dir=mag>0.4?'↑':mag<-0.4?'↓':'→';   /* zona morta de 0,4% evita oscilar à toa */
   if(ev.length||comPct.length>=4){
     const detalhe=ev.length?`${magProvas>=0?'+':''}${magProvas.toFixed(1)}% em prova`:`%PB ${pc>=0?'+':''}${pc.toFixed(1)}`;
+    const janela=ev.length
+      ? `histórico completo de ${ev.length} prova${ev.length>1?'s':''} — cada uma comparada com a primeira vez que você a nadou`
+      : `%PB dos ${comPct.length} tiros da janela de análise`;
     tend={dir,
       txt:dir==='↑'?'capacidade melhorando':dir==='↓'?'capacidade em queda — atenção':'capacidade estável',
       cor:dir==='↑'?'var(--ok)':dir==='↓'?'var(--clock)':'var(--ink-2)',
       net,magProvas:+magProvas.toFixed(1),pc:+pc.toFixed(1),mag:+mag.toFixed(1),detalhe,
+      janela,curto,
+      divergencia:!!(curto&&curto.dir!=='→'&&dir!=='→'&&curto.dir!==dir),
       nEv:ev.length,nPct:comPct.length};
   }
   return {pr,cap,tend};
@@ -6981,15 +7076,16 @@ function cardEstado(pro,comPct,sem){
     <div class="grid3" style="margin-top:8px">
       ${kpi(e.pr?e.pr.score:'—','prontidão',corPr)}
       ${kpi(e.cap?e.cap.score+'%':'—','capacidade')}
-      ${kpi(e.tend?e.tend.dir:'—','tendência',e.tend?e.tend.cor:'')}
+      ${kpi(e.tend?e.tend.dir:'—','tendência (histórico)',e.tend?e.tend.cor:'')}
     </div>
+    ${notaJanelas(e.tend,'linha')}
     ${e.pr&&e.pr.mot.length?`<div class="small" style="margin-top:10px"><b>Prontidão</b> — ${e.pr.mot.map(m=>`${m.txt} <b style="color:${m.c>=0?'var(--ok)':'var(--clock)'}">${m.c>=0?'+':''}${Math.round(m.c)}</b>`).join(' · ')}</div>`:''}
     ${(function(){const cf=(n,a,m)=>n>=a?{t:'alta',c:'var(--ok)'}:n>=m?{t:'média',c:''}:{t:'baixa',c:'var(--clock)'};
       const ps=[]; if(e.pr){const c=cf(e.pr.dias,14,7);ps.push(`Prontidão <b style="color:${c.c}">${c.t}</b> <span class="xs muted">(${e.pr.dias} dias de VFC/FC)</span>`);}
       if(e.cap){const c=cf(e.cap.n,12,6);ps.push(`Capacidade <b style="color:${c.c}">${c.t}</b> <span class="xs muted">(${e.cap.n} tiros)</span>`);}
       if(e.tend){const base=Math.max(e.tend.nEv,e.tend.nPct>=8?2:e.tend.nPct>=4?1:0);const c=cf(base,3,1);ps.push(`Tendência <b style="color:${c.c}">${c.t}</b>`);}
       return ps.length?`<div class="small" style="margin-top:8px"><b>Confiança</b> — ${ps.join(' · ')}</div>`:'';})()}
-    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Velocidade média</b>: média de %PB dos seus <b>últimos 15 tiros</b>, de todas as provas. É diferente do eixo <b>Velocidade</b> da assinatura de sprint, que usa só os <b>melhores 20%</b> dos tiros <b>das provas-alvo</b> — dois recortes do mesmo cálculo, por isso os números não batem. <b>Tendência</b>: se vem melhorando ou caindo.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio; a confiança sobe conforme você acumula dados.</span></div>
+    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Velocidade média</b>: média de %PB dos seus <b>últimos 15 tiros</b>, de todas as provas. É diferente do eixo <b>Velocidade</b> da assinatura de sprint, que usa só os <b>melhores 20%</b> dos tiros <b>das provas-alvo</b> — dois recortes do mesmo cálculo, por isso os números não batem. <b>Tendência</b>: se vem melhorando ou caindo — é a única leitura que olha o <b>histórico inteiro</b> de competições, não a janela de análise.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio; a confiança sobe conforme você acumula dados.</span></div>
   </div>`;
 }
 /* Carga aguda × crônica (ACWR): volume dos últimos 7 dias / média semanal em 28 dias.
@@ -7807,7 +7903,7 @@ function cardAprendizado(pro){
       const dentro=new Set((p.itens||[]).map(x=>x.data));
       const fora=todas.filter(r=>!dentro.has(r.data)).sort((x,y)=>y.data.localeCompare(x.data));
       if(!fora.length)return'';
-      return`<div class="note" style="margin-top:8px"><b>${fora.length} de ${todas.length} competição(ões) desta prova ficaram fora desta comparação</b>, a mais recente em ${brData(fora[0].data)}${fora[0].comp?` (${esc(fora[0].comp)})`:''}.
+      return`<div class="note" style="margin-top:8px"><b>${fora.length} de ${todas.length} vez(es) que você nadou esta prova ficaram fora desta comparação</b>, a mais recente em ${brData(fora[0].data)}${fora[0].comp?` (${esc(fora[0].comp)})`:''}.
         <span class="xs muted" style="display:block;margin-top:4px">Motivo: só entra aqui a prova que tinha <b>tiros registrados antes dela</b> — sem o lado do treino não há previsão para comparar com o resultado. Elas continuam valendo em <b>Marcas</b> e no histórico de evolução; o que não dá é medir erro de previsão onde não houve previsão possível.</span></div>`;})()}
     ${p.nFaixa?`<div class="xs muted" style="margin-top:6px"><b>Cobertura da faixa:</b> ${Math.round(p.cobertura*100)}% das provas caíram dentro do intervalo previsto (${p.nFaixa} com faixa registrada). Perto de 100% com faixa estreita é o ideal; 100% com faixa larga só quer dizer que o app não se comprometeu.</div>`:''}
     <div class="xs muted" style="margin-top:6px"><b>Erro negativo (verde) = você nadou MAIS RÁPIDO que o previsto</b>; positivo = mais devagar. Base: ${esc(p.esc)}.${p.previstas<p.n?` ${p.n-p.previstas} linha(s) marcada(s) <b>rec</b> foram reconstruídas a partir dos treinos daquela época, não são previsões que você chegou a ver.`:''}</div>
@@ -7838,6 +7934,13 @@ function cardPredicao(pro,comPct,est){
 /* ── O QUE MUDOU EM 28 DIAS + POR QUÊ ───────────────────────────────────────
    Compara a janela atual (0–28d) com a anterior (28–56d) por variável e liga a
    mudança de capacidade à recuperação/carga (decomposição, não causa provada). */
+/* Casas decimais suficientes para a mudança APARECER. Com `dec` fixo em 0, uma
+   queda real de FC de 57,4 → 56,8 bpm saía impressa como "57 → 57 ↓ -1%", que
+   lido de boa-fé é o app se contradizendo numa linha só. */
+function decDinamico(a,b,dec){
+  for(let d=dec;d<=3;d++)if(a.toFixed(d)!==b.toFixed(d))return d;
+  return dec;
+}
 function janelaStat(pts,ini,fim,mode){
   const h0=new Date(hoje()+'T00:00:00'), dd=d=>(h0-new Date(d+'T00:00:00'))/86400000;
   const s=pts.filter(p=>{const x=dd(p.data);return x>=ini&&x<fim;}).map(p=>p.v);
@@ -7867,20 +7970,32 @@ function mudancas28d(pro,comPct){
   mov.sort((x,y)=>Math.abs(y.dPct)-Math.abs(x.dPct));
   const cap=mov.find(m=>m.nome[0]==='C'&&m.nome.indexOf('apac')>0), vfc=mov.find(m=>m.nome==='VFC'), cg=mov.find(m=>m.nome.indexOf('Carga')===0);
   const porque=[];
-  if(cap){let f=`Capacidade ${cap.dPct>0?'subiu':'caiu'} ${Math.abs(cap.dPct).toFixed(0)}%`;
-    if(cap.dPct>0)f+=vfc&&vfc.dPct>0?' — recuperação (VFC) melhor sustentou o ganho.':cg&&cg.dPct>0?' — respondeu bem ao aumento de carga.':'.';
+  /* A leitura curta tem VETO sobre a frase causal. "Capacidade subiu 9% —
+     respondeu bem ao aumento de carga" é uma conclusão sobre a MÉDIA do mês;
+     se os últimos 7 dias vêm abaixo dos 21 anteriores, essa frase afirma
+     exatamente o contrário do que o atleta está vivendo, no mesmo relatório
+     que pede REDUZIR a carga. Quando as janelas divergem, o app descreve a
+     divergência em vez de escolher a leitura que soa melhor. */
+  const curto=tendCurtaPct(comPct);
+  const contradiz=!!(curto&&curto.dir==='↓');
+  if(cap){let f=`Capacidade ${cap.dPct>0?'subiu':'caiu'} ${Math.abs(cap.dPct).toFixed(0)}% na <b>média de 28 dias</b>`;
+    if(cap.dPct>0&&contradiz)
+      f+=`, mas os <b>últimos 7 dias</b> vêm ${Math.abs(curto.pct)}% abaixo dos 21 anteriores — o ganho do mês não está se sustentando na semana`
+        +(cg&&cg.dPct>10?`, com a carga ${cg.dPct.toFixed(0)}% acima.`:'.');
+    else if(cap.dPct>0)f+=vfc&&vfc.dPct>0?' — recuperação (VFC) melhor sustentou o ganho.':cg&&cg.dPct>0?' — respondeu bem ao aumento de carga.':'.';
     else f+=cg&&cg.dPct>10?' — pode refletir fadiga do aumento de carga.':vfc&&vfc.dPct<0?' — recuperação (VFC) mais baixa acompanhou a queda.':'.';
     porque.push(f);}
-  return{movers:mov.slice(0,6),porque};
+  return{movers:mov.slice(0,6),porque,curto};
 }
 function cardMudancas(pro,comPct){
   const m=mudancas28d(pro,comPct); if(!m.movers.length)return'';
   const linhas=m.movers.map(x=>{const seta=x.dPct>0.5?'↑':x.dPct<-0.5?'↓':'→';
     const fav=x.sinal===0?null:(x.sinal>0?x.dPct>0:x.dPct<0);
     const cor=fav==null?'var(--ink-2)':(fav?'var(--ok)':'var(--clock)');
-    return`<tr><td>${x.nome}</td><td class="n">${x.anterior.toFixed(x.dec)}${x.un?' '+x.un:''}</td><td class="n" style="font-weight:700">${x.atual.toFixed(x.dec)}${x.un?' '+x.un:''}</td><td class="n" style="color:${cor}">${seta} ${x.dPct>=0?'+':''}${x.dPct.toFixed(0)}%</td></tr>`;}).join('');
-  return`<div class="card"><div class="eyebrow">o que mudou — últimos 28 dias</div>
-    <div class="small muted" style="margin:4px 0 6px">Janela atual (0–28 dias) comparada à anterior (28–56 dias).</div>
+    const d=decDinamico(x.anterior,x.atual,x.dec);
+    return`<tr><td>${x.nome}</td><td class="n">${x.anterior.toFixed(d)}${x.un?' '+x.un:''}</td><td class="n" style="font-weight:700">${x.atual.toFixed(d)}${x.un?' '+x.un:''}</td><td class="n" style="color:${cor}">${seta} ${x.dPct>=0?'+':''}${x.dPct.toFixed(0)}%</td></tr>`;}).join('');
+  return`<div class="card"><div class="eyebrow">o que mudou — 28 dias contra os 28 anteriores</div>
+    <div class="small muted" style="margin:4px 0 6px">Média da janela atual (0–28 dias) comparada à da anterior (28–56 dias). São <b>médias de mês</b>: não dizem como está a sua semana — isso é a leitura curta, no estado de performance.</div>
     <table><thead><tr><th>indicador</th><th class="n">antes</th><th class="n">agora</th><th class="n">Δ</th></tr></thead><tbody>${linhas}</tbody></table>
     ${m.porque.length?`<div class="note" style="margin-top:10px"><b>Por quê:</b> ${m.porque.join(' ')} <span class="muted">(leitura de apoio, não causa comprovada)</span></div>`:''}
   </div>`;
@@ -8214,7 +8329,7 @@ function cardModelo(m){
   const iv=m.inventario, c=m.cobertura, nf=c>=70?'ampla':c>=40?'parcial':'inicial';
   return`<div class="card" data-dom="perf" id="c-modelo"><div class="row"><div class="eyebrow">modelo de performance</div><div class="grow"></div>
       <div class="kpi" style="text-align:right"><div class="v" style="${c>=70?'color:var(--ok)':c<40?'color:var(--clock)':''}">${c}%</div><div class="l">cobertura</div></div></div>
-    <div class="small muted" style="margin-top:4px">Base: ${iv.tiros} tiro(s) · ${iv.competicoes} resultado(s) · ${iv.garmin} dia(s) de relógio · ${iv.exames} exame(s) · ${iv.bio} bioimpedância(s) · ${iv.seco} fora d'água.</div>
+    <div class="small muted" style="margin-top:4px">Base: ${iv.tiros} tiro(s) · ${iv.competicoes} prova(s) nadada(s) em competição · ${iv.garmin} dia(s) de relógio · ${iv.exames} exame(s) · ${iv.bio} bioimpedância(s) · ${iv.seco} fora d'água.</div>
     <div class="xs muted" style="margin-top:6px">Cobertura ${nf}: mede <b>quanto dado existe</b>, e sobe conforme você registra. Não diz quanto o modelo acerta — isso é a <b>confiabilidade</b>, que aparece em cada projeção, separada por prova e piscina.</div>
   </div>`;
 }
@@ -8315,7 +8430,12 @@ function cardResumoExec(pro,motor,comPct){
   const prTxt=pr==null?null:pr>=75?'alta':pr>=55?'média':'baixa';
   const p=[];
   if(cap!=null)p.push(`seus tiros saem a <b>${cap}%</b> do seu melhor tempo`);
-  if(tend)p.push(`capacidade <b>${tend.dir==='↑'?'em evolução':tend.dir==='↓'?'em queda':'estável'}</b>${tend.detalhe?` (${tend.detalhe})`:''}`);
+  /* A janela entra no texto: "capacidade em evolução" sem dizer "no histórico"
+     colide com o %PB abaixo da base logo adiante, e o relatório parece estar
+     se contradizendo quando só está olhando dois intervalos diferentes. */
+  if(tend)p.push(`capacidade <b>${tend.dir==='↑'?'em evolução':tend.dir==='↓'?'em queda':'estável'} no histórico</b>${tend.detalhe?` (${tend.detalhe})`:''}`);
+  if(tend&&tend.curto&&tend.curto.dir!=='→')
+    p.push(`últimos 7 dias <b style="color:${tend.curto.dir==='↑'?'var(--ok)':'var(--clock)'}">${tend.curto.pct>=0?'+':''}${tend.curto.pct}% em %PB</b> vs. os 21 anteriores`);
   if(prTxt)p.push(`prontidão hoje <b>${prTxt}</b>`);
   if(cargaTxt)p.push(`<b style="color:${cargaCor}">${cargaTxt}</b>`);
   const narr=p.length?(p.join(' · ')+'.'):'Ainda faltam dados para um resumo firme — lance mais tempos e um check-in.';
@@ -8323,9 +8443,10 @@ function cardResumoExec(pro,motor,comPct){
     <p class="small" style="margin:6px 0 12px;line-height:1.5">${narr}</p>
     <div class="grid3">
       <div class="kpi"><div class="v">${cap!=null?cap+'%':'—'}</div><div class="l">velocidade média (15 tiros)</div></div>
-      <div class="kpi"><div class="v" style="${tend?`color:${tend.cor||''}`:''}">${tend?tend.dir:'—'}</div><div class="l">tendência</div></div>
-      <div class="kpi"><div class="v" style="color:${pr==null?'':pr>=75?'var(--ok)':pr<55?'var(--clock)':''}">${pr!=null?pr:'—'}</div><div class="l">prontidão</div></div>
+      <div class="kpi"><div class="v" style="${tend?`color:${tend.cor||''}`:''}">${tend?tend.dir:'—'}</div><div class="l">tendência (histórico)</div></div>
+      <div class="kpi"><div class="v" style="color:${pr==null?'':pr>=75?'var(--ok)':pr<55?'var(--clock)':''}">${pr!=null?pr:'—'}</div><div class="l">prontidão (hoje)</div></div>
     </div>
+    ${tend&&tend.divergencia?notaJanelas(tend):''}
     ${fortes.length?`<div class="note ok" style="margin-top:12px"><b>Pontos fortes:</b> ${fortes.join(', ')}.</div>`:''}
     ${fracos.length?`<div class="note warn" style="margin-top:8px"><b>A melhorar:</b> ${fracos.join(', ')}.</div>`:''}
   </div>`;
@@ -8428,7 +8549,7 @@ function cabecalhoDocumento(pro,motor){
     <h1>Relatório de performance — natação</h1>
     <div class="doc-sub">${prox
       ? `${esc(prox.comp||prox.nome||'Próxima competição')} — ${brData(prox.data)}${(prox.pis||prox.piscina)?` · piscina de ${(prox.pis||prox.piscina)==='LC50'?'50':'25'} m`:''}`
-      : `Emitido em ${brData(hoje())} · janela de análise: últimos 120 dias`}</div>
+      : `Emitido em ${brData(hoje())} · janela de análise: últimos 120 dias de treino · histórico completo de competições`}</div>
     <table class="doc-ident"><tbody>
       ${linha('Atleta',esc(nome)+(idade>0?` (${idade} anos)`:''))}
       ${linha('Provas-alvo',alvos.length?alvos.join(' · '):'—')}
@@ -8436,7 +8557,10 @@ function cabecalhoDocumento(pro,motor){
       ${linha('Projeção para hoje',p
         ?`${fmt(p.low,true)}–${fmt(p.high,true)} <span class="xs" style="font-weight:400">(PB ${fmt(p.pb,true)} · ${p.prova.split(' ').slice(-1)[0]})</span>`
         :(ref?`<span style="font-weight:400">indisponível para ${ref.d} m ${esc(ref.e)} ${ref.pis}</span><div class="xs" style="font-weight:400">${((pro.pbs||{})[`${ref.d} ${ref.e} ${ref.pis}`])?'faltam tiros recentes desta prova':'sem PB registrado nesta prova e piscina'}</div>`:'sem prova-alvo definida'))}
-      ${linha('Base de dados',`${iv.tiros||0} tiros · ${iv.competicoes||0} competições · ${iv.garmin||0} dias de relógio`)}
+      ${/* "26 competições" era leitura errada do próprio dado: pro.resultados
+            guarda UM registro por PROVA nadada, e uma competição rende várias.
+            O número está certo, o substantivo estava errado. */''}
+      ${linha('Base de dados',`${iv.tiros||0} tiros · ${iv.competicoes||0} provas em competições · ${iv.garmin||0} dias de relógio`)}
       ${linha('Janela até a prova',dias==null?'sem competição marcada'
         :(dias<=0?'é hoje':`~${dias} dia(s)`)
           +(!inscrito&&comp?`<div class="xs" style="font-weight:400">competição na agenda, <b>sem inscrição sua registrada</b> — a prova em foco veio das suas provas-alvo</div>`:''))}
@@ -8468,7 +8592,8 @@ function secaoMetodologia(pro,motor){
   const velhas=fr.filter(f=>f.uso==='só histórico').map(f=>f.rot.toLowerCase());
   return`<div class="doc-meta">
     <h3>Metodologia e ressalvas</h3>
-    <p>Janela de análise: <b>últimos 120 dias</b> de treinos consolidados (${iv.tiros||0} tiros cronometrados), ${iv.competicoes||0} resultado(s) de competição e ${iv.garmin||0} dia(s) de dados do relógio. Os tempos de treino são convertidos para condição de prova aplicando <b>saída de bloco e taper</b>, e depois calibrados pelas suas competições anteriores — a projeção não é o seu tempo de treino.</p>
+    <p>Janela de análise: <b>últimos 120 dias</b> de treinos consolidados (${iv.tiros||0} tiros cronometrados), ${iv.competicoes||0} prova(s) nadada(s) em competição (uma competição entra com uma linha por prova) e ${iv.garmin||0} dia(s) de dados do relógio. Os tempos de treino são convertidos para condição de prova aplicando <b>saída de bloco e taper</b>, e depois calibrados pelas suas competições anteriores — a projeção não é o seu tempo de treino.</p>
+    <p><b>Cada número fala de uma janela, e elas não são a mesma.</b> A <b>tendência</b> compara cada prova com a primeira vez que você a nadou: histórico inteiro, sem corte de 120 dias. A <b>leitura curta</b> compara os seus tiros dos últimos 7 dias com os 21 anteriores. O <b>estado atual</b> compara a última medida com a sua base de 28 dias. O <b>"o que mudou"</b> compara duas médias de 28 dias. Janelas diferentes podem apontar para lados diferentes sem que nenhuma esteja errada — por isso cada leitura aparece com a sua janela declarada, e quando duas divergem o relatório diz isso em vez de escolher a mais simpática.</p>
     <p><b>Cobertura</b> mede quanto dos dados esperados existe; <b>confiabilidade</b> mede o quanto o modelo já acertou na sua prova. Nenhum dos dois é probabilidade: não há calibração estatística que autorize lê-los assim.</p>
     <p>Correlações descrevem <b>associação observada no seu histórico</b>, nunca causa. Amostras pequenas aparecem marcadas como tal, e o app evita conclusão forte com uma ou duas observações.</p>
     <p>Dado marcado como suspeito — bioimpedância implausível, duração fora de faixa — <b>não alimenta score, radar nem projeção</b>; continua visível, identificado. ${velhas.length?`Hoje ${velhas.join(' e ')} ${velhas.length>1?'entram':'entra'} apenas como histórico, por idade do dado.`:''}</p>
