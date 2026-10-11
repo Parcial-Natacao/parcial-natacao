@@ -484,7 +484,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v128';
+const VER='v129';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1035,6 +1035,9 @@ function sheet(html){
   document.getElementById('sheetBody').innerHTML=html; sh.classList.add('on'); sh.setAttribute('aria-hidden','false');
   requestAnimationFrame(()=>{const alvo=sh.querySelector('input,select,textarea,button,[tabindex="0"]')||sh.querySelector('.inner'); alvo?.focus();});
 }
+/* aviso que precisa ser LIDO: toast some em 4 s e explicação não cabe nele */
+function alerta(titulo,html){ sheet(`<h2>${esc(titulo)}</h2><p class="small" style="line-height:1.55;margin:8px 0 14px">${html}</p>
+  <button class="primary full" onclick="fecharSheet()">Entendi</button>`); }
 function fecharSheet(){
   const sh=document.getElementById('sheet'); sh.classList.remove('on');sh.setAttribute('aria-hidden','true');
   if(_focoAntesSheet&&typeof _focoAntesSheet.focus==='function')_focoAntesSheet.focus(); _focoAntesSheet=null;
@@ -3597,6 +3600,58 @@ teste('janelas','1 ou 2 tiros na semana não viram leitura',a=>{
 teste('janelas','mudança escondida pelo arredondamento abre casa decimal',a=>{
   a.eq(decDinamico(57.4,56.8,0),1,'57→57 ganha uma casa');
   a.eq(decDinamico(7996,3946,0),0,'quem já aparece não ganha casa');});
+/* ── BALIZAMENTO — psych sheet HY-TEK em três colunas (v129) ─────────────── */
+const _HY_COL=[                     /* leitura por COLUNA: ordem do documento */
+ '#6 Men 200 LC Meter Freestyle','Name Age Team Seed Time',
+ '47 Barbato De Macedo, Bruno 43 TNTS 2:12.75',
+ '48 Tiaen, Marcos Sergio 50 TNTS 2:20.00',
+ '85 Montero Labat, Evangelina Julia',     /* nome comprido quebra em duas linhas */
+ '58 EDELP 13:39.65',
+ '#25 Men 200 LC Meter Freestyle Relay','1 A3 Swim Team 1:50.00',
+ '#30 Men 100 Yard Freestyle','9 Barbato De Macedo, Bruno 43 TNTS 1:00.00',
+ '#14 Men 50 LC Meter Breaststroke',
+ '11 Barbato De Macedo, Bruno 43 TNTS 30.98',
+ '72 Maluf Barcelos, Alexandre 51 TNTS NT'].join('\n');
+const _HY_FLAT=[                    /* leitura achatada: colunas coladas na mesma linha */
+ '#5 Women 200 LC Meter Freestyle',
+ '182 Twomey, Mary 72 CMAC 5:10.00 47 Barbato De Macedo, Bruno 43 TNTS 2:12.75 109 Monterrubio, Daniel 30 UNAM 2:27.01',
+ '#6 Men 200 LC Meter Freestyle'].join('\n');
+teste('balizamento','cabeçalho em inglês vira prova, revezamento e jarda ficam de fora',a=>{
+  const c=hytekCabecalho('#14 Men 50 LC Meter Breaststroke');
+  a.eq(c&&c.dist,50,'distância'); a.eq(c&&c.estilo,'peito','estilo'); a.eq(c&&c.codigo,'14','código');
+  a.eq(hytekCabecalho('#3 Women 400 LC Meter IM').estilo,'medley','IM é medley');
+  a.ok(hytekCabecalho('#7 ... (Women 50 LC Meter Butterfly)'),'continuação de prova');
+  a.ok(hytekCabecalho('#25 Men 200 LC Meter Freestyle Relay').pular,'revezamento sai');
+  a.ok(hytekCabecalho('#30 Men 100 Yard Freestyle').pular,'jarda sai');
+  a.eq(hytekCabecalho('Nº PROVA - 50 METROS PEITO'),null,'formato ABMN não é HY-TEK');});
+teste('balizamento','inscrito, nome quebrado em duas linhas e NT',a=>{
+  const ps=parseHytek(_HY_COL);
+  a.eq(ps.length,2,'duas provas individuais (revezamento e jarda fora)');
+  const p200=ps.find(p=>p.codigo==='6'), p50=ps.find(p=>p.codigo==='14');
+  a.eq(p200.inscritos.length,3,'os três do 200, incluindo o nome quebrado');
+  a.eq(p200.inscritos[2].nome,'Montero Labat, Evangelina Julia','nome remontado');
+  a.eq(p200.inscritos[2].inscricao,parseTempo('13:39.65'),'tempo da linha de baixo');
+  a.eq(p50.inscritos[1].inscricao,null,'NT é sem tempo, não zero');
+  a.eq(p50.inscritos[1].seed,72,'posição no seed');});
+teste('balizamento','acha o atleta sem acento e com nome invertido',a=>{
+  a.eq(hytekMinhasProvas(_HY_COL,'Marcos Sérgio Tiaen').length,1,'"Tiaen, Marcos Sergio" com acento no cadastro');
+  a.eq(hytekMinhasProvas(_HY_COL,'Alexandre Maluf Barcelos').length,1,'sobrenome composto');
+  a.eq(hytekMinhasProvas(_HY_COL,'Bruno Barbato de Macedo').length,2,'nome completo');
+  a.eq(hytekMinhasProvas(_HY_COL,'Fulano de Tal').length,0,'quem não está, não entra');});
+teste('balizamento','leitura por coluna vence a achatada, que cola a prova errada',a=>{
+  const errado=hytekMinhasProvas(_HY_FLAT,'Bruno Barbato');
+  a.eq(errado.length,1,'a achatada TAMBÉM acha o nome');
+  a.eq(errado[0].codigo,'5','…mas na prova feminina, errada');
+  const r=minhasProvasDoBalizamento({linhas:_HY_FLAT,colunas:_HY_COL},'Bruno Barbato');
+  a.eq(r.length,2,'a leitura certa traz as duas provas dele');
+  a.eq(r[0].codigo,'6','prova certa');
+  a.eq(r[0].inscricao,parseTempo('2:12.75'),'tempo certo, não o do vizinho de linha');});
+teste('balizamento','ABMN em português continua tendo prioridade',a=>{
+  const abmn=['Nº PROVA - 50 METROS PEITO MASCULINO','1ª SÉRIE',
+    '4 12345 40 + BRUNO BARBATO A3 SWIM TEAM 30.21'].join('\n');
+  const r=minhasProvasDoBalizamento({linhas:abmn,colunas:'lixo'},'Bruno Barbato');
+  a.eq(r.length,1,'achou'); a.eq(r[0].dist,50,'distância'); a.eq(r[0].raia,4,'raia');
+  a.eq(r[0].inscricao,parseTempo('30.21'),'tempo de inscrição');});
 teste('janelas','a semana veta a frase "respondeu bem à carga"',a=>{
   const pro=_atleta({pbs:{'50 peito SC25':parseTempo('31.35')}});
   const ex=[]; for(let k=50;k>=30;k-=2)ex.push(_tiro(k,50,'40.0'));  /* mês anterior pior */
@@ -4436,9 +4491,8 @@ async function lerBalizamento(inp){
   if(f.type!=='application/pdf'){ if(st)st.textContent='Envie o balizamento em PDF (foto não dá para ler sem servidor) — ou cole o texto abaixo.'; return; }
   if(st)st.textContent='Lendo o balizamento…';
   try{
-    const txt=await pdfTexto(f);
-    const provas=parseBalizTec(txt);
-    if(!provas.length){ if(st)st.textContent='Não achei atletas da sua equipe no balizamento. Confira se a equipe bate com a coluna EQUIPE do PDF, ou cole o texto abaixo.'; return; }
+    const provas=parseBalizTec(await pdfTextos(f));
+    if(!provas.length){ if(st)st.textContent='Não achei atletas da sua equipe no balizamento. Confira se a equipe bate com a coluna EQUIPE do PDF e se os nomes do Elenco batem com os do balizamento, ou cole o texto abaixo.'; return; }
     await incorporar(provas);
     const n=provas.reduce((s,p)=>s+p.inscritos.length,0);
     if(st)st.textContent=`${provas.length} prova(s) e ${n} inscrição(ões) da sua equipe importadas.`;
@@ -4519,11 +4573,37 @@ async function colarBalizamento(){
 }
 /* identificadores da equipe do técnico (nome + sigla do catálogo) para casar com a
    coluna EQUIPE do balizamento oficial. */
-/* usa o parser por EQUIPE (todos os atletas do clube no balizamento); se não achar
-   nada, cai para o parser por nomes do Elenco (compat). */
-function parseBalizTec(txt){
-  const porEq=parseBalizamentoEquipe(txt,alvosEquipe());
-  return porEq.length?porEq:parseBalizamentoTecnico(txt);
+/* Mesmo balizamento HY-TEK, visto pelo técnico: fica com os inscritos que são
+   do Elenco (por nome) ou da equipe alvo (pela sigla da coluna TEAM). Um psych
+   sheet do PanAm tem milhares de inscritos — sem esse filtro, importaria o
+   campeonato inteiro. */
+function parseHytekEquipe(txt,alvos){
+  const elenco=(S.elenco||[]).map(a=>({a,toks:tokensNome(a.nome)})).filter(x=>x.toks.length);
+  const AL=new Set((alvos||[]).map(s=>normNome(s)).filter(Boolean));
+  const out=[];
+  for(const p of parseHytek(txt)){
+    const ins=[];
+    for(const i of p.inscritos){
+      const n=normNome(i.nome);
+      const doElenco=elenco.find(x=>x.toks.every(t=>n.includes(t)));
+      if(!doElenco&&!AL.has(normNome(i.equipe)))continue;
+      ins.push({serie:0,raia:0,nome:doElenco?doElenco.a.nome:i.nome,equipe:i.equipe,
+        inscricao:i.inscricao,seed:i.seed});
+    }
+    if(ins.length)out.push({codigo:p.codigo,dist:p.dist,estilo:p.estilo,genero:p.genero,categoria:'',inscritos:ins});
+  }
+  return out;
+}
+/* Ordem de prioridade, cada formato no layout que é o dele: ABMN por equipe,
+   ABMN por nomes do Elenco, HY-TEK em três colunas, HY-TEK em uma. Recebe as
+   DUAS leituras do PDF (ou uma string só, para texto colado). */
+function parseBalizTec(t){
+  const linhas=typeof t==='string'?t:t.linhas;
+  const colunas=typeof t==='string'?t:(t.colunas||t.linhas);
+  const porEq=parseBalizamentoEquipe(linhas,alvosEquipe()); if(porEq.length)return porEq;
+  const porNome=parseBalizamentoTecnico(linhas); if(porNome.length)return porNome;
+  const hyCol=parseHytekEquipe(colunas,alvosEquipe()); if(hyCol.length)return hyCol;
+  return parseHytekEquipe(linhas,alvosEquipe());
 }
 function alvosEquipe(){
   const nome=(S.eq&&S.eq.nome)||S.u.equipeNome||'';
@@ -4913,14 +4993,15 @@ function telaMinhaComp(){
   <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Competições</button></div>
   <div><div class="eyebrow">${brData(mc.data)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
   <div class="card"><div class="eyebrow">balizamento em PDF</div>
-    <p class="small muted" style="margin:4px 0 6px">Suba o balizamento (start list) e eu tento preencher as <b>suas</b> provas, séries e raias pelo seu nome. Melhor esforço — confira depois.</p>
+    <p class="small muted" style="margin:4px 0 6px">Suba o balizamento ou o <b>psych sheet</b> e eu preencho as <b>suas</b> provas pelo seu nome. Entende o formato brasileiro (ABMN) e o internacional (HY-TEK, em inglês). Psych sheet não tem série nem raia — ainda não houve sorteio; vem a prova, o tempo de inscrição e a sua posição no seed. Melhor esforço — confira depois.</p>
     <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarBalizamento(this)"></div>
   </div>
   <div class="row" style="margin:8px 0"><div class="eyebrow">minhas provas</div><div class="grow"></div>
     <button class="sm primary" onclick="abrirNovaProvaAtleta()">+ Prova</button></div>
   ${(mc.provas||[]).length?mc.provas.map(pr=>`<div class="card tight" style="margin:8px 0">
     <div class="row"><div class="grow"><b>${pr.dist}m ${pr.estilo}</b>
-      <div class="xs muted">${pr.serie?'série '+pr.serie:''}${pr.raia?' · raia '+pr.raia:''}${pr.inscricao?' · insc. '+fmt(pr.inscricao,true):''}</div>
+      <div class="xs muted">${[pr.codigo?'prova #'+esc(String(pr.codigo)):'',pr.serie?'série '+pr.serie:'',pr.raia?'raia '+pr.raia:'',
+        pr.inscricao?'insc. '+fmt(pr.inscricao,true):'',pr.seed?pr.seed+'º no seed':''].filter(Boolean).join(' · ')}</div>
       ${pr.tempo?`<div class="small" style="color:var(--ok);font-weight:700">tempo: ${fmt(pr.tempo,true)}</div>`:''}</div>
       <button class="sm ${pr.tempo?'ghost':'primary'}" onclick="abrirTempoRealizado('${pr.id}')">${pr.tempo?'Editar':'Lançar'}</button>
       <button class="sm ghost" style="color:var(--clock)" onclick="apagarProvaAtleta('${pr.id}')">✕</button></div>
@@ -5007,10 +5088,83 @@ async function enviarProvasParaMarcas(mcId){
   }
   await salvarPro(); toast(add?`${add} tempo(s) enviado(s) para Marcas`:'Já estavam em Marcas'); render();
 }
+/* ── PSYCH SHEET / HY-TEK MEET MANAGER (formato internacional) ──────────────
+   O balizamento brasileiro (ABMN) diz "Nº PROVA - 50 METROS PEITO"; o do PanAm
+   Masters de Buenos Aires diz "#14 Men 50 LC Meter Breaststroke". Mesmo
+   documento, outra língua e outro layout — e o parser do app só conhecia o
+   primeiro. Por isso o Bruno ficava "sem provas" num PDF em que está inscrito
+   em três.
+   Psych sheet NÃO tem série nem raia: a largada ainda não foi sorteada. O que
+   ele traz é a COLOCAÇÃO NO SEED (ordem pelo tempo de inscrição). O app guarda
+   isso como `seed` e deixa série/raia vazias, em vez de inventar. */
+function normNome(s){
+  return String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')   /* "Sérgio" → "sergio" */
+    .replace(/([a-z])\1+/g,'$1')                       /* "Garcíáa" → "garcia": o pdf.js duplica a letra acentuada */
+    .replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function tokensNome(nome){ return normNome(nome).split(' ').filter(t=>t.length>=3); }
+const HY_ESTILO=[['Freestyle','livre'],['Backstroke','costas'],['Breaststroke','peito'],
+  ['Butterfly','borboleta'],['Individual Medley','medley'],['IM','medley']];
+/* "#12 Men 100 LC Meter Freestyle" e a continuação "#7 ... (Women 50 LC Meter Butterfly)" */
+function hytekCabecalho(l){
+  const m=l.match(/#\s*(\d+[A-Za-z]?)\s*(?:\.{2,})?\s*\(?\s*(Women|Men|Mixed|Girls|Boys)\s+(\d{2,4})\s+(?:LC|SC)?\s*(Meters?|Metres?|Yards?)\s+(Freestyle|Backstroke|Breaststroke|Butterfly|Individual Medley|IM)(\s+Relay)?/i);
+  if(!m)return null;
+  if(m[6])return{pular:true};                      /* revezamento: não é prova individual do atleta */
+  if(/yard/i.test(m[4]))return{pular:true};        /* jarda não converte para metro: fora */
+  const alvo=m[5].toLowerCase();
+  const par=HY_ESTILO.find(([en])=>en.toLowerCase()===alvo);
+  if(!par)return null;
+  return{codigo:m[1],dist:+m[3],estilo:par[1],genero:/^(w|g)/i.test(m[2])?'F':'M'};
+}
+/* "47 Barbato De Macedo, Bruno 43 TNTS 2:12.75" — seed, nome, idade, equipe, tempo.
+   NT = sem tempo de inscrição; X antes do tempo = exibição. */
+function hytekInscrito(l){
+  const m=l.match(/^(\d{1,4})\s+(.+?)\s+(\d{1,3})\s+([A-Z0-9][A-Z0-9.\-]{0,9})\s+(NT|X?\d{1,2}:\d{2}[.,]\d{2}|X?\d{1,3}[.,]\d{2})$/);
+  if(!m)return null;
+  const t=m[5].replace(/^X/,'');
+  return{seed:+m[1],nome:m[2].trim(),idade:+m[3],equipe:m[4],inscricao:/^NT$/i.test(t)?null:parseTempo(t)};
+}
+function parseHytek(txt){
+  const provas=[]; let cur=null, pendente=null;
+  const linhas=String(txt||'').split(/\r?\n/).map(s=>s.replace(/\s+/g,' ').trim());
+  for(let i=0;i<linhas.length;i++){
+    const l=linhas[i]; if(!l)continue;
+    const cab=hytekCabecalho(l);
+    if(cab){ pendente=null; if(cab.pular){cur=null;continue;}
+      cur=provas.find(p=>String(p.codigo)===String(cab.codigo));
+      if(!cur){cur={codigo:cab.codigo,dist:cab.dist,estilo:cab.estilo,genero:cab.genero,inscritos:[]};provas.push(cur);}
+      continue; }
+    if(!cur)continue;
+    let ins=hytekInscrito(l);
+    /* nome comprido quebra em duas linhas: "85 Montero Labat, Evangelina Julia"
+       e, embaixo, "58 EDELP 13:39.65". Sem juntar, o inscrito some em silêncio. */
+    if(!ins){
+      const so=l.match(/^(\d{1,4})\s+([A-Za-zÀ-ÿ.'\- ]*,[A-Za-zÀ-ÿ.'\- ]+)$/);
+      if(so){ pendente=so; continue; }
+      if(pendente){ const j=hytekInscrito(pendente[1]+' '+pendente[2]+' '+l); pendente=null; if(j)ins=j; }
+    }else pendente=null;
+    if(ins)cur.inscritos.push(ins);
+  }
+  return provas.filter(p=>p.inscritos.length);
+}
 /* balizamento (start list) em PDF — extrai as provas do próprio atleta pelo nome */
 /* Formato ABMN Competição: cabeçalho "Nº PROVA - <dist> METROS <estilo> <gênero>",
    séries "Nª SÉRIE ...", e linhas "raia matrícula faixa + NOME  EQUIPE  TEMPO".
    Casa a linha do atleta exigindo todos os nomes dele (>=3 letras) na linha. */
+/* as minhas provas num psych sheet HY-TEK, pelo nome */
+function hytekMinhasProvas(txt,nome){
+  const toks=tokensNome(nome); if(!toks.length)return[];
+  const out=[];
+  for(const p of parseHytek(txt))
+    for(const i of p.inscritos){
+      const n=normNome(i.nome);
+      if(!toks.every(t=>n.includes(t)))continue;
+      out.push({id:uid(),dist:p.dist,estilo:p.estilo,serie:null,raia:null,
+        inscricao:i.inscricao,seed:i.seed,codigo:p.codigo});
+    }
+  return out;
+}
 function parseBalizamento(txt,nome){
   const toks=(nome||'').toLowerCase().split(/\s+/).filter(t=>t.length>=3);
   const ESTIL=[[/livre|crawl/i,'livre'],[/costas?/i,'costas'],[/peito/i,'peito'],[/borbol/i,'borboleta'],[/medley/i,'medley']];
@@ -5034,18 +5188,65 @@ function parseBalizamento(txt,nome){
   }
   return out;
 }
+/* Tenta os dois layouts (uma coluna e três) e os dois formatos (ABMN e HY-TEK),
+   e fica com a leitura que achou mais provas. Mais barato do que pedir ao
+   usuário que descubra qual é o formato do PDF dele. */
+function minhasProvasDoBalizamento(t,nome){
+  /* ORDEM DE PRIORIDADE, não "o que achar mais". A leitura achatada de um PDF
+     de três colunas AINDA acha o nome — só que colado na prova errada e com o
+     tempo do vizinho de linha (o Bruno saía no #5 feminino com 2:27.01 em vez
+     do #6 com 2:12.75). Como as duas leituras achavam 3 provas, a errada
+     empatava e ficava. Cada formato tem UM layout certo, e é esse que vale:
+     ABMN é de uma coluna, HY-TEK é de três. */
+  const tentativas=[
+    ()=>parseBalizamento(t.linhas,nome),      /* ABMN (pt-BR), uma coluna */
+    ()=>hytekMinhasProvas(t.colunas,nome),    /* HY-TEK (en), três colunas */
+    ()=>hytekMinhasProvas(t.linhas,nome),     /* HY-TEK de meet pequeno, uma coluna */
+    ()=>parseBalizamento(t.colunas,nome)
+  ];
+  for(const f of tentativas){const r=f(); if(r.length)return r;}
+  return[];
+}
+/* Quando não acha, o app precisa dizer O QUE leu — "não achei suas provas" sem
+   mais nada deixa o atleta sem saber se o PDF é ilegível, se o nome está
+   diferente ou se ele não está inscrito. */
+function diagBalizamento(t,nome){
+  const provas=parseHytek(t.colunas).length?parseHytek(t.colunas):parseHytek(t.linhas);
+  const nIns=provas.reduce((s,p)=>s+p.inscritos.length,0);
+  if(!provas.length)return'Não reconheci o formato deste PDF (nem ABMN nem HY-TEK). Lance as provas à mão, ou me mande o arquivo.';
+  const toks=tokensNome(nome);
+  const cand=[];
+  for(const p of provas)for(const i of p.inscritos){
+    const n=normNome(i.nome);
+    const bate=toks.filter(x=>n.includes(x)).length;
+    if(bate)cand.push({nome:i.nome,equipe:i.equipe,bate});
+  }
+  cand.sort((a,b)=>b.bate-a.bate);
+  const top=[...new Map(cand.map(c=>[c.nome,c])).values()].slice(0,3);
+  return`Li ${provas.length} prova(s) e ${nIns} inscrito(s), mas nenhum com o nome "${esc(nome||'')}".`
+    +(top.length?` Parecidos: ${top.map(c=>esc(c.nome)+' ('+esc(c.equipe)+')').join(' · ')}. Se um deles é você, ajuste seu nome em Conta.`
+               :' Confira a grafia do seu nome em Conta, ou lance as provas à mão.');
+}
 async function importarBalizamento(inp){
   const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
   const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
   toast('Lendo o balizamento…');
-  let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
-  const provas=parseBalizamento(txt,S.u.nome);
-  if(!provas.length)return toast('Não achei suas provas. Confira se seu nome está no PDF, ou lance à mão.');
+  let t; try{ t=await pdfTextos(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
+  const provas=minhasProvasDoBalizamento(t,S.u.nome);
+  if(!provas.length)return alerta('Balizamento',diagBalizamento(t,S.u.nome));
   mc.provas=mc.provas||[];
   const ex=new Set(mc.provas.map(p=>`${p.dist}|${p.estilo}|${p.serie}|${p.raia}`));
   let add=0;
   for(const p of provas){ const k=`${p.dist}|${p.estilo}|${p.serie}|${p.raia}`; if(ex.has(k))continue; ex.add(k); mc.provas.push(p); add++; }
-  await salvarUsuario(); toast(add?`${add} prova(s) importada(s)`:'Tudo já estava lançado'); render();
+  mc.provas.sort((a,b)=>(+a.codigo||0)-(+b.codigo||0)||a.dist-b.dist);
+  await salvarUsuario();
+  /* psych sheet declara a piscina no cabeçalho das provas; se bater diferente
+     da competição cadastrada, avisa em vez de gravar tempo na piscina errada */
+  const lc=/\bLC\s*Meter/i.test(t.colunas||t.linhas), sc=/\bSC\s*Meter/i.test(t.colunas||t.linhas);
+  const conflito=(lc&&!sc&&mc.piscina!=='LC50')?'longa (50 m)':(sc&&!lc&&mc.piscina!=='SC25')?'curta (25 m)':null;
+  toast(add?`${add} prova(s) importada(s)`:'Tudo já estava lançado');
+  if(conflito)alerta('Confira a piscina',`O PDF é de piscina <b>${conflito}</b>, mas esta competição está cadastrada como <b>${mc.piscina==='LC50'?'longa (50 m)':'curta (25 m)'}</b>. Corrija antes de lançar os tempos — marca em piscina errada entra errada em Marcas.`);
+  render();
 }
 
 /* =====================================================================
@@ -5250,20 +5451,41 @@ function carregarPdfJs(){
   });
   return _pdfjs;
 }
-async function pdfTexto(file){
+/* DUAS leituras do mesmo PDF, num parse só.
+   `linhas` agrupa por Y — é o que sempre foi usado, e é o certo para documento
+   de uma coluna (currículo ABMN, exame, bioimpedância).
+   `colunas` agrupa primeiro por FAIXA DE X e só depois por Y. Psych sheet do
+   HY-TEK vem em até três colunas por página; agrupando por Y, a mesma linha de
+   texto junta inscritos de provas diferentes e o cabeçalho da prova aparece
+   DEPOIS dos inscritos dela. Foi exatamente isso que impediu o app de achar o
+   Bruno no balizamento de Buenos Aires: a linha dele estava lá, mas sem prova
+   a que pertencer. Lendo coluna por coluna, a ordem de leitura volta a ser a
+   do documento. */
+async function pdfTextos(file){
   const lib=await carregarPdfJs();
-  const buf=await file.arrayBuffer();
-  const pdf=await lib.getDocument({data:buf}).promise;
-  let out='';
+  const pdf=await lib.getDocument({data:await file.arrayBuffer()}).promise;
+  const junta=(g,colapsa)=>Object.keys(g).map(Number).sort((a,b)=>b-a)
+    .map(y=>{const l=g[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ');
+             return colapsa?l.replace(/\s+/g,' ').trim():l})
+    .filter(l=>!colapsa||l).join('\n');
+  let linhas='', colunas='';
   for(let p=1;p<=pdf.numPages;p++){
-    const tc=await (await pdf.getPage(p)).getTextContent();
-    const linhas={};
-    for(const it of tc.items){ const y=Math.round(it.transform[5]); (linhas[y]=linhas[y]||[]).push({x:it.transform[4],s:it.str}); }
-    for(const y of Object.keys(linhas).map(Number).sort((a,b)=>b-a))
-      out+=linhas[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ')+'\n';
+    const pg=await pdf.getPage(p), larg=(pg.getViewport({scale:1}).width)||612;
+    const tc=await pg.getTextContent();
+    const porY={}, porCol=[{},{},{}];
+    for(const it of tc.items){
+      const x=it.transform[4], y=Math.round(it.transform[5]);
+      (porY[y]=porY[y]||[]).push({x,s:it.str});
+      const c=x<larg/3?0:x<larg*2/3?1:2;
+      (porCol[c][y]=porCol[c][y]||[]).push({x,s:it.str});
+    }
+    linhas+=junta(porY,false)+'\n';
+    for(const c of porCol){const t=junta(c,true); if(t)colunas+=t+'\n';}
   }
-  return out;
+  return{linhas,colunas};
 }
+/* mantém a assinatura antiga: todos os importadores de uma coluna seguem iguais */
+async function pdfTexto(file,modo){ const t=await pdfTextos(file); return modo==='colunas'?t.colunas:t.linhas; }
 /* extrai resultados do currículo On-Line da ABMN (histórico por competição) */
 /* ── Currículo ABMN ────────────────────────────────────────────────────────
    O PDF traz DUAS listas: "all-time" e "por faixa" (etária). Para um master, a
