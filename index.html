@@ -484,7 +484,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v129';
+const VER='v130';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1168,7 +1168,8 @@ function traduzErroFB(code){
    Se a validação falhar, a conta recém-criada é removida. */
 async function cadastrarFB(dados){
   const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,codigoPro,nivel}=dados;
-  if(!equipe)return toast('Informe o nome da equipe');
+  const semEquipe=perfil==='atleta'&&!equipe;
+  if(!equipe&&!semEquipe)return toast('Informe o nome da equipe');
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
   const id=idadeDe(nascimento);
@@ -1177,62 +1178,46 @@ async function cadastrarFB(dados){
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
 
-  const em=email.toLowerCase(), eqSlug=slug(equipe);
+  const em=email.toLowerCase(), eqSlug=semEquipe?'':slug(equipe);
   let cred;
   try{ cred=await fauth.createUserWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
   const abortar=async msg=>{ try{await cred.user.delete()}catch(_){} return toast(msg); };
 
-  let eq=await DB.get(kEq(eqSlug));
+  let eq=eqSlug?await DB.get(kEq(eqSlug)):null;
   let nivelFinal=nivel||'Master';
-  async function criarEquipe(dono){
-    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:novoCodigoPro()};
-    await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
-    await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
-    if(typeof registrarEquipeDev==='function')await registrarEquipeDev(eqSlug);
-    return nova;
-  }
-
-  let criouEquipe=false;                 /* só quem CRIA a equipe é dono dela */
   if(perfil==='tecnico'){
-    if(!eq){eq=await criarEquipe(em);criouEquipe=true;}
-    /* equipe órfã (criada pelo dev): o técnico se vincula, mas quem libera é o
-       dev na aba Técnicos — assumir o e-mail aqui não o torna aprovado. */
-    else if(!eq.tecnicoEmail){eq.tecnicoEmail=em;await DB.set(kEq(eqSlug),eq)}
+    /* Equipes são criadas exclusivamente pelo administrador. Isso impede que
+       alguém invente uma equipe durante o cadastro e vire gestor sem revisão. */
+    if(!eq)return abortar('Equipe não encontrada. Peça ao administrador para criar a equipe antes do cadastro do técnico.');
   }else if(perfil==='pro'){
     const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
     const aceito=!!(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());   /* so o codigo DAQUELA equipe */
     if(!aceito)return abortar('Código PRO inválido. Peça ao técnico o código DESTA equipe — ele aparece na tela de Conta dele.');
-    /* PRO avulso vira DONO da equipe que ele mesmo cria — é o que permite a
-       auto-aprovação pela regra. Entrar numa equipe já existente segue pendente. */
-    if(!eq){eq=await criarEquipe(em);criouEquipe=true;}
     nivelFinal='Master';
   }else{
     /* cadastro livre: não precisa de liberação prévia. Entra pendente e o
        técnico (ou PRO em gestão) aprova depois. CPF é opcional. */
-    if(!eq)return abortar('Equipe não encontrada. Confira o nome com seu técnico.');
+    if(!semEquipe&&!eq)return abortar('Equipe não encontrada. Confira o nome com seu técnico.');
     if(cpf&&!cpfValido(cpf))return abortar('CPF inválido');
     nivelFinal=nivel||'Master';
   }
 
   /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
      dos dados PRO (o dono e o administrador global leem pro_<uid>). */
-  /* P0: NINGUÉM nasce aprovado. Entrar na equipe passa a exigir confirmação —
-     do técnico (atleta) ou do dev (técnico). A única auto-aprovação possível é
-     a de quem é DONO da equipe, e ela acontece no passo seguinte, porque a
-     regra do Firestore confere o dono no documento da equipe. */
-  const donoDaEquipe=criouEquipe;
-  const u={id:cred.user.uid,perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
+  /* Ninguém nasce aprovado. O técnico é liberado pelo administrador; atletas
+     e PROs vinculados a uma equipe são liberados pelo gestor dela. */
+  const u={id:cred.user.uid,perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
     nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:false,criadoEm:Date.now()};
   if(!await DB.set(kUser(u.email),u))return abortar('Não consegui salvar seu perfil. Tente novamente.');
-  if(donoDaEquipe){ u.aprovado=true; if(!await DB.set(kUser(u.email),u))return abortar('Não consegui concluir seu cadastro. Tente novamente.'); }
   if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
-  try{ await cred.user.sendEmailVerification(); }catch(_){}   /* confirma o e-mail por link */
+  let enviouConfirmacao=true;
+  try{ await cred.user.sendEmailVerification(); }catch(_){enviouConfirmacao=false}   /* confirma o e-mail por link */
   S.emailPendente=em; S.vista='verificar'; S.u=null; render();
-  toast('Conta criada. Confirme o e-mail para continuar.');
+  toast(enviouConfirmacao?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Use “Reenviar link”.');
 }
 /* fila global de técnicos, para o desenvolvedor enxergar e liberar */
 async function registrarTecnicoDev(u){
@@ -1248,15 +1233,16 @@ async function autenticarFB(email,senha){
   await fauth.currentUser.reload();
   if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
   const u=await DB.get(kUser(em));
-  if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Refaça o cadastro.'); }
-  if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada pelo técnico'); }
+  if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Fale com o administrador para regularizar o acesso.'); }
+  if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada. Fale com o administrador.'); }
   await entrarSessao(u); toast('Bom treino, '+prim(u.nome)+'!');
 }
 
 async function cadastrar(dados){
   if(FB)return cadastrarFB(dados);
   const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,codigoPro,nivel}=dados;
-  if(!equipe)return toast('Informe o nome da equipe');
+  const semEquipe=perfil==='atleta'&&!equipe;
+  if(!equipe&&!semEquipe)return toast('Informe o nome da equipe');
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
   const id=idadeDe(nascimento);
@@ -1266,46 +1252,36 @@ async function cadastrar(dados){
   if(senha!==senha2)return toast('As senhas não conferem');
   if(await DB.get(kUser(email)))return toast('Já existe conta com este e-mail');
 
-  const eqSlug=slug(equipe);
-  let eq=await DB.get(kEq(eqSlug));
+  const eqSlug=semEquipe?'':slug(equipe);
+  let eq=eqSlug?await DB.get(kEq(eqSlug)):null;
   let nivelFinal=nivel||'Master';
 
-  async function criarEquipe(dono){
-    const nova={slug:eqSlug,nome:equipe.trim(),criadoEm:Date.now(),tecnicoEmail:dono,codigoPro:novoCodigoPro()};
-    await DB.set(kEq(eqSlug),nova); await DB.set(kLib(eqSlug),[]);
-    await DB.set(kTrIdx(eqSlug),[]); await DB.set(kCIdx(eqSlug),[]);
-    if(typeof registrarEquipeDev==='function')await registrarEquipeDev(eqSlug);
-    return nova;
-  }
-
   if(perfil==='tecnico'){
-    if(!eq)eq=await criarEquipe(email.toLowerCase());
-    else if(!eq.tecnicoEmail){eq.tecnicoEmail=email.toLowerCase();await DB.set(kEq(eqSlug),eq)}
+    if(!eq)return toast('Equipe não encontrada. Peça ao administrador para criar a equipe antes do cadastro do técnico.');
   }else if(perfil==='pro'){
     /* O PRO não depende de liberação do técnico: a tranca é o código mestre. */
     const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
     const aceito=!!(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());   /* so o codigo DAQUELA equipe */
     if(!aceito)return toast('Código PRO inválido. Peça ao técnico o código DESTA equipe.');
-    if(!eq)eq=await criarEquipe(null);   /* equipe nasce sem técnico; ele entra depois */
     nivelFinal='Master';
   }else{
-    if(!eq)return toast('Equipe não encontrada. Confira o nome com seu técnico.');
+    if(!semEquipe&&!eq)return toast('Equipe não encontrada. Confira o nome com seu técnico.');
     if(cpf&&!cpfValido(cpf))return toast('CPF inválido');
     nivelFinal=nivel||'Master';
   }
 
   const sal=novoSal();
   const em=email.toLowerCase();
-  const aprovInicial=perfil==='pro'?true:(perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false);
-  const u={id:uid(),perfil,equipe:eqSlug,equipeNome:eq?eq.nome:equipe.trim(),nome:nome.trim(),
+  const aprovInicial=perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false;
+  const u={id:uid(),perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
     ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
-  await DB.set(kUser(u.email),u);
-  await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
+  if(!await DB.set(kUser(u.email),u))return toast('Não consegui salvar seu perfil. Tente novamente.');
+  if(eqSlug)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   await entrarSessao(u);
-  toast(u.aprovado?'Conta criada. Bem-vindo!':(perfil==='tecnico'?'Cadastro de técnico enviado. Aguarde a liberação do desenvolvedor.':'Cadastro enviado! Aguarde a liberação do técnico.'));
+  toast(semEquipe?'Conta criada. Escolha uma equipe quando quiser.':u.aprovado?'Conta criada. Bem-vindo!':(perfil==='tecnico'?'Cadastro de técnico enviado. Aguarde a liberação do administrador.':'Cadastro enviado! Aguarde a liberação do técnico.'));
 }
 
 async function autenticar(email,senha){
@@ -1318,7 +1294,7 @@ async function autenticar(email,senha){
 }
 async function entrarSessao(u){
   S.u=u; await DB.set('sessao',{email:u.email},false);
-  S.eq=await DB.get(kEq(u.equipe));
+  S.eq=u.equipe?await DB.get(kEq(u.equipe)):null;
   S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
   await carregarDados(); ligarSincronia(); render();
 }
@@ -1328,6 +1304,7 @@ function alternarGestao(){
   fecharSheet(); toast(S.gestao?'Modo gestão ativado':'Modo gestão desativado'); render();
 }
 async function sair(){
+  desligarSincronia();
   await DB.set('sessao',null,false);
   if(FB){try{await fauth.signOut()}catch(e){}}
   S.u=null;S.vista='entrada';S.perfilEscolhido=null;S.treino=null;S.comp=null;S.pilha=[];fecharSheet();render();
@@ -1377,13 +1354,32 @@ function copiar(t){
 async function carregarDados(){
   if(!S.u)return;
   const eq=S.u.equipe;
+  if(!eq){
+    S.eq=null; S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+    return;
+  }
+  /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
+     equipe. Evita leituras negadas e mantém apenas o nome necessário à espera. */
+  if(S.u.aprovado===false&&['atleta','pro','tecnico'].includes(S.u.perfil)){
+    S.eq=await DB.get(kEq(eq)); S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    return;
+  }
   S.tridx=await DB.get(kTrIdx(eq))||[];
   S.cidx=await DB.get(kCIdx(eq))||[];
   /* de-duplica o índice de competições por id (recuperações/fusões antigas podiam repetir) */
   {const vis=new Set(),lim=[]; for(const c of S.cidx){ if(c&&c.id&&!vis.has(c.id)){vis.add(c.id);lim.push(c);} }
    if(lim.length!==S.cidx.length){ S.cidx=lim; try{await DB.set(kCIdx(eq),lim);}catch(_){}} }
   S.libs=await DB.get(kLib(eq))||[];
-  const emails=await DB.get(kEqUsers(eq))||[];
+  let emails=await DB.get(kEqUsers(eq))||[];
+  /* O elenco aprovado continua no índice compacto. Para o gestor, uma consulta
+     pelo campo espelhado `equipe` acrescenta cadastros pendentes sem permitir
+     que o candidato edite a lista inteira da equipe. */
+  S.erroPendentes=false;
+  if(FB&&ehGestor())try{
+    const snaps=await Promise.all(['atleta','pro'].map(perfil=>fdb.collection('kv').where('equipe','==',eq).where('perfil','==',perfil).get())), todos=new Set(emails);
+    snaps.forEach(s=>s.forEach(d=>{if(d.id.startsWith('u_'))todos.add(d.id.slice(2).toLowerCase())})); emails=[...todos];
+  }catch(e){S.erroPendentes=true;console.warn('carregar pendentes',e.message)}
   const elenco=[];
   for(const em of emails){const u=await DB.get(kUser(em)); if(u&&u.perfil!=='tecnico')elenco.push(u)}
   S.elenco=elenco.sort((a,b)=>a.nome.localeCompare(b.nome));
@@ -1408,14 +1404,18 @@ async function sincronizar(sil){
      rodar sozinha em 12s, então nada fica desatualizado por muito tempo. */
   if(sil&&(S.sub==='novo'||usuarioDigitando()||document.getElementById('sheet')?.classList.contains('on')))return;
   const u=await DB.get(kUser(S.u.email)); if(u)S.u=u;
-  await carregarDados(); if(!sil)toast('Atualizado'); render();
+  await carregarDados(); if(S.u.equipe&&S.u.aprovado!==false)ligarSincronia(); if(!sil)toast('Atualizado'); render();
 }
 setInterval(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},12000);
 
 /* Sincronia instantânea (Firebase): qualquer alteração feita por outra
    pessoa recarrega os dados aqui em ~0,3s. Ignora os ecos das próprias
    gravações. Fica ligada uma vez, após o login. */
-let _fbSnap=null,_fbTimer=null;
+let _fbSnap=null,_fbEq=null,_fbTimer=null;
+function desligarSincronia(){
+  if(_fbSnap)try{_fbSnap()}catch(_){}
+  _fbSnap=null; _fbEq=null; clearTimeout(_fbTimer); _fbTimer=null;
+}
 /* ── Varredura segura da coleção kv ────────────────────────────────────────
    As regras novas impedem ler o pro_ de OUTRAS pessoas (dados de saúde), e no
    Firestore uma consulta à coleção inteira é negada POR INTEIRO quando um só
@@ -1454,8 +1454,11 @@ async function varrerKv(){
   return { docs, size:docs.length, forEach:f=>docs.forEach(f) };
 }
 function ligarSincronia(){
-  if(!FB||_fbSnap)return;
+  if(!FB)return;
+  if(S.u&&S.u.aprovado===false)return;
   const eq=(S.u&&S.u.equipe)||''; if(!eq)return;   /* sem equipe, nada a escutar */
+  if(_fbSnap&&_fbEq===eq)return;
+  desligarSincronia();
   /* NAO usar consulta aqui. Numa CONSULTA o Firestore exige que os filtros
      PROVEM de antemao que todo resultado e legivel — ele nao avalia documento
      a documento. Uma faixa por id nao prova isso, entao a escuta inteira era
@@ -1474,7 +1477,7 @@ function ligarSincronia(){
   for(const k of [kTrIdx(eq),kCIdx(eq),kEqUsers(eq)]){
     try{ offs.push(fdb.collection('kv').doc(fkey(k)).onSnapshot(bateu,erro)); }catch(e){ erro(e); }
   }
-  _fbSnap=()=>offs.forEach(f=>{try{f()}catch(_){}});
+  _fbEq=eq; _fbSnap=()=>offs.forEach(f=>{try{f()}catch(_){}});
 }
 async function salvarPro(){
   if(!(S.u&&temPro()))return;
@@ -1531,7 +1534,7 @@ function telaLogin(){
     <div class="field"><label for="lgSenha">Senha</label>
       <input id="lgSenha" type="password" autocomplete="current-password" placeholder="sua senha" required></div>
     <button class="primary full" type="submit">Entrar</button>
-    <button class="ghost full" style="margin-top:9px" onclick="pedirReset(val('lgEmail'))">Esqueci minha senha</button>
+    <button class="ghost full" type="button" style="margin-top:9px" onclick="pedirReset(val('lgEmail'))">Esqueci minha senha</button>
     <div class="xs muted" style="margin-top:9px">Digite o e-mail antes de pedir a recuperação.</div>
   </form>`;
 }
@@ -1546,22 +1549,27 @@ function telaReset(){
   </div>`;
 }
 
-let TIPO='piscina', CAD_PASSO=1, CAD={};
+let TIPO='piscina', CAD_PASSO=1, CAD={}, CAD_ENVIANDO=false;
 function guardarCadastro(){
   const ids={cdEquipe:'equipe',cdPro:'codigoPro',cdNome:'nome',cdEmail:'email',cdNasc:'nascimento',cdTel:'telefone',cdCpf:'cpf',cdSenha:'senha',cdSenha2:'senha2'};
   Object.entries(ids).forEach(([id,k])=>{const el=document.getElementById(id);if(el)CAD[k]=el.value.trim()}); CAD.tipo=TIPO;
 }
 function passoCadastro(dir){
   guardarCadastro();
-  if(dir>0&&CAD_PASSO===1&&!CAD.equipe)return toast('Informe sua equipe para continuar');
+  if(dir>0&&CAD_PASSO===1&&!CAD.equipe&&!(S.perfilEscolhido==='atleta'&&CAD.semEquipe))return toast('Informe sua equipe ou escolha “Ainda não tenho equipe”');
   if(dir>0&&CAD_PASSO===1&&S.perfilEscolhido==='pro'&&!CAD.codigoPro)return toast('Informe o código PRO da equipe');
   if(dir>0&&CAD_PASSO===2){
     if(!CAD.nome||CAD.nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(CAD.email||''))return toast('Informe um e-mail válido');
-    if(!CAD.nascimento||idadeDe(CAD.nascimento)==null)return toast('Informe sua data de nascimento');
+    const idade=idadeDe(CAD.nascimento);
+    if(!CAD.nascimento||idade==null||idade<8||idade>110)return toast('Informe uma data de nascimento válida (idade entre 8 e 110 anos)');
     if(!telValido(CAD.telefone))return toast('Informe WhatsApp com DDD');
+    if(S.perfilEscolhido==='atleta'&&CAD.cpf&&!cpfValido(CAD.cpf))return toast('Confira o CPF ou deixe o campo vazio');
   }
   CAD_PASSO=Math.max(1,Math.min(3,CAD_PASSO+dir)); render(); window.scrollTo(0,0);
+}
+function selSituacaoEquipe(v){
+  guardarCadastro(); CAD.semEquipe=v==='sem'; if(CAD.semEquipe)CAD.equipe=''; render();
 }
 function telaCadastro(){
   const p=S.perfilEscolhido;
@@ -1581,7 +1589,11 @@ function telaCadastro(){
                <datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>
                <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou (digite para buscar).':'Digite e escolha a mesma equipe do seu técnico.'}</div>`
             : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
-  const equipe=`<div class="field"><label for="cdEquipe">Equipe</label>${campoEquipe}</div>
+  const escolhaEquipe=p==='atleta'?`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
+      <button type="button" class="${!CAD.semEquipe?'on':''}" aria-pressed="${!CAD.semEquipe}" onclick="selSituacaoEquipe('com')">Tenho uma equipe</button>
+      <button type="button" class="${CAD.semEquipe?'on':''}" aria-pressed="${!!CAD.semEquipe}" onclick="selSituacaoEquipe('sem')">Ainda não tenho equipe</button>
+    </div></div>`:'';
+  const equipe=`${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Sua conta será criada sem equipe. Depois de confirmar o e-mail, você poderá procurar uma equipe ou pedir para um técnico te incluir.</div>`:`<div class="field"><label for="cdEquipe">Equipe</label>${campoEquipe}</div>`}
     ${p==='pro'?`<div class="field"><label for="cdPro">Código PRO da equipe</label><input id="cdPro" value="${esc(CAD.codigoPro||'')}" autocapitalize="characters" autocorrect="off" placeholder="ABCD-EFGH"><div class="xs muted" style="margin-top:5px">Peça este código ao responsável pela equipe.</div></div>`:''}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
@@ -1589,25 +1601,28 @@ function telaCadastro(){
     <div class="xs muted" style="margin:-4px 0 8px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div>
     ${p==='atleta'?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
     ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
-  const confirmar=`<div class="cad-resumo"><b>${esc(CAD.nome||'Novo usuário')}</b><span>${esc(CAD.email||'')}</span><span>${esc(CAD.equipe||'')} · ${titulo}</span></div>
+  const confirmar=`<div class="cad-resumo"><b>${esc(CAD.nome||'Novo usuário')}</b><span>${esc(CAD.email||'')}</span><span>${CAD.semEquipe?'Sem equipe por enquanto':esc(CAD.equipe||'')} · ${titulo}</span></div>
     <div class="grid2"><div class="field"><label for="cdSenha">Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="10+ caracteres"></div><div class="field"><label for="cdSenha2">Repita a senha</label><input id="cdSenha2" type="password" autocomplete="new-password"></div></div>
     <div class="xs muted" style="margin:-4px 0 12px">Use de 10 a 72 caracteres, com letras e números. Uma frase longa é uma boa opção.</div>
-    <label class="small" style="display:flex;gap:9px;align-items:flex-start"><input id="cdAceite" type="checkbox" style="width:auto;margin-top:3px">Confirmo que os dados são meus e entendo que o acesso depende da confirmação do e-mail${p==='atleta'?' e da aprovação da equipe':''}.</label>`;
+    <label class="small" style="display:flex;gap:9px;align-items:flex-start"><input id="cdAceite" type="checkbox" style="width:auto;margin-top:3px">Confirmo que os dados são meus e entendo que o acesso depende da confirmação do e-mail${p==='tecnico'?' e da aprovação do administrador':(!CAD.semEquipe?' e da aprovação da equipe':'')}.</label>`;
   return`
   <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
   <h1>${titulo}</h1>
   <div class="progress" aria-label="Etapa ${CAD_PASSO} de 3"><span style="width:${CAD_PASSO/3*100}%"></span></div><div class="xs muted" style="margin:6px 0 12px">Etapa ${CAD_PASSO} de 3 · ${['equipe','seus dados','segurança'][CAD_PASSO-1]}</div>
   <div class="card">
     ${CAD_PASSO===1?equipe:CAD_PASSO===2?pessoal:confirmar}
-    <div class="grid2" style="margin-top:16px">${CAD_PASSO>1?'<button onclick="passoCadastro(-1)">Voltar etapa</button>':'<span></span>'}${CAD_PASSO<3?'<button class="primary" onclick="passoCadastro(1)">Continuar</button>':'<button class="primary" onclick="enviarCadastro()">Criar conta</button>'}</div>
+    <div class="grid2" style="margin-top:16px">${CAD_PASSO>1?'<button onclick="passoCadastro(-1)">Voltar etapa</button>':'<span></span>'}${CAD_PASSO<3?'<button class="primary" onclick="passoCadastro(1)">Continuar</button>':'<button id="btnCriarConta" class="primary" onclick="enviarCadastro()">Criar conta</button>'}</div>
   </div>`;
 }
 function selTipo(t){TIPO=t;
   document.getElementById('tpA').classList.toggle('on',t==='piscina');
   document.getElementById('tpB').classList.toggle('on',t==='aguas')}
-function enviarCadastro(){
+async function enviarCadastro(){
   guardarCadastro(); if(!(document.getElementById('cdAceite')||{}).checked)return toast('Confirme os dados para criar a conta');
-  cadastrar({perfil:S.perfilEscolhido,...CAD});
+  if(CAD_ENVIANDO)return;
+  CAD_ENVIANDO=true; const b=document.getElementById('btnCriarConta'); if(b){b.disabled=true;b.textContent='Criando conta…'}
+  try{await cadastrar({perfil:S.perfilEscolhido,...CAD})}
+  finally{CAD_ENVIANDO=false;const atual=document.getElementById('btnCriarConta');if(atual){atual.disabled=false;atual.textContent='Criar conta'}}
 }
 function telaVerificarEmail(){return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div><p class="muted">Enviamos um link para <b>${esc(S.emailPendente||fauth?.currentUser?.email||'seu e-mail')}</b>. Abra o link e volte aqui para liberar o acesso.</p><button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button><button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button><button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button></div>`}
 async function confirmarEmailAgora(){try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
@@ -1783,7 +1798,7 @@ function renderInterno(){
   }
   /* a tela de espera é só para quem está PENDENTE numa equipe. Sem equipe, o
      atleta vai para a tela de entrar numa equipe (saiu ou foi removido). */
-  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&(S.u.perfil==='atleta'||S.u.perfil==='tecnico')){
+  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&['atleta','pro','tecnico'].includes(S.u.perfil)){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
@@ -3098,7 +3113,14 @@ function telaAguardando(){
     <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
   </div>
   <button class="ghost full" style="margin-top:18px" onclick="sincronizar(false)">Já fui liberado? Atualizar</button>
+  ${S.u.perfil==='atleta'?'<button class="ghost full" style="margin-top:8px" onclick="cancelarPedidoEquipe()">Escolhi a equipe errada</button>':''}
   <button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="sair()">Sair</button>`;
+}
+async function cancelarPedidoEquipe(){
+  if(!S.u||S.u.perfil!=='atleta'||S.u.aprovado!==false||!S.u.equipe)return;
+  const atualizado={...S.u,equipe:null,equipeNome:null,aprovado:false};
+  if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui cancelar o pedido. Tente novamente.');
+  S.u=atualizado; S.eq=null; desligarSincronia(); await carregarDados(); toast('Pedido cancelado. Escolha outra equipe quando quiser.'); render();
 }
 function telaElenco(){
   /* técnico no "modo espelho": vê o relatório ou as marcas do atleta */
@@ -3114,6 +3136,7 @@ function telaElenco(){
     <div class="field"><label>E-mail do atleta</label><input id="incEmail" inputmode="email" autocapitalize="off" autocorrect="off" placeholder="atleta@email.com"></div>
     <button class="primary full" onclick="incluirNaEquipe()">Incluir na equipe</button>
   </div>
+  ${S.erroPendentes?'<div class="note warn"><b>Não consegui carregar os pedidos pendentes.</b> Atualize a tela; se continuar, confira se as regras do Firestore publicadas são as mais recentes.</div>':''}
   ${pend.length?`<div class="blk"><h3>Aguardando aprovação</h3><div class="ln"></div><span class="xs muted">${pend.length}</span></div>
     <div class="card tight">${pend.map(a=>`<div class="lst">
       <span class="av">⏳</span>
@@ -3136,7 +3159,9 @@ function telaElenco(){
 }
 async function aprovarAtleta(id){
   const a=S.elenco.find(x=>x.id===id); if(!a)return;
-  a.aprovado=true; await DB.set(kUser(a.email),a);
+  const atualizado={...a,aprovado:true};
+  if(!await DB.set(kUser(a.email),atualizado))return toast('Não consegui aprovar agora. Tente novamente.');
+  Object.assign(a,atualizado);
   await transacao(kEqUsers(a.equipe),us=>{us=us||[];if(!us.includes(a.email))us.push(a.email);return us});
   await carregarDados(); toast(prim(a.nome)+' liberado'); render();
 }
@@ -3144,7 +3169,11 @@ async function aprovarAtleta(id){
 /* ---------- painel do desenvolvedor: técnicos ---------- */
 async function abrirDevTecnicos(){
   if(!ehDev())return;
-  const lst=await DB.get('dev_tecnicos')||[];
+  let lst;
+  if(FB){
+    if(S.adminUsuarios==null)await carregarAdminUsuarios();
+    lst=(S.adminUsuarios||[]).filter(u=>u.perfil==='tecnico').map(u=>({email:u.email}));
+  }else lst=await DB.get('dev_tecnicos')||[];
   const linhas=[];
   for(const t of lst){
     const u=await DB.get(kUser(t.email)); if(!u)continue;
@@ -3152,14 +3181,16 @@ async function abrirDevTecnicos(){
     linhas.push(`<div class="lst">
       <span class="av">${pend?'⏳':'✓'}</span>
       <span class="grow"><b>${esc(u.nome)}</b><span class="xs muted" style="display:block">${esc(u.equipeNome||'')} · ${esc(u.email)}</span></span>
-      ${pend
+      ${u.ativo===false
+        ? `<button class="sm primary" onclick="aprovarTecnico('${u.email}')">Reativar</button>`
+        : pend
         ? `<button class="sm primary" onclick="aprovarTecnico('${u.email}')">Aprovar</button>
-           <button class="sm ghost" style="color:var(--clock)" onclick="recusarTecnico('${u.email}')">✕</button>`
-        : `<button class="sm ghost" style="color:var(--clock)" onclick="recusarTecnico('${u.email}')">Remover</button>`}
+           <button class="sm ghost" style="color:var(--clock)" onclick="recusarTecnico('${u.email}')">Recusar</button>`
+        : `<button class="sm ghost" style="color:var(--clock)" onclick="recusarTecnico('${u.email}')">Desativar</button>`}
     </div>`);
   }
   sheet(`<h2>Técnicos</h2>
-    <p class="small muted" style="margin:6px 0 10px">Cadastros de técnico entram aqui e só passam a gerir a equipe depois que você aprovar.</p>
+    <p class="small muted" style="margin:6px 0 10px">Cadastros de técnico entram aqui e só passam a gerir a equipe depois que você aprovar. Recusar ou desativar preserva o cadastro para uma correção futura.</p>
     ${linhas.length?linhas.join(''):'<div class="small muted">Nenhum técnico cadastrado ainda.</div>'}
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
@@ -3917,7 +3948,13 @@ async function apagarEquipeDevTela(sg){
 async function aprovarTecnico(email){
   if(!ehDev())return;
   const u=await DB.get(kUser(email)); if(!u)return;
-  u.aprovado=true; await DB.set(kUser(email),u);
+  const atualizado={...u,aprovado:true,ativo:true};
+  if(!await DB.set(kUser(email),atualizado))return toast('Não consegui aprovar o técnico. Tente novamente.');
+  Object.assign(u,atualizado);
+  if(u.equipe){
+    const eq=await DB.get(kEq(u.equipe));
+    if(eq&&!eq.tecnicoEmail){eq.tecnicoEmail=email;await DB.set(kEq(u.equipe),eq)}
+  }
   if(u.equipe)await transacao(kEqUsers(u.equipe),us=>{us=us||[];if(!us.includes(email))us.push(email);return us});
   toast(prim(u.nome)+' liberado como técnico'); abrirDevTecnicos();
 }
@@ -3930,10 +3967,11 @@ async function recusarTecnico(email){
     const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==email);
     await DB.set(kEqUsers(u.equipe),us);
   }
-  await apagarChave(kUser(email));
-  const lst=(await DB.get('dev_tecnicos')||[]).filter(x=>x.email!==email);
-  await DB.set('dev_tecnicos',lst);
-  toast('Técnico removido'); abrirDevTecnicos();
+  if(!u)return toast('Técnico não encontrado');
+  u.aprovado=false; u.ativo=false;
+  if(!await DB.set(kUser(email),u))return toast('Não consegui desativar o técnico');
+  if(S.adminUsuarios){const i=S.adminUsuarios.findIndex(x=>x.email===email);if(i>=0)S.adminUsuarios[i]=u}
+  toast('Técnico desativado'); abrirDevTecnicos();
 }
 function abrirLiberacao(){
   sheet(`<h2>Liberar atleta</h2>
@@ -4091,10 +4129,16 @@ async function sairDaEquipe(){
   if(!S.u||S.u.perfil==='tecnico'||!S.u.equipe)return;
   if(!confirm(`Sair da equipe ${S.u.equipeNome||''}?\n\nVocê deixa de ver os treinos e competições da equipe. Seu cadastro, marcas e histórico continuam salvos. Para voltar, escolha uma equipe aqui ou peça ao técnico para te incluir.`))return;
   const sg=S.u.equipe;
-  const us=(await DB.get(kEqUsers(sg))||[]).filter(e=>e!==S.u.email); await DB.set(kEqUsers(sg),us);
+  const usAntes=await DB.get(kEqUsers(sg))||[], us=usAntes.filter(e=>e!==S.u.email);
+  if(!await DB.set(kEqUsers(sg),us))return toast('Não consegui atualizar a equipe. Tente novamente.');
   /* sair da equipe REBAIXA a aprovação (a regra só deixa o próprio usuário
      baixar, nunca subir). Sem equipe, a tela de entrar numa equipe aparece. */
-  S.u.equipe=null; S.u.equipeNome=null; S.u.aprovado=false; await DB.set(kUser(S.u.email),S.u);
+  const atualizado={...S.u,equipe:null,equipeNome:null,aprovado:false};
+  if(!await DB.set(kUser(S.u.email),atualizado)){
+    await DB.set(kEqUsers(sg),usAntes);
+    return toast('Não consegui tirar sua conta da equipe. Tente novamente.');
+  }
+  S.u=atualizado; desligarSincronia();
   S.eq=null; fecharSheet(); await carregarDados(); toast('Você saiu da equipe'); render();
 }
 function telaSemEquipe(){
@@ -4119,8 +4163,9 @@ async function entrarEmEquipe(){
   const nome=(val('seEquipe')||'').trim(); if(!nome)return toast('Escolha uma equipe');
   const sg=slug(nome), eq=await DB.get(kEq(sg));
   if(!eq)return toast('Equipe não encontrada — confira o nome exato.');
-  S.u.equipe=sg; S.u.equipeNome=eq.nome; S.u.aprovado=false; await DB.set(kUser(S.u.email),S.u);
-  S.eq=eq; await transacao(kEqUsers(sg),us=>{us=us||[]; if(!us.includes(S.u.email))us.push(S.u.email); return us;});
+  const atualizado={...S.u,equipe:sg,equipeNome:eq.nome,aprovado:false};
+  if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui enviar seu pedido. Confira a conexão e tente novamente.');
+  S.u=atualizado; S.eq=eq; if(!FB)await transacao(kEqUsers(sg),us=>{us=us||[]; if(!us.includes(S.u.email))us.push(S.u.email); return us;});
   await carregarDados(); toast('Pedido enviado ao técnico da '+eq.nome); render();
 }
 async function mudarNivel(id,n){
@@ -4212,9 +4257,11 @@ async function confirmarApagarMinhaConta(){
       const eq=await DB.get(kEq(u.equipe));
       if(eq&&eq.tecnicoEmail===u.email){ eq.tecnicoEmail=null; await DB.set(kEq(u.equipe),eq); }
     }
-    const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==u.email);
-    await DB.set(kEqUsers(u.equipe),us);
-    if(u.perfil!=='tecnico'&&u.cpf){                                 /* libera o CPF de volta */
+    if(u.equipe){
+      const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==u.email);
+      await DB.set(kEqUsers(u.equipe),us);
+    }
+    if(u.equipe&&u.perfil!=='tecnico'&&u.cpf){                        /* libera o CPF de volta */
       const libs=await DB.get(kLib(u.equipe))||[];
       const l=libs.find(x=>x.cpf===u.cpf); if(l){ l.usado=false; delete l.email; await DB.set(kLib(u.equipe),libs); }
     }
@@ -4223,7 +4270,7 @@ async function confirmarApagarMinhaConta(){
   }catch(e){ console.warn('apagar dados',e.message); }
   if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
   try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
-  S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
+  desligarSincronia(); S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
   fecharSheet(); toast('Conta apagada'); render();
 }
 

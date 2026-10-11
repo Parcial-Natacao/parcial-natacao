@@ -39,6 +39,13 @@ indexada por ele: `u_<email>`).
 | 15 | Administração global | `get` e `update` · `/kv/pro_<uid-DE-OUTRO>` | `barbato.bruno@gmail.com` | ✅ Allow |
 | 16 | Pendente não altera elenco | `update` · `/kv/eq_<slug>_users` | atleta pendente | ❌ **Deny** |
 | 17 | Usuário não troca de equipe aprovado | `update` · `/kv/u_<seu-email>` mantendo `aprovado:true` | o próprio | ❌ **Deny** |
+| 18 | Cadastro sem equipe | `create` · `/kv/u_<email-novo>` com `equipe:null` e `aprovado:false` | o próprio | ✅ Allow |
+| 19 | Gestor enxerga pendentes | consulta `where equipe == <slug>` em `/kv` | técnico da equipe | ✅ Allow |
+| 20 | Atleta não varre cadastros | consulta `where equipe == <slug>` em `/kv` | atleta comum | ❌ **Deny** |
+| 21 | Criação de equipe restrita | `create` · `/kv/eq_<slug>` | usuário comum | ❌ **Deny** |
+| 22 | Dono legado não se autoaprova | `update aprovado:true` · `/kv/u_<email>` | técnico pendente | ❌ **Deny** |
+| 23 | Cancelar pedido de equipe | `update equipe:null, aprovado:false` · `/kv/u_<email>` | atleta pendente | ✅ Allow |
+| 24 | Aprovação pelo técnico | `update aprovado:true` · `/kv/u_<atleta>` | técnico da equipe | ✅ Allow |
 
 **Os mais importantes são o 1, o 6 e o 7.** O 1 é a privacidade dos dados de
 saúde; o 6 e o 7 são a escalada de privilégio que motivou toda a correção.

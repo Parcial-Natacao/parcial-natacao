@@ -28,8 +28,8 @@ rules_version = '2';
 //
 // APROVAÇÃO
 //   Ninguém nasce aprovado. Entrar numa equipe deixa o cadastro PENDENTE; o
-//   técnico libera o atleta e o dev libera o técnico. Única exceção: quem CRIA
-//   a equipe é dono dela (donoEmail) e se auto-aprova nela.
+//   técnico libera o atleta e o administrador libera o técnico. Equipes novas
+//   são criadas exclusivamente pelo administrador.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -60,7 +60,8 @@ service cloud.firestore {
           && ( meuDoc().perfil == 'tecnico' || meuDoc().perfil == 'pro' );
       }
       function tecnicoDe(eq) { return gestorDe(eq); }
-      // Dono da equipe: quem a criou. Só para a auto-aprovação inicial.
+      // Dono legado da equipe. Mantido para administrar equipes já existentes,
+      // mas não concede criação de equipe nem auto-aprovação de cadastro.
       function souDonoDaEquipe(eq) {
         return eq != null
           && exists(/databases/$(database)/documents/kv/$('eq_' + eq))
@@ -89,8 +90,8 @@ service cloud.firestore {
       // (desempenho e carga, sem Saúde). A chave termina no uid dele.
       function meuPerf() { return minhaEq() != null
         && chave == 'eq_' + minhaEq() + '_perf_' + meuUid(); }
-      // A lista de membros: no cadastro o usuário se acrescenta (ainda pendente)
-      // e ao sair da equipe se remove. Por isso não exige aprovação.
+      // A lista de membros contém só aprovados. O próprio atleta aprovado pode
+      // se remover ao sair; um pendente nunca escreve a lista compartilhada.
       function usersDaMinhaEq() { return minhaEq() != null
         && chave == 'eq_' + minhaEq() + '_users'; }
 
@@ -105,6 +106,9 @@ service cloud.firestore {
         ( ehPro() && logado() && resource.data.dono == meuUid() )
         // cadastro: o próprio, o técnico aprovado da equipe dele, ou o dev
         || ( ehU() && ( ehMeuU() || ehDev() || tecnicoDe(resource.data.equipe) ) )
+        // consultas de gestores filtradas por equipe + perfil (atleta/PRO)
+        || ( logado() && resource.data.perfil in ['atleta', 'pro']
+             && tecnicoDe(resource.data.equipe) )
         // documento da equipe: qualquer logado (necessário no cadastro)
         || ( ehEqRaiz() && logado() )
         // lista de membros e meu próprio snapshot: mesmo pendente
@@ -123,12 +127,9 @@ service cloud.firestore {
              && request.resource.data.aprovado == false )
         // minha lista de membros / meu snapshot
         || ( ehEq() && aprovado() && ( meuPerf() || usersDaMinhaEq() ) )
-        // equipe nova: quem cria vira dono dela; dentro de equipe existente,
-        // só o técnico dela (ou o dono).
-        || ( ehEq() && logado()
-             && ( request.resource.data.donoEmail == meuEmail()
-                  || tecnicoDe(request.resource.data.equipe)
-                  || souDonoDaEquipe(request.resource.data.equipe) ) )
+        // documentos internos de equipe: gestor aprovado. A raiz eq_<slug>
+        // só pode ser criada pelo administrador (já coberto no primeiro ramo).
+        || ( ehEq() && !ehEqRaiz() && tecnicoDe(request.resource.data.equipe) )
         || ( ehOutro() && ehAdmin() );
 
       // ─────────────────────── ATUALIZAÇÃO ──────────────────────
@@ -137,12 +138,11 @@ service cloud.firestore {
         ( ehPro() && logado() && resource.data.dono == meuUid()
                               && request.resource.data.dono == meuUid() )
         // o próprio cadastro: edita os dados, mas NÃO sobe o próprio privilégio.
-        // `aprovado` só fica igual, cai para false, ou sobe se eu for dono da equipe.
+        // `aprovado` só fica igual ou cai para false.
         || ( ehU() && ehMeuU() && naoMexeEm('dono') && naoMexeEm('perfil')
              && ( naoMexeEm('equipe') || request.resource.data.aprovado == false )
              && ( naoMexeEm('aprovado')
-                  || request.resource.data.aprovado == false
-                  || souDonoDaEquipe(request.resource.data.equipe) ) )
+                  || request.resource.data.aprovado == false ) )
         // o dev libera técnicos (sem mexer em dono nem perfil)
         || ( ehU() && ehDev() && naoMexeEm('dono') && naoMexeEm('perfil') )
         // o técnico aprova / inclui / exclui atletas da SUA equipe
