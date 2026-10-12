@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v137';
+const VER='v138';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -9808,16 +9808,20 @@ function telaRelatorio(){
   ${(()=>{const S1=montarSecoes([
     ['Síntese e prioridade','O que os dados apontam como mais importante nesta semana, e com quanta base.',
       sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))+sc('indicadores do topo',()=>cardKPIs(pro,motor,sem)),'prova'],
-    ['Prontidão competitiva','Não é como você está hoje: é o quanto você está preparado para nadar esta prova.',
-      sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct)),'prova']
+    ['Prontidão competitiva','Não é como você está hoje: é o quanto você está preparado para nadar esta prova — e em que dimensão você está forte ou curto.',
+      sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct))
+      +sc('assinatura de sprint',()=>cardFingerprint(motor)),'prova']
   ]); _N_FEITAS=S1.n; return S1.html;})()}
   ${sc('resumo executivo',()=>paginaResumo(pro,motor,comPct))}
   <div class="doc-nivel"><span>Nível 2</span> Indicadores e tendências — o que cada número diz e para onde ele vem andando</div>
   ${(()=>{const S_=montarSecoes([
     ['Marcas e projeção','O seu melhor tempo contra o tempo provável de hoje, por prova e piscina.',
       sc('provas-alvo',()=>cabecalhoRelatorio(pro,motor)),'prova'],
+    /* a assinatura de sprint subiu para junto da prontidão competitiva: as
+       duas respondem a mesma pergunta — o placar diz QUANTO, o radar diz EM
+       QUE. Separadas, o leitor via o número sem a decomposição. */
     ['Capacidade atual','Onde está a sua velocidade, quanto dela se sustenta e para onde ela vem andando.',
-      sc('resumo',()=>cardResumoExec(pro,motor,comPct))+sc('assinatura de sprint',()=>cardFingerprint(motor)),'perf'],
+      sc('resumo',()=>cardResumoExec(pro,motor,comPct)),'perf'],
     ['Associações observadas','Cruzamentos do seu próprio histórico. Associação, nunca causa.',
       sc('correlações',()=>cardCorrelacoes(pro,comPct)),'perf'],
     ['Indicadores para decisão','Leitura dos dados para o técnico decidir. O app não prescreve treino.',
