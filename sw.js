@@ -23,8 +23,8 @@
    O nome do cache deriva dela; sem incrementar, o cache antigo continua sendo
    servido e o arquivo novo nunca chega. Aconteceu na v86: o ícone foi trocado,
    a VERSAO não, e o app seguiu mostrando o ícone velho. */
-const VERSAO = 'v142';
-const CACHE  = 'parcial-' + VERSAO;
+const VERSAO = 'v143';
+const CACHE  = 'meros360-' + VERSAO;
 /* Os ícones têm NOME versionado (app-icone-*) em vez de `?v=`: para o ícone da
    tela de início o iOS às vezes ignora a query e guarda por caminho, e o ícone
    antigo continuava aparecendo mesmo com tudo certo no servidor. Trocar o nome

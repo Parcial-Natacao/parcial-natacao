@@ -1,4 +1,4 @@
-# PARCIAL — especificação funcional e técnica
+# Meros360 — especificação funcional e técnica
 
 Documento de continuidade. Descreve o que existe, por que existe e o que falta.
 Escrito para que outra sessão de trabalho retome o projeto sem contexto prévio.
@@ -80,7 +80,7 @@ Reconhece por linha:
 - **Pausa**: `pausa 45"`, `descanso 30`.
 - **Intensidade**: máximo, all out, tiro, forte, sprint, ritmo de prova, RP,
   percentuais.
-- **Parcial**: marcado quando o texto fala em parcial, broken, quebrado, split,
+- **Meros360**: marcado quando o texto fala em parcial, broken, quebrado, split,
   ou automaticamente quando é série forte de 50 a 100 metros.
 
 Funções: `interpretar(txt)` → blocos; `linhaParaItem(l)` → item.
