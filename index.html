@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v134';
+const VER='v135';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3720,6 +3720,62 @@ teste('prontidão','sem forma específica não há score',a=>{
   const r=prontidaoCompetitiva(pro,[],null,50,'peito','SC25');
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
+
+/* ── PROVA EM FOCO E ORDEM DO DOCUMENTO (v135) ───────────────────────────── */
+function _cenarioBuenosAires(){
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.21'),'50 peito LC50':parseTempo('31.00'),
+    '100 peito SC25':parseTempo('1:07.28'),'100 peito LC50':parseTempo('1:13.12'),
+    '200 livre LC50':parseTempo('2:12.75')},alvos:['50 peito','100 peito']});
+  S.cidx=[{id:'c1',nome:'PanAm',data:_daqui(9),piscina:'LC50'}];
+  _compFut={c1:{id:'c1',nome:'PanAm',data:_daqui(9),piscina:'LC50',provas:[
+    {dist:200,estilo:'livre',inscritos:[{atletaId:'A1'}]},
+    {dist:50,estilo:'peito',inscritos:[{atletaId:'A1'}]},
+    {dist:100,estilo:'peito',inscritos:[{atletaId:'A1'}]}]}};
+  S.provaPC=null; return pro;
+}
+teste('foco','prova-alvo vence a primeira prova da agenda',a=>{
+  const pro=_cenarioBuenosAires();
+  const f=provaEmFoco(pro);
+  a.eq(`${f.d} ${f.e}`,'50 peito','o 200 livre é a 1ª do dia, mas não é prova-alvo');
+  a.ok(f.alvo,'o foco é uma prova-alvo');});
+teste('foco','a piscina da competição decide entre curta e longa',a=>{
+  const pro=_cenarioBuenosAires();
+  a.eq(provaEmFoco(pro).pis,'LC50','competição é em piscina longa');
+  _compFut.c1.piscina='SC25'; S.cidx[0].piscina='SC25'; _compFut={..._compFut};
+  a.eq(provaEmFoco(pro).pis,'SC25','muda junto com a piscina da competição');});
+teste('foco','prova fora das alvo continua disponível, só não abre em foco',a=>{
+  const pro=_cenarioBuenosAires();
+  const ops=opcoesProva(pro);
+  a.ok(ops.some(o=>o.d===200&&o.e==='livre'),'o 200 livre segue na lista');
+  a.eq(ops[ops.length-1].d,200,'mas por último');
+  a.ok(!ops[ops.length-1].alvo,'e marcado como fora das provas-alvo');});
+teste('foco','sem competição marcada, manda a prova-alvo',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.21'),'100 peito SC25':parseTempo('1:07.28')},
+    alvos:['100 peito','50 peito']});
+  S.cidx=[]; _compFut={}; S.provaPC=null;
+  const f=provaEmFoco(pro);
+  a.ok(f&&f.alvo,'o foco é uma prova-alvo');});
+teste('relatório','abre com síntese e prontidão, antes das cinco respostas',a=>{
+  const{pro,cp,motor}=_cenarioRel();
+  ESF=cp.map(e=>({...e,tags:[]})); ESF_ERRO=null; S.pro=pro; S.acc={};
+  const d=document.createElement('div'); d.innerHTML=telaRelatorio();
+  const t=d.innerText;
+  const iS=t.indexOf('Síntese e prioridade'), iP=t.indexOf('Prontidão competitiva'), iR=t.indexOf('As cinco respostas');
+  a.ok(iS>=0&&iP>=0&&iR>=0,'as três partes existem');
+  a.ok(iS<iR,'síntese antes das cinco respostas');
+  a.ok(iP<iR,'prontidão competitiva antes das cinco respostas');
+  const sec=[...d.querySelectorAll('.doc-h')].map(h=>h.innerText.trim());
+  a.eq(sec[0].indexOf('1'),0,'a primeira seção é a 1');
+  a.ok(/Síntese/.test(sec[0]),'e é a síntese');});
+teste('relatório','numeração das seções é contínua entre os dois blocos',a=>{
+  const{pro,cp,motor}=_cenarioRel();
+  ESF=cp.map(e=>({...e,tags:[]})); ESF_ERRO=null; S.pro=pro; S.acc={};
+  const d=document.createElement('div'); d.innerHTML=telaRelatorio();
+  const ns=[...d.querySelectorAll('.doc-sec > .doc-h > .doc-n')]
+    .map(n=>n.innerText.trim()).filter(x=>!/\//.test(x)).map(Number);
+  a.eq(ns,ns.slice().sort((x,y)=>x-y),'em ordem');
+  a.eq(ns[0],1,'começa em 1');
+  for(let i=1;i<ns.length;i++)a.eq(ns[i],ns[i-1]+1,'sem pular em '+ns[i]);});
 
 /* ── P4 — LACUNAS QUE A AUDITORIA PEDIU COMPROVAR (v134) ─────────────────── */
 teste('composição','dado suspeito não entra na PROJEÇÃO',a=>{
@@ -8390,7 +8446,6 @@ function opcoesProva(pro){
       if(vis.has(chaveProva(o)))continue; vis.add(chaveProva(o)); out.push(o);
     }
   }
-  out.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
   for(const a of ((typeof provasAlvo==='function')?provasAlvo(pro):[])){
     for(const pis of ['SC25','LC50']){
       if(!((pro&&pro.pbs)||{})[`${a.d} ${a.e} ${pis}`])continue;
@@ -8398,7 +8453,25 @@ function opcoesProva(pro){
       if(vis.has(chaveProva(o)))continue; vis.add(chaveProva(o)); out.push(o);
     }
   }
-  return out;
+  /* ── PRIORIDADE DA PROVA EM FOCO ─────────────────────────────────────────
+     Antes: data da prova mandava, e só. Quem se inscreve no 200 livre de
+     manhã abria o relatório com o 200 livre em foco, mesmo tendo 50 e 100
+     peito como provas-alvo em Marcas — a prova que ele nada primeiro não é
+     a prova que ele treina para. A ordem agora é:
+       1º  é prova-alvo (escolhida por você em Marcas)
+       2º  é da piscina da próxima competição (50 m longa ≠ 50 m curta)
+       3º  acontece antes
+     Nada sai da lista: o que muda é quem abre em foco. */
+  const alvos=((typeof provasAlvo==='function')?provasAlvo(pro):[]);
+  const ehAlvo=o=>alvos.some(a=>a.d===o.d&&a.e===o.e);
+  const prox=(typeof proximaCompeticao==='function')?proximaCompeticao():null;
+  const pisProx=prox?(prox.piscina||prox.pis||null):null;
+  out.sort((a,b)=>
+      (ehAlvo(b)?1:0)-(ehAlvo(a)?1:0)
+    ||(pisProx?((a.pis===pisProx?0:1)-(b.pis===pisProx?0:1)):0)
+    ||((a.data||'9999-12-31').localeCompare(b.data||'9999-12-31'))
+    ||(a.d-b.d));
+  return out.map(o=>({...o,alvo:ehAlvo(o),pisDaProxima:!!(pisProx&&o.pis===pisProx)}));
 }
 /* prova em foco: a escolha do atleta, se ainda existir nas opções */
 function provaEmFoco(pro){
@@ -8436,8 +8509,7 @@ function cardProntidaoComp(pro,motor,comPct){
   const seletor=ops.length>1?`<div class="field" style="margin:10px 0 0"><label>Prova em foco</label>
     <div class="opt">${ops.slice(0,6).map(o=>`<button class="${chaveProva(o)===chaveProva(ref)?'on':''}" onclick="escolherProvaPC('${chaveProva(o)}')">
       ${o.d}m ${esc(o.e)} <span class="xs">${o.pis}</span></button>`).join('')}</div>
-    ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b> — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`
-      :`<div class="xs muted" style="margin-top:4px">Suas provas-alvo de <b>Marcas</b>. Quando houver competição futura com você inscrito, as provas dela aparecem aqui primeiro.</div>`}</div>`:'';
+    <div class="xs muted" style="margin-top:4px">Ordem: <b>suas provas-alvo</b> de Marcas primeiro, depois as da <b>piscina da próxima competição</b>, depois as mais próximas na agenda.${prox.length?` Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b>${o.alvo?'':' <span style="opacity:.7">(fora das suas provas-alvo)</span>'} — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}.`:''} Para mudar a prioridade, edite as provas-alvo em <b>Marcas</b>.</div></div>`:'';
   return`<div class="card sup-brilho" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
     <div class="small muted" style="margin-top:3px">Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".</div>
     ${seletor}
@@ -9316,8 +9388,10 @@ function paginaResumo(pro,motor,comPct){
   for(const x of fr)if(x.uso==='só histórico')lim.push(`<b>${x.rot} desatualizado</b> (${x.dias} dias) — entra como histórico, não como estado de hoje.`);
   if(motor.composicao&&motor.composicao.status&&motor.composicao.status!=='medida')
     lim.push(`<b>Composição corporal ${motor.composicao.status}</b> — fora dos escores.`);
+  /* "1/5" e não "1": as seções do documento já são numeradas, e dois contadores
+     com o mesmo desenho na mesma página se leem como numeração quebrada. */
   const bloco=(n,titulo,corpo)=>`<section class="doc-sec" style="margin-top:14px">
-    <h2 class="doc-h"><span class="doc-n">${n}</span>${titulo}</h2>${corpo}</section>`;
+    <h2 class="doc-h"><span class="doc-n" style="font-size:.72em;letter-spacing:.02em">${n}/5</span>${titulo}</h2>${corpo}</section>`;
   return`<div class="pagina-um" data-dom="prova">
     <div class="eyebrow">resumo executivo</div>
     <h2 style="margin:2px 0 2px">As cinco respostas</h2>
@@ -9564,8 +9638,9 @@ function cabecalhoDocumento(pro,motor){
    número fixo o documento saía "1, 2, 3, 4, 6", que num relatório parece
    página faltando. O contador só anda quando a seção de fato existe. */
 let _N_APOIO=7;   /* numero da secao de apoio, definido depois de saber quantas secoes existem */
-function montarSecoes(lista){
-  let n=0, html='';
+let _N_FEITAS=0;   /* seções já numeradas antes deste bloco (o documento tem dois) */
+function montarSecoes(lista,inicio){
+  let n=inicio||0, html='';
   for(const [titulo,sub,corpo,dom] of lista){
     if(!corpo||!String(corpo).trim())continue;
     n++;
@@ -9616,13 +9691,19 @@ function telaRelatorio(){
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
   ${sc('cabeçalho',()=>cabecalhoDocumento(pro,motor))}
   ${sc('coerência',()=>avisoCoerencia(pro,motor))}
-  ${sc('resumo executivo',()=>paginaResumo(pro,motor,comPct))}
-  <div class="doc-nivel"><span>Nível 2</span> Indicadores e tendências — o que cada número diz e para onde ele vem andando</div>
-  ${(()=>{const S_=montarSecoes([
+  ${/* O documento abre com o que se DECIDE (prioridade da semana e prontidão
+       para a prova), não com a rastreabilidade. As cinco respostas vêm logo
+       abaixo, na mesma folha: elas destrincham estes mesmos números. */''}
+  <div class="doc-nivel"><span>Nível 1</span> Síntese executiva — o que decidir esta semana</div>
+  ${(()=>{const S1=montarSecoes([
     ['Síntese e prioridade','O que os dados apontam como mais importante nesta semana, e com quanta base.',
       sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))+sc('indicadores do topo',()=>cardKPIs(pro,motor,sem)),'prova'],
     ['Prontidão competitiva','Não é como você está hoje: é o quanto você está preparado para nadar esta prova.',
-      sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct)),'prova'],
+      sc('prontidão competitiva',()=>cardProntidaoComp(pro,motor,comPct)),'prova']
+  ]); _N_FEITAS=S1.n; return S1.html;})()}
+  ${sc('resumo executivo',()=>paginaResumo(pro,motor,comPct))}
+  <div class="doc-nivel"><span>Nível 2</span> Indicadores e tendências — o que cada número diz e para onde ele vem andando</div>
+  ${(()=>{const S_=montarSecoes([
     ['Marcas e projeção','O seu melhor tempo contra o tempo provável de hoje, por prova e piscina.',
       sc('provas-alvo',()=>cabecalhoRelatorio(pro,motor)),'prova'],
     ['Capacidade atual','Onde está a sua velocidade, quanto dela se sustenta e para onde ela vem andando.',
@@ -9631,7 +9712,7 @@ function telaRelatorio(){
       sc('correlações',()=>cardCorrelacoes(pro,comPct)),'perf'],
     ['Indicadores para decisão','Leitura dos dados para o técnico decidir. O app não prescreve treino.',
       sc('indicadores para decisão',()=>cardPlanoAcao(pro,motor,diag,comPct)),'carga']
-  ]); _N_APOIO=S_.n+1; return S_.html;})()}
+  ],_N_FEITAS); _N_APOIO=S_.n+1; return S_.html;})()}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
   <div class="doc-nivel"><span>Nível 3</span> Evidências, fontes, fórmulas e limitações — o material de auditoria</div>
   <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>${_N_APOIO} — Dados de apoio e detalhamento</summary><div>
