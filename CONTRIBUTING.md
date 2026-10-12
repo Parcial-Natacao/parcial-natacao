@@ -80,7 +80,7 @@ O app tem uma constante `VER` no `index.html` (ex.: `'v67'`). **Ao fazer uma mud
 
 - **Nunca** commite segredos: chaves de API, `.env`, service accounts do Firebase, tokens ou dados pessoais. O [`.gitignore`](.gitignore) já bloqueia os padrões comuns, mas confira o `git status` antes de commitar.
 - **Nunca** commite códigos de recuperação, senhas ou dados de atletas reais.
-- Os dados dos atletas no Firestore são privados. As **regras de segurança** ficam em [`firebase/firestore.rules`](firebase/firestore.rules).
+- Os dados dos atletas no Firestore são privados. As **regras de segurança em produção** ficam em [`firebase/firestore.rules.v2`](firebase/firestore.rules.v2); `firestore.rules` é apenas o rollback legado.
   - Só o dono escreve seus próprios documentos `pro_<uid>`.
   - O técnico vê performance/fadiga/composição/prontidão (score), mas **não** vê Saúde bruta (Garmin VFC/sono, exames, respostas cruas do check-in).
   - A conta de desenvolvedor tem leitura total; escrita em `pro_` continua exclusiva do dono.
@@ -107,7 +107,7 @@ Siga o estilo já existente no `index.html`:
 - [ ] Não deixei `console.log` de depuração nem código morto.
 - [ ] Não há segredos nem dados pessoais no diff (`git status` / revisão do diff).
 - [ ] Incrementei `VER` se a mudança é visível ao usuário.
-- [ ] Se mexi em `firestore.rules`, publiquei no console do Firebase.
+- [ ] Se mexi em `firestore.rules.v2`, publiquei no console do Firebase.
 - [ ] Atualizei `ARQUITETURA.md` se mudei a arquitetura ou adicionei um recurso relevante.
 
 ---

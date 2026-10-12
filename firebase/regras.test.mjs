@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 const PROJECT_ID = 'parcial-regras-test';
 const ADMIN_EMAIL = 'barbato.bruno@gmail.com';
@@ -23,11 +23,13 @@ const perfil = ({ uid, email, equipe, tipo = 'atleta', aprovado = true }) => ({
 const dadosBase = {
   'u_atleta@x.com': perfil({ uid: 'UID_ATLETA', email: 'atleta@x.com', equipe: 'a3' }),
   'u_pendente@x.com': perfil({ uid: 'UID_PENDENTE', email: 'pendente@x.com', equipe: 'a3', aprovado: false }),
+  'u_dono-pendente@x.com': perfil({ uid: 'UID_DONO_PENDENTE', email: 'dono-pendente@x.com', equipe: 'falsa', tipo: 'tecnico', aprovado: false }),
   'u_tecnico@x.com': perfil({ uid: 'UID_TECNICO', email: 'tecnico@x.com', equipe: 'a3', tipo: 'tecnico' }),
   'u_outro@x.com': perfil({ uid: 'UID_OUTRO', email: 'outro@x.com', equipe: 'b' }),
   'u_barbato.bruno@gmail.com': perfil({ uid: 'UID_ADMIN', email: ADMIN_EMAIL, equipe: 'admin', tipo: 'pro' }),
   'eq_a3': { v: '{}', donoEmail: 'tecnico@x.com', equipe: 'a3' },
   'eq_b': { v: '{}', donoEmail: 'outro@x.com', equipe: 'b' },
+  'eq_falsa': { v: '{}', donoEmail: 'dono-pendente@x.com', equipe: 'falsa' },
   'eq_a3_users': { v: '[]', donoEmail: 'tecnico@x.com', equipe: 'a3' },
   'eq_a3_tridx': { v: '[]', donoEmail: 'tecnico@x.com', equipe: 'a3' },
   'eq_b_tridx': { v: '[]', donoEmail: 'outro@x.com', equipe: 'b' },
@@ -138,5 +140,47 @@ describe('regras do PARCIAL', () => {
   test('17. usuário aprovado não troca sozinho de equipe mantendo aprovação', async () => {
     const db = banco('UID_ATLETA', 'atleta@x.com');
     await assertFails(updateDoc(kv(db, 'u_atleta@x.com'), { equipe: 'b', aprovado: true }));
+  });
+
+  test('18. atleta pode criar cadastro pendente sem equipe', async () => {
+    const db = banco('UID_SEM_EQUIPE', 'semequipe@x.com');
+    await assertSucceeds(setDoc(kv(db, 'u_semequipe@x.com'), perfil({
+      uid: 'UID_SEM_EQUIPE', email: 'semequipe@x.com', equipe: null, aprovado: false,
+    })));
+  });
+
+  test('19. técnico consulta inclusive cadastros pendentes da própria equipe', async () => {
+    const db = banco('UID_TECNICO', 'tecnico@x.com');
+    const porEquipe=query(collection(db, 'kv'),where('equipe','==','a3'),where('perfil','==','atleta'));
+    await assertSucceeds(getDocs(porEquipe));
+  });
+
+  test('20. atleta comum não consulta todos os cadastros da equipe', async () => {
+    const db = banco('UID_ATLETA', 'atleta@x.com');
+    const porEquipe=query(collection(db, 'kv'),where('equipe','==','a3'),where('perfil','==','atleta'));
+    await assertFails(getDocs(porEquipe));
+  });
+
+  test('21. usuário comum não cria uma equipe nova', async () => {
+    const db = banco('UID_GOLPE', 'golpe@x.com');
+    await assertFails(setDoc(kv(db, 'eq_golpe'), {
+      v: JSON.stringify({ slug: 'golpe', nome: 'Equipe Golpe', tecnicoEmail: 'golpe@x.com' }),
+      dono: null, donoEmail: 'golpe@x.com', equipe: 'golpe', perfil: null, aprovado: null,
+    }));
+  });
+
+  test('22. dono legado pendente não aprova a própria conta', async () => {
+    const db = banco('UID_DONO_PENDENTE', 'dono-pendente@x.com');
+    await assertFails(updateDoc(kv(db, 'u_dono-pendente@x.com'), { aprovado: true }));
+  });
+
+  test('23. atleta pendente pode cancelar o pedido e voltar a ficar sem equipe', async () => {
+    const db = banco('UID_PENDENTE', 'pendente@x.com');
+    await assertSucceeds(updateDoc(kv(db, 'u_pendente@x.com'), { equipe: null, aprovado: false }));
+  });
+
+  test('24. técnico aprovado pode aprovar atleta pendente da própria equipe', async () => {
+    const db = banco('UID_TECNICO', 'tecnico@x.com');
+    await assertSucceeds(updateDoc(kv(db, 'u_pendente@x.com'), { aprovado: true }));
   });
 });

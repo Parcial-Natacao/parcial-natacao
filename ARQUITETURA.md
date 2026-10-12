@@ -33,7 +33,7 @@ performance" (Performance Score / Readiness / correlações etc.).
 | `eq_<slug>_libs` | CPFs liberados |
 | `pro_<uid>` | **dados de performance do atleta** (privado do dono pelas regras) |
 
-As regras (`firebase/firestore.rules`) tornam `pro_*` **privado do dono** — nem
+As regras atuais (`firebase/firestore.rules.v2`) tornam `pro_*` **privado do dono** — nem
 o técnico lê. É onde vivem os dados sensíveis de saúde/performance.
 
 ## 3. `pro_<uid>` — o núcleo de dados de performance
