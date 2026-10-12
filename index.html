@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v136';
+const VER='v137';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1316,7 +1316,8 @@ async function autenticar(email,senha){
 async function entrarSessao(u){
   S.u=u; await DB.set('sessao',{email:u.email},false);
   S.eq=u.equipe?await DB.get(kEq(u.equipe)):null;
-  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false; S.modoAtleta=false;
+  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
+  S.modoAtleta=chapeuSalvo(u);
   await carregarDados(); ligarSincronia(); render();
 }
 /* PRO liga/desliga o chapéu de gestão da equipe */
@@ -1329,8 +1330,25 @@ function alternarGestao(){
    dele, como os de qualquer outro — ninguém passa a ver nada de ninguém. */
 function alternarModoAtleta(){
   if(!temDoisChapeus())return;
-  S.modoAtleta=!S.modoAtleta; _limparContexto();
+  S.modoAtleta=!S.modoAtleta; guardarChapeu(S.u,S.modoAtleta); _limparContexto();
   fecharSheet(); toast(S.modoAtleta?'Você está na sua área de atleta':'De volta ao comando da equipe'); render();
+}
+/* ── O CHAPÉU FICA GUARDADO POR APARELHO ───────────────────────────────────
+   Preferência de VISTA, como o tema: o celular da beira da piscina pode
+   abrir no comando da equipe e o computador de casa, na área de atleta.
+   Por isso localStorage e não o cadastro — e por e-mail, porque dois
+   usuários podem dividir o mesmo aparelho.
+   localStorage estoura em navegação privada e com dados de site bloqueados,
+   então leitura e escrita vão dentro de try: sem ele, o app simplesmente
+   abre no chapéu de técnico, que é o padrão seguro. */
+const _kChapeu=u=>'parcial-chapeu-'+((u&&u.email)||'').toLowerCase();
+function chapeuSalvo(u){
+  if(!u||u.perfil!=='tecnico')return false;
+  try{ return localStorage.getItem(_kChapeu(u))==='atleta'; }catch(_){ return false; }
+}
+function guardarChapeu(u,atleta){
+  if(!u||u.perfil!=='tecnico')return;
+  try{ localStorage.setItem(_kChapeu(u),atleta?'atleta':'tecnico'); }catch(_){}
 }
 /* troca de chapéu zera o que estava aberto: treino, competição, atleta
    selecionado. Sem isso a tela nova herda a navegação da anterior. */
@@ -3792,11 +3810,26 @@ teste('chapéus','atleta comum e PRO não ganham o botão',a=>{
   a.ok(!temDoisChapeus(),'PRO também não — ele usa o modo gestão');
   S.modoAtleta=true;
   a.ok(!ehGestor(),'e modoAtleta não transforma PRO em gestor');});
-teste('chapéus','sair zera o chapéu',a=>{
-  _tecnico(); alternarModoAtleta();
-  a.ok(S.modoAtleta,'estava na área de atleta');
-  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false; S.modoAtleta=false;
-  a.ok(!S.modoAtleta,'próxima sessão abre no comando da equipe');});
+teste('chapéus','o aparelho lembra o último chapéu',a=>{
+  const u=_tecnico();
+  try{localStorage.removeItem(_kChapeu(u))}catch(_){}
+  a.ok(!chapeuSalvo(u),'sem nada guardado, abre como técnico');
+  alternarModoAtleta();                       /* vai para atleta */
+  a.ok(chapeuSalvo(u),'a escolha ficou guardada');
+  S.modoAtleta=false;                         /* simula abrir o app de novo */
+  S.modoAtleta=chapeuSalvo(u);
+  a.ok(S.modoAtleta,'a sessão seguinte abre na área de atleta');
+  alternarModoAtleta();                       /* volta para técnico */
+  a.ok(!chapeuSalvo(u),'e a volta também é lembrada');});
+teste('chapéus','o chapéu é por pessoa e só vale para técnico',a=>{
+  const t=_tecnico(); t.email='tec@x.com';
+  try{localStorage.removeItem(_kChapeu(t))}catch(_){}
+  guardarChapeu(t,true);
+  a.ok(chapeuSalvo(t),'guardado para este técnico');
+  a.ok(!chapeuSalvo({email:'outro@x.com',perfil:'tecnico'}),'outra pessoa no mesmo aparelho não herda');
+  a.ok(!chapeuSalvo({email:'tec@x.com',perfil:'pro'}),'PRO nunca abre em modo atleta por aqui');
+  guardarChapeu({email:'p@x.com',perfil:'pro'},true);
+  a.ok(!chapeuSalvo({email:'p@x.com',perfil:'pro'}),'e nada é gravado para quem não é técnico');});
 
 /* ── PROVA EM FOCO E ORDEM DO DOCUMENTO (v135) ───────────────────────────── */
 function _cenarioBuenosAires(){
