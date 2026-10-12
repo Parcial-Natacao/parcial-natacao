@@ -484,7 +484,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v130';
+const VER='v131';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3631,6 +3631,75 @@ teste('janelas','1 ou 2 tiros na semana não viram leitura',a=>{
 teste('janelas','mudança escondida pelo arredondamento abre casa decimal',a=>{
   a.eq(decDinamico(57.4,56.8,0),1,'57→57 ganha uma casa');
   a.eq(decDinamico(7996,3946,0),0,'quem já aparece não ganha casa');});
+/* ── P1 — AUDITORIA DO MOTOR DE PREVISÃO (v131) ──────────────────────────── */
+const _logItem=(d,pis,data,central,real,origem,low,high)=>({
+  k:`${d}|peito|${pis}|${data}`,d,es:'peito',pis,data,central:parseTempo(central),
+  low:low?parseTempo(low):null,high:high?parseTempo(high):null,real:parseTempo(real),
+  erro:parseTempo(real)-parseTempo(central),
+  erroPct:+(((parseTempo(real)-parseTempo(central))/parseTempo(real))*100).toFixed(2),
+  dentro:(low&&high)?(parseTempo(real)>=parseTempo(low)&&parseTempo(real)<=parseTempo(high)):null,
+  origem});
+teste('previsão','prospectiva e reconstruída não se misturam na contagem',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')}});
+  pro.calibLog=[_logItem(50,'SC25','2026-01-10','30.50','31.00','reconstruida'),
+                _logItem(50,'SC25','2026-02-10','30.40','30.60','prevista','30.00','31.00')];
+  const p=precisaoModelo(pro,50,'peito','SC25');
+  a.eq(p.n,2,'duas comparações'); a.eq(p.nPrev,1,'uma prospectiva'); a.eq(p.nRec,1,'uma reconstruída');});
+teste('previsão','erro em segundos não atravessa distâncias',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')}});
+  pro.calibLog=[_logItem(50,'SC25','2026-01-10','30.50','31.00','reconstruida'),
+                _logItem(200,'SC25','2026-02-10','2:40.00','2:45.00','reconstruida')];
+  const mix=precisaoModelo(pro,100,'borboleta','SC25');     /* cai para "no seu histórico" */
+  a.eq(mix.esc,'no seu histórico','recuo para o geral');
+  a.ok(!mix.homogenea,'amostra heterogênea é sinalizada');
+  a.eq(mix.dists.sort((x,y)=>x-y),[50,200],'declara quais distâncias entraram');
+  const so50=precisaoModelo(pro,50,'peito','SC25');
+  a.ok(so50.homogenea,'uma distância e uma piscina é homogênea');
+  a.eq(so50.n,1,'só a prova de 50');});
+teste('previsão','n=1 é evidência insuficiente, não viés',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')},alvos:['50 peito']});
+  pro.calibLog=[_logItem(50,'SC25','2026-01-10','30.50','31.00','reconstruida')];
+  const p=precisaoModelo(pro,50,'peito','SC25');
+  a.eq(p.estagio.chave,'sinal','estágio'); a.eq(p.dvPct,null,'sem dispersão com n=1');
+  const h=cardAprendizado(pro);
+  a.ok(h.indexOf('Evidência insuficiente')>=0,'o texto diz isso');});
+teste('previsão','cobertura da faixa exige amostra prospectiva',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')},alvos:['50 peito']});
+  pro.calibLog=[_logItem(50,'SC25','2026-01-10','30.40','30.60','prevista','30.00','31.00')];
+  const p1=precisaoModelo(pro,50,'peito','SC25');
+  a.eq(p1.cobertura,1,'a conta existe'); a.ok(!p1.coberturaValida,'mas não é publicável com n=1');
+  a.ok(cardAprendizado(pro).indexOf('ainda não medida')>=0,'o cartão não afirma 100%');
+  for(let k=2;k<=5;k++)pro.calibLog.push(_logItem(50,'SC25','2026-0'+k+'-10','30.40','30.60','prevista','30.00','31.00'));
+  const p5=precisaoModelo(pro,50,'peito','SC25');
+  a.ok(p5.coberturaValida,'com 5 prospectivas passa a valer');});
+teste('previsão','resultado sem tiro anterior vira limitação registrada, não some',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')},alvos:['50 peito'],
+    resultados:[{dist:50,estilo:'peito',piscina:'SC25',data:_dAtras(200),tempo:parseTempo('31.00'),comp:'Antiga'}]});
+  const ex=[]; for(let k=1;k<=10;k++)ex.push(_tiro(k*3,50,'33.4'));   /* todos DEPOIS da prova */
+  fecharPrevisoes(pro,_comPct(pro,ex));
+  a.eq((pro.calibLog||[]).length,0,'nada entra na métrica de erro');
+  a.eq((pro.semPrevisao||[]).length,1,'a limitação fica registrada');
+  a.eq(pro.resultados.length,1,'e o resultado continua no histórico');});
+teste('previsão','previsão sem resultado não vira erro',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')},alvos:['50 peito']});
+  registrarPrevisao(pro,[{d:50,es:'peito',pis:'SC25',central:parseTempo('30.5'),low:parseTempo('30.0'),high:parseTempo('31.0'),qual:60,calN:0}],[]);
+  a.eq((pro.projLog||[]).length,1,'o snapshot existe');
+  a.ok(pro.projLog[0].em&&pro.projLog[0].em.indexOf('T')>0,'com data E hora');
+  fecharPrevisoes(pro,[]);
+  a.eq((pro.calibLog||[]).length,0,'sem resultado real não há erro para medir');
+  a.eq(precisaoModelo(pro,50,'peito','SC25'),null,'e não há métrica');});
+teste('prontidão','componente ausente redistribui peso e a conta fecha',a=>{
+  const pesoOk=30+20+20+15;                       /* transferência ausente */
+  const soma=100*30+98*20+64*20+65*15;
+  a.eq(Math.round(soma/pesoOk),85,'85 é 7215÷85, não média simples');
+  a.eq(Math.round(soma/100),72,'se contasse como zero daria 72 — por isso não conta');
+  a.eq(+(30/pesoOk*100).toFixed(1),35.3,'a forma vale 35,3% efetivos, não 30%');});
+teste('prontidão','sem forma específica não há score',a=>{
+  const pro=_atleta({pbs:{'50 peito SC25':parseTempo('30.00')},alvos:['50 peito']});
+  const r=prontidaoCompetitiva(pro,[],null,50,'peito','SC25');
+  a.eq(r.score,null,'sem componentes não publica número');
+  a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
+
 /* ── BALIZAMENTO — psych sheet HY-TEK em três colunas (v129) ─────────────── */
 const _HY_COL=[                     /* leitura por COLUNA: ordem do documento */
  '#6 Men 200 LC Meter Freestyle','Name Age Team Seed Time',
@@ -7719,13 +7788,24 @@ function baseProva(estTreino,d,e){
 const MAX_LOG_PREV=200;
 function chaveLog(r){ return `${r.dist}|${r.estilo}|${r.piscina||'SC25'}|${r.data}`; }
 /* Snapshot: guarda no máximo uma previsão por prova por dia. */
-function registrarPrevisao(pro,preds){
+function registrarPrevisao(pro,preds,comPct){
   if(!pro||!preds||!preds.length)return;
   pro.projLog=pro.projLog||[];
-  const hj=hoje();
+  const hj=hoje(), agora=new Date().toISOString();
   for(const p of preds){
     const k=`${p.d}|${p.es}|${p.pis}|${hj}`;
     if(pro.projLog.some(x=>x.k===k))continue;
+    /* P1-A — JANELA DE DADOS da previsão. Sem ela dá para saber o que o modelo
+       previu, mas não SOBRE O QUE: dois tiros de ontem e trinta dos últimos
+       120 dias produzem o mesmo número com evidência muito diferente. Guarda
+       quantos tiros daquela prova entraram e de que período, para que a
+       previsão seja reproduzível depois. */
+    let jan=null;
+    try{
+      const usa=(comPct||[]).filter(x=>x.dist===p.d&&x.estilo===p.es);
+      if(usa.length){const ds=usa.map(x=>x.data).sort();
+        jan={nTiros:usa.length,de:ds[0],ate:ds[ds.length-1]};}
+    }catch(_){}
     /* Contexto do DIA da previsão. Sem isto, depois da prova dá para saber
        que o modelo errou, mas não em que condição ele errou — e é essa
        associação que permite, lá na frente, responder "como eu costumo
@@ -7739,8 +7819,8 @@ function registrarPrevisao(pro,preds){
       ctx={ag7:f?f.aguda:null, cr28:f?f.cronica:null, mono:f?f.monotonia:null,
         pront:(pg&&pg.score)??((pro._pront&&pro._pront.score)??null), ver:VER};
     }catch(_){}
-    pro.projLog.push({k,d:p.d,es:p.es,pis:p.pis,data:hj,
-      central:p.central,low:p.low,high:p.high,qual:p.qual,calN:p.calN,...ctx});
+    pro.projLog.push({k,d:p.d,es:p.es,pis:p.pis,data:hj,em:agora,
+      central:p.central,low:p.low,high:p.high,qual:p.qual,calN:p.calN,janela:jan,...ctx});
   }
   if(pro.projLog.length>MAX_LOG_PREV)pro.projLog=pro.projLog.slice(-MAX_LOG_PREV);
 }
@@ -7750,28 +7830,40 @@ function fecharPrevisoes(pro,comPct){
   if(!pro||!pro.resultados)return 0;
   pro.calibLog=pro.calibLog||[];
   const pbs=pro.pbs||{}, jaTem=new Set(pro.calibLog.map(x=>x.k));
+  pro.semPrevisao=[];          /* P1-A: o que NÃO deu para avaliar, e por quê */
   let n=0;
   for(const r of pro.resultados){
     if(!r||r.tempo==null||!r.data||!r.dist||!r.estilo)continue;
     const pis=r.piscina||'SC25', k=chaveLog(r);
     if(jaTem.has(k))continue;
-    let prev=null, origem='reconstruida';
+    let prev=null, origem='reconstruida', proc={};
     const cand=(pro.projLog||[]).filter(x=>x.d===r.dist&&x.es===r.estilo&&x.pis===pis&&x.data<=r.data)
       .sort((a,b)=>b.data.localeCompare(a.data))[0];
     if(cand&&(new Date(r.data)-new Date(cand.data))/86400000<=30){
       prev={central:cand.central,low:cand.low,high:cand.high}; origem='prevista';
+      /* PROCEDÊNCIA. O calibLog guardava a data da PROVA e perdia a data em
+         que a previsão foi feita, a versão do motor e a janela de dados — ou
+         seja, o erro ficava sem contexto de origem. Agora viaja junto. */
+      proc={prevEm:cand.em||cand.data||null, prevData:cand.data||null, prevVer:cand.ver||null,
+            janela:cand.janela||null, diasAntes:cand.data?Math.round((new Date(r.data)-new Date(cand.data))/86400000):null};
     }else{
       const re=raceEst(comPct,pbs,r.dist,r.estilo,r.data);
       const b=re?baseProva(re.est,r.dist,r.estilo):null;
-      if(b>0)prev={central:Math.round(b),low:null,high:null};
+      if(b>0){prev={central:Math.round(b),low:null,high:null};
+        proc={prevEm:null,prevData:null,prevVer:VER,janela:null,
+              limitacao:'reconstruída hoje a partir dos tiros anteriores à prova; não é o número que você viu antes de competir'};}
     }
-    if(!prev||!(prev.central>0))continue;
+    if(!prev||!(prev.central>0)){
+      pro.semPrevisao.push({d:r.dist,es:r.estilo,pis,data:r.data,comp:r.comp||null,
+        motivo:'sem tiro desta prova registrado antes da data — não há como reconstruir a previsão'});
+      continue;
+    }
     const erro=r.tempo-prev.central;
     pro.calibLog.push({k,d:r.dist,es:r.estilo,pis,data:r.data,comp:r.comp||null,
       central:prev.central,low:prev.low,high:prev.high,real:r.tempo,
-      erro,erroPct:+((erro/r.tempo)*100).toFixed(2),
+      erro,erroAbs:Math.abs(erro),erroPct:+((erro/r.tempo)*100).toFixed(2),
       dentro:(prev.low!=null&&prev.high!=null)?(r.tempo>=prev.low&&r.tempo<=prev.high):null,
-      origem,faixa:r.faixa||null});
+      origem,faixa:r.faixa||null,...proc});
     jaTem.add(k); n++;
   }
   if(n)pro.calibLog.sort((a,b)=>a.data.localeCompare(b.data));
@@ -7802,12 +7894,31 @@ function precisaoModelo(pro,d,e,pis){
     const absPct=som(pcts)/n;
     const viesPct=som(l.map(x=>x.erroPct))/n;
     const dvPct=n>1?Math.sqrt(som(l.map(x=>(x.erroPct-viesPct)**2))/(n-1)):null;
+    /* ── P1-B: O QUE PODE E O QUE NÃO PODE SER AGREGADO ────────────────────
+       Erro em SEGUNDOS só significa alguma coisa dentro da mesma distância.
+       Com o recuo para "no seu histórico", a média juntava 0,50s de um 50m
+       com 5,00s de um 200m e imprimia "erro absoluto médio 2,17s" — um número
+       aritmeticamente correto e sem significado nenhum. O erro RELATIVO (% do
+       tempo) atravessa distâncias; o absoluto, não. */
+    const dists=new Set(l.map(x=>x.d)), piscinas=new Set(l.map(x=>x.pis));
+    const homogenea=dists.size===1&&piscinas.size===1;
+    const nPrev=l.filter(x=>x.origem==='prevista').length;
+    const nRec=n-nPrev;
+    /* COBERTURA só com amostra prospectiva suficiente. "100% das provas
+       caíram dentro da faixa (1 com faixa registrada)" é uma frase que afirma
+       calibração a partir de uma observação. */
+    const MIN_COB=5;
+    const dentroN=comFaixa.filter(x=>x.dentro).length;
     return {n,vies,abs,esc:nv.esc,exato:nv.esc==='nesta prova e piscina',
+      homogenea, dists:[...dists], piscinas:[...piscinas],
+      nPrev, nRec,
       absPct:+absPct.toFixed(2), viesPct:+viesPct.toFixed(2),
-      dvPct:dvPct==null?null:+dvPct.toFixed(2), medianaPct:mediana, p90Pct:p90,
-      cobertura:comFaixa.length?comFaixa.filter(x=>x.dentro).length/comFaixa.length:null,
+      /* dispersão exige pelo menos 3 pontos para não ser desvio de dois números */
+      dvPct:(dvPct==null||n<3)?null:+dvPct.toFixed(2), medianaPct:mediana, p90Pct:p90,
+      cobertura:comFaixa.length?dentroN/comFaixa.length:null,
+      coberturaValida:comFaixa.length>=MIN_COB, minCobertura:MIN_COB,
       nFaixa:comFaixa.length, itens:l.slice(-8).reverse(),
-      previstas:l.filter(x=>x.origem==='prevista').length,
+      previstas:nPrev,
       estagio:estagioCalib(n)};
   }
   return null;
@@ -7832,7 +7943,7 @@ function qualidadeCalib(p){
   let s=0;
   s+=Math.min(40,p.n*8);                                   porque.push(`${p.n} prova(s)`);
   if(p.dvPct!=null){ s+=Math.max(0,25-p.dvPct*8);           porque.push(`dispersão ${p.dvPct.toFixed(1)}%`); }
-  if(p.cobertura!=null&&p.nFaixa>=3){ s+=Math.round(p.cobertura*20); porque.push(`cobertura ${Math.round(p.cobertura*100)}%`); }
+  if(p.cobertura!=null&&p.coberturaValida){ s+=Math.round(p.cobertura*20); porque.push(`cobertura ${Math.round(p.cobertura*100)}%`); }
   if(p.exato)s+=15; else porque.push('base de prova/piscina aproximada');
   const nivel=Math.min(100,Math.round(s));
   return {nivel, rotulo:nivel>=70?'boa':nivel>=40?'parcial':'inicial', porque:porque.join(' · ')};
@@ -7966,7 +8077,7 @@ function predicao(pro,comPct,est){
   const fim=out.sort((x,y)=>(y.prova===kFoco?1:0)-(x.prova===kFoco?1:0)||y.qual-x.qual||x.d-y.d).slice(0,4);
   /* guarda o que está sendo previsto HOJE: é o que permite, depois da prova,
      comparar com o que o atleta de fato viu — e não com uma reconstrução. */
-  try{ if(!S.laudoAtleta)registrarPrevisao(pro,fim); }catch(_){}
+  try{ if(!S.laudoAtleta)registrarPrevisao(pro,fim,comPct); }catch(_){}
   return fim;
 }
 /* ── APRENDIZADO DO MODELO ─────────────────────────────────────────────────
@@ -8038,13 +8149,23 @@ function cardProntidaoComp(pro,motor,comPct){
   if(!r)return'';
   const nome=`${ref.d}m ${ref.e} ${ref.pis}`;
   const cor=s=>s==null?'var(--ink-3)':(s>=75?'var(--ok)':s>=55?'var(--ink)':'var(--clock)');
-  const linhas=r.comps.map(c=>`<tr>
-    <td><b>${c.rot}</b> <span class="xs muted">${PESOS_PC[c.id]}%</span><div class="xs muted">${esc(c.txt)}</div></td>
-    <td class="n" style="text-align:right;font-weight:800;color:${cor(c.score)}">${c.score==null?'—':c.score}</td></tr>`).join('');
+  /* P1-D — PESO NOMINAL × PESO EFETIVO. Quando um componente sai da conta, os
+     pesos são renormalizados sobre o que sobrou: com a transferência ausente,
+     a forma específica passa de 30% para 35,3% do score sem que nada na tela
+     dissesse isso. O número final era explicável; o caminho até ele, não. */
+  const pesoOk=r.comps.filter(c=>c.score!=null).reduce((a,c)=>a+PESOS_PC[c.id],0);
+  const efetivo=c=>(c.score==null||!pesoOk)?null:PESOS_PC[c.id]/pesoOk*100;
+  const renorm=pesoOk>0&&pesoOk<100;
+  const linhas=r.comps.map(c=>{const ef=efetivo(c);
+    return`<tr>
+    <td><b>${c.rot}</b> <span class="xs muted">${PESOS_PC[c.id]}%${ef!=null&&renorm?` → <b>${ef.toFixed(1)}%</b>`:''}</span><div class="xs muted">${esc(c.txt)}</div></td>
+    <td class="n" style="text-align:right;font-weight:800;color:${cor(c.score)}">${c.score==null?'—':c.score}</td></tr>`}).join('');
+  /* a conta, escrita: é o que permite conferir o número à mão */
+  const conta=r.score!=null?`${r.comps.filter(c=>c.score!=null).map(c=>`${c.score}×${PESOS_PC[c.id]}`).join(' + ')} = ${r.comps.filter(c=>c.score!=null).reduce((a,c)=>a+c.score*PESOS_PC[c.id],0)} ÷ ${pesoOk} = <b>${r.score}</b>`:null;
   const topo=r.score!=null
     ? `<div class="row" style="align-items:baseline;gap:9px;margin-top:8px">
         <div class="v t" style="font-size:38px;font-weight:800;line-height:1;color:${cor(r.score)}">${r.score}</div>
-        <div><b>${r.rotulo}</b><div class="xs muted">${r.confiabilidade}% dos componentes disponíveis${r.ok<5?` (${5-r.ok} sem dado)`:''}</div></div></div>`
+        <div><b>${r.rotulo}</b><div class="xs muted">${r.ok} de 5 componentes${r.ok<5?` (${5-r.ok} sem dado)`:''} · <b>${r.confiabilidade}%</b> do peso total disponível</div></div></div>`
     : `<div class="note warn" style="margin-top:8px"><b>Ainda não dá para calcular.</b> ${esc(r.motivo)}. Um score com metade das peças seria inventar um número.</div>`;
   const prox=ops.filter(o=>o.origem==='comp');
   const seletor=ops.length>1?`<div class="field" style="margin:10px 0 0"><label>Prova em foco</label>
@@ -8058,7 +8179,16 @@ function cardProntidaoComp(pro,motor,comPct){
     ${topo}
     <table style="margin-top:10px"><tbody>${linhas}</tbody></table>
     ${r.direcao?`<div class="note ${r.direcao==='REDUZIR'?'warn':r.direcao==='AUMENTAR'?'ok':''}" style="margin-top:10px"><b>Direção da carga: ${r.direcao}.</b></div>`:''}
-    <div class="xs muted" style="margin-top:6px">Média dos componentes, ponderada pelos pesos ao lado de cada um. Componente <b>sem dado sai da conta</b> em vez de valer zero, e os pesos são redistribuídos — por isso a linha de confiabilidade. Não é probabilidade de nadar bem: é o quanto, no que o app mede, você está posicionado para esta prova.</div>
+    ${conta?`<details class="xs" style="margin-top:8px"><summary class="muted">como este número é calculado</summary>
+      <div style="margin-top:6px">
+        <p style="margin:0 0 6px">Média dos componentes disponíveis, ponderada pelo peso de cada um:</p>
+        <p class="t" style="margin:0 0 8px;word-break:break-word">${conta}</p>
+        ${renorm?`<p style="margin:0 0 8px"><b>Um componente saiu da conta.</b> Peso disponível: ${pesoOk} de 100. Os pesos são <b>renormalizados</b> sobre o que sobrou — por isso cada linha mostra <i>nominal → efetivo</i>. Componente sem dado <b>não vira zero</b>: zero afirmaria que o atleta está mal naquilo, quando o que há é ausência de medida.</p>`:''}
+        <p style="margin:0 0 8px"><b>Regra de dado ausente:</b> abaixo de 3 componentes, ou sem a forma específica, o app não publica score. ${r.confiabilidade}% do peso total estava disponível aqui.</p>
+        <p style="margin:0 0 8px"><b>Sobreposição conhecida.</b> <i>Forma específica</i> e <i>especificidade</i> leem os mesmos tiros em janelas que se cruzam (42 e 28 dias) e juntas somam 50% do peso. Medi a correlação entre os dois em 60 perfis sintéticos: <b>r ≈ 0,56</b> — correlacionados, não redundantes. Eles separam onde importa: um tiro ótimo hoje dá forma 100 e especificidade 44; dez tiros a 93% dão forma 65 e especificidade 98. Testei a alternativa de excluir da especificidade o tiro que define a forma: a correlação <b>não cai</b> (0,58), e o componente desaparece para quem tem um tiro só. Por isso os pesos <b>não</b> foram alterados — mas metade do score se apoia em evidência correlacionada, e isso precisa estar dito.</p>
+        <p style="margin:0"><b>O que este número não é:</b> não é probabilidade de vencer, de bater recorde nem de atingir um tempo. É um indicador composto de prontidão, na escala 0–100 do próprio app.</p>
+      </div></details>`
+    :`<div class="xs muted" style="margin-top:6px">Componente <b>sem dado sai da conta</b> em vez de valer zero. Não é probabilidade de nadar bem: é o quanto, no que o app mede, você está posicionado para esta prova.</div>`}
   </div>`;
 }
 /* ── TREINO → PROVA ────────────────────────────────────────────────────────
@@ -8138,20 +8268,26 @@ function cardAprendizado(pro){
      tendência e em correção aplicada. */
   const est=p.estagio;
   const dir=vies<0?'mais RÁPIDO':'mais DEVAGAR';
+  /* a unidade da frase acompanha a amostra, como os KPIs acima */
+  const un=p.homogenea?`${Math.abs(vies).toFixed(2)}s`:`${Math.abs(p.viesPct).toFixed(1)}%`;
   const leitura=est.chave==='sinal'
-    ? `<b>Sinal inicial.</b> Nesta única prova você nadou ${Math.abs(vies).toFixed(2)}s ${vies<0?'abaixo':'acima'} do previsto. Uma observação não estima viés: com mais provas registradas o app passa a saber se isso se repete e corrige a projeção.`
-    : (Math.abs(vies)<0.25
-      ? `<b>O modelo não puxa para nenhum lado</b> (${est.rotulo}). A diferença média está dentro do ruído.`
+    ? `<b>Evidência insuficiente — uma única observação.</b> Nesta prova você nadou ${un} ${vies<0?'abaixo':'acima'} do previsto. Isso não estima viés nem calibração: é um ponto. Com mais provas registradas o app passa a saber se o padrão se repete.`
+    : (Math.abs(p.viesPct)<0.4
+      ? `<b>O modelo não puxa para nenhum lado</b> (${est.rotulo}, n=${p.n}). A diferença média está dentro do ruído.`
       : (est.forte
-        ? `<b>Você tem nadado ${dir} que a previsão</b> — em média ${Math.abs(vies).toFixed(2)}s. Com ${p.n} provas comparadas isso já é tendência, e o app corrige nas próximas projeções.`
-        : `<b>Tendência preliminar:</b> você nadou ${dir} que a previsão em ${p.n} provas, média ${Math.abs(vies).toFixed(2)}s. ${est.rotulo} — o app corrige em parte, com peso reduzido pela amostra.`));
+        ? `<b>Você tem nadado ${dir} que a previsão</b> — em média ${un}, em ${p.n} provas. Amostra suficiente para tratar como tendência, e o app corrige nas próximas projeções.`
+        : `<b>Tendência preliminar (n=${p.n}, amostra pequena):</b> você nadou ${dir} que a previsão, média ${un}. ${est.rotulo} — o app corrige em parte, com peso reduzido pela amostra.`));
   const qc=qualidadeCalib(p);
   return`<div class="card" data-dom="prova"><div class="eyebrow">aprendizado do modelo — ${a.d}m ${esc(a.e)} ${pis}</div>
     <div class="grid3" style="margin-top:8px">
-      <div class="kpi"><div class="v">${p.n}</div><div class="l">prova(s) comparada(s)</div></div>
-      <div class="kpi"><div class="v">${abs.toFixed(2)}s</div><div class="l">erro absoluto médio</div></div>
-      <div class="kpi"><div class="v" style="${est.forte&&Math.abs(vies)>=0.5?'color:var(--clock)':(est.forte?'':'opacity:.55')}">${(vies>0?'+':'')+vies.toFixed(2)}s</div><div class="l">viés${est.forte?'':' (provisório)'}</div></div>
+      <div class="kpi"><div class="v">${p.n}</div><div class="l">${p.nPrev?`${p.nPrev} prospectiva(s) · ${p.nRec} reconstruída(s)`:`prova(s) comparada(s)`}</div></div>
+      ${/* P1-B: segundo só quando a amostra é de UMA distância e UMA piscina */''}
+      <div class="kpi"><div class="v">${p.homogenea?abs.toFixed(2)+'s':p.absPct.toFixed(1)+'%'}</div><div class="l">erro absoluto médio${p.homogenea?'':' (relativo)'}</div></div>
+      <div class="kpi"><div class="v" style="${est.forte&&Math.abs(vies)>=0.5?'color:var(--clock)':(est.forte?'':'opacity:.55')}">${p.homogenea?(vies>0?'+':'')+vies.toFixed(2)+'s':(p.viesPct>0?'+':'')+p.viesPct.toFixed(1)+'%'}</div><div class="l">viés${est.forte?'':' (provisório)'}</div></div>
     </div>
+    ${!p.homogenea?`<div class="note warn" style="margin-top:8px"><b>Amostra de provas diferentes — erro em segundos não se soma.</b>
+      Este histórico junta ${p.dists.sort((x,y)=>x-y).join(' m, ')} m${p.piscinas.length>1?` e as duas piscinas`:''}, e meio segundo num 50 não é a mesma coisa que meio segundo num 200.
+      Por isso aqui o erro aparece em <b>percentual do tempo</b>, que atravessa distâncias. Para ver o erro em segundos, é preciso ter prova registrada nesta mesma distância e piscina.</div>`:''}
     <div class="small" style="margin-top:8px">${leitura}</div>
     <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
       <span class="tag ${est.forte?'w':'o'}">${est.rotulo}</span>
@@ -8174,8 +8310,15 @@ function cardAprendizado(pro){
       if(!fora.length)return'';
       return`<div class="note" style="margin-top:8px"><b>${fora.length} de ${todas.length} vez(es) que você nadou esta prova ficaram fora desta comparação</b>, a mais recente em ${brData(fora[0].data)}${fora[0].comp?` (${esc(fora[0].comp)})`:''}.
         <span class="xs muted" style="display:block;margin-top:4px">Motivo: só entra aqui a prova que tinha <b>tiros registrados antes dela</b> — sem o lado do treino não há previsão para comparar com o resultado. Elas continuam valendo em <b>Marcas</b> e no histórico de evolução; o que não dá é medir erro de previsão onde não houve previsão possível.</span></div>`;})()}
-    ${p.nFaixa?`<div class="xs muted" style="margin-top:6px"><b>Cobertura da faixa:</b> ${Math.round(p.cobertura*100)}% das provas caíram dentro do intervalo previsto (${p.nFaixa} com faixa registrada). Perto de 100% com faixa estreita é o ideal; 100% com faixa larga só quer dizer que o app não se comprometeu.</div>`:''}
-    <div class="xs muted" style="margin-top:6px"><b>Erro negativo (verde) = você nadou MAIS RÁPIDO que o previsto</b>; positivo = mais devagar. Base: ${esc(p.esc)}.${p.previstas<p.n?` ${p.n-p.previstas} linha(s) marcada(s) <b>rec</b> foram reconstruídas a partir dos treinos daquela época, não são previsões que você chegou a ver.`:''}</div>
+    ${/* P1-B — COBERTURA. Só é medida sobre previsões PROSPECTIVAS (a faixa
+         reconstruída não existe), e só é afirmada com amostra. Antes, uma
+         única prova dentro da faixa virava "cobertura 100%". */''}
+    ${p.nFaixa?(p.coberturaValida
+      ? `<div class="xs muted" style="margin-top:6px"><b>Cobertura observada da faixa:</b> ${Math.round(p.cobertura*100)}% (${p.nFaixa} previsões prospectivas com faixa). Perto de 100% com faixa estreita é o ideal; 100% com faixa larga só quer dizer que o app não se comprometeu.</div>`
+      : `<div class="xs muted" style="margin-top:6px"><b>Cobertura da faixa: ainda não medida.</b> Há ${p.nFaixa} previsão(ões) prospectiva(s) com faixa registrada; são necessárias ${p.minCobertura} para que o percentual signifique alguma coisa. Até lá o app não publica taxa de acerto da faixa.</div>`):''}
+    <div class="xs muted" style="margin-top:6px"><b>Erro negativo (verde) = você nadou MAIS RÁPIDO que o previsto</b>; positivo = mais devagar. Base: ${esc(p.esc)}.${p.nRec?` ${p.nRec} linha(s) marcada(s) <b>rec</b> são <b>reconstruções retrospectivas</b>: recalculadas depois, com os tiros anteriores àquela data. Não são o número que você viu antes de competir, e por isso não têm faixa nem contam para a cobertura.`:''}</div>
+    ${(pro.semPrevisao||[]).filter(x=>x.d===a.d&&x.es===a.e).length
+      ? `<div class="xs muted" style="margin-top:6px"><b>Sem previsão possível:</b> ${(pro.semPrevisao||[]).filter(x=>x.d===a.d&&x.es===a.e).map(x=>brCurta(x.data)).join(' · ')} — ${esc((pro.semPrevisao.find(x=>x.d===a.d&&x.es===a.e)||{}).motivo||'')}. Registrada como limitação, não descartada.</div>`:''}
   </div>`;
 }
 function cardPredicao(pro,comPct,est){
@@ -8197,7 +8340,18 @@ function cardPredicao(pro,comPct,est){
   return`<div class="card" data-dom="prova"><div class="eyebrow">projeção de tempo — provas-alvo</div>
     <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
     ${linhas}
-    <div class="xs muted" style="margin-top:8px">A <b>largura da faixa</b> é a incerteza. Até 2 provas comparadas ela vem de quanto dado existe; a partir de 3, passa a sair do <b>seu histórico de erro</b> — aperta quando o modelo vem acertando e alarga quando a faixa vem estourando. <b>Qualidade dos dados</b> mede quanta informação o modelo tem e o quanto ele já acertou com você — não é probabilidade.${semCal?' <b>Registre seus resultados em Marcas</b>: sem competição registrada o modelo não sabe o seu ganho real treino→prova e mantém a faixa larga.':''}</div>
+    ${/* P1-C — CINCO COISAS DIFERENTES, que estavam num parágrafo só e eram
+         lidas como se fossem a mesma. A mais importante: a faixa é
+         HEURÍSTICA. Ela não é um intervalo de predição estatístico com
+         cobertura conhecida, e o app não pode chamá-la assim enquanto não
+         tiver amostra prospectiva para medir a cobertura de verdade. */''}
+    <table class="xs" style="margin-top:10px"><tbody>
+      <tr><td style="width:40%"><b>1. Estimativa central</b></td><td class="muted">o tempo mais provável hoje, em condição de prova. Um número, não uma promessa.</td></tr>
+      <tr><td><b>2. Faixa</b></td><td class="muted"><b>Heurística</b>, não intervalo estatístico. Até 2 provas comparadas ela vem de quanto dado existe; a partir de 3, do seu histórico de erro. <b>Não tem cobertura conhecida</b> — o app só publica taxa de acerto da faixa depois de ${5} previsões prospectivas (ver "aprendizado do modelo").</td></tr>
+      <tr><td><b>3. Qualidade dos dados</b></td><td class="muted">força da evidência: quanto dado existe e o quanto o modelo já acertou nesta prova. <b>Não é probabilidade</b> de nadar dentro da faixa.</td></tr>
+      <tr><td><b>4. Suficiência</b></td><td class="muted">se há base para projetar. Sem tiro recente desta prova, o app diz <b>indisponível</b> em vez de projetar a partir de outra.</td></tr>
+      <tr><td><b>5. Erro histórico</b></td><td class="muted">o que o modelo de fato errou com você, prova a prova — medido, não estimado. É o único dos cinco que é verificável contra resultado.</td></tr>
+    </tbody></table>${semCal?'<div class="xs muted" style="margin-top:6px"><b>Registre seus resultados em Marcas</b>: sem competição registrada o modelo não sabe o seu ganho real treino→prova e mantém a faixa larga.</div>':''}
   </div>`;
 }
 /* ── O QUE MUDOU EM 28 DIAS + POR QUÊ ───────────────────────────────────────
