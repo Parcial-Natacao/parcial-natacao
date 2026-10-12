@@ -484,7 +484,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v131';
+const VER='v132';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3700,6 +3700,84 @@ teste('prontidão','sem forma específica não há score',a=>{
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
 
+/* ── P2 — ESTRATIFICAÇÃO POR PROVA (v132) ────────────────────────────────── */
+const _res=(d,e,pis,data,t,parc,orig)=>{const o={dist:d,estilo:e,piscina:pis,data,tempo:parseTempo(t),comp:'C'};
+  if(parc)o.parciais=parc.map(x=>parseTempo(x)); if(orig)o.origemParc=orig; return o};
+teste('parciais','divide 50 em 25+25 e 100 em 50+50',a=>{
+  const r50=_res(50,'peito','SC25','2026-05-01','31.00',['14.60','31.00']);
+  const m50=metadesDe(r50,50);
+  a.eq(m50.h1,parseTempo('14.60'),'primeiro 25');
+  a.eq(m50.h2,parseTempo('31.00')-parseTempo('14.60'),'segundo 25');
+  a.eq(m50.dif,parseTempo('31.00')-2*parseTempo('14.60'),'diferença');
+  const r100=_res(100,'peito','SC25','2026-05-01','1:08.00',['32.00','1:08.00']);
+  a.eq(metadesDe(r100,100).h1,parseTempo('32.00'),'primeiro 50');});
+teste('parciais','tempo final sozinho não é parcial',a=>{
+  a.eq(metadesDe(_res(50,'peito','SC25','2026-05-01','31.00',['31.00']),50),null,'um valor só');
+  a.eq(metadesDe(_res(50,'peito','SC25','2026-05-01','31.00'),50),null,'sem parciais');});
+teste('parciais','origem oficial e manual não entram na mesma média',a=>{
+  const pro=_atleta({resultados:[
+    _res(50,'peito','SC25','2026-01-10','31.00',['14.50','31.00'],'oficial'),
+    _res(50,'peito','SC25','2026-02-10','31.20',['14.60','31.20'],'oficial'),
+    _res(50,'peito','SC25','2026-03-10','31.40',['15.40','31.40'],'manual')]});
+  const pp=parciaisProva(pro,50,'peito','SC25');
+  a.eq(pp.n,3,'três provas com parcial');
+  a.ok(pp.misturaOrigem,'origens diferentes são sinalizadas');
+  a.eq(pp.porOrigem.oficial.n,2,'duas oficiais'); a.eq(pp.porOrigem.manual.n,1,'uma manual');
+  /* oficiais: 2,00s e 2,00s → 2,00s. manual: 31,40−2×15,40 = 0,60s.
+     Se fossem fundidas daria 1,53s — nenhuma das duas. */
+  a.quase(pp.porOrigem.oficial.difMedia,2000,1,'média das oficiais');
+  a.quase(pp.porOrigem.manual.difMedia,600,1,'média da manual');
+  a.ok(pp.porOrigem.oficial.difMedia!==pp.porOrigem.manual.difMedia,'médias separadas, não fundidas');});
+teste('parciais','registro antigo não vira oficial',a=>{
+  const pro=_atleta({resultados:[_res(50,'peito','SC25','2026-01-10','31.00',['14.50','31.00'])]});
+  const pp=parciaisProva(pro,50,'peito','SC25');
+  a.eq(pp.origens,['nd'],'sem procedência declarada fica nd');
+  a.eq(pp.porOrigem.oficial,undefined,'e não é promovido a oficial');});
+teste('parciais','não mistura estilo nem piscina',a=>{
+  const pro=_atleta({resultados:[
+    _res(50,'peito','SC25','2026-01-10','31.00',['14.50','31.00'],'oficial'),
+    _res(50,'livre','SC25','2026-02-10','27.00',['12.90','27.00'],'oficial'),
+    _res(50,'peito','LC50','2026-03-10','32.00',['15.10','32.00'],'oficial')]});
+  a.eq(parciaisProva(pro,50,'peito','SC25').n,1,'só 50 peito curta');
+  a.eq(parciaisProva(pro,50,'peito','LC50').n,1,'só 50 peito longa');
+  a.eq(parciaisProva(pro,200,'peito','SC25').suportada,false,'200 não tem metades definidas aqui');});
+teste('parciais','abertura × manutenção exige 4 provas',a=>{
+  const mk=n=>_atleta({resultados:Array.from({length:n},(_,k)=>
+    _res(50,'peito','SC25','2026-0'+(k+1)+'-10',(31+k*0.1).toFixed(2),[(14.5+k*0.2).toFixed(2),(31+k*0.1).toFixed(2)],'oficial'))});
+  a.eq(parciaisProva(mk(3),50,'peito','SC25').porOrigem.oficial.r,null,'n=3 não calcula r');
+  a.ok(parciaisProva(mk(5),50,'peito','SC25').porOrigem.oficial.r!=null,'n=5 calcula');});
+teste('conversão','piscina diferente fica fora da mediana',a=>{
+  const pro=_atleta({pbs:{'50 peito LC50':parseTempo('31.00')},alvos:['50 peito'],
+    resultados:[_res(50,'peito','LC50','2026-03-10','31.00'),_res(50,'peito','LC50','2026-06-10','31.50')]});
+  /* tiro na MESMA piscina só antes da 1ª prova; a 2ª só acha tiro de SC25 */
+  const ex=[{data:'2026-02-10',pis:'LC50',dist:50,estilo:'peito',tags:[],tempo:parseTempo('32.60'),p1:null,forte:true,vol:200},
+            {data:'2026-05-10',pis:'SC25',dist:50,estilo:'peito',tags:[],tempo:parseTempo('32.00'),p1:null,forte:true,vol:200}];
+  const t=transferenciaProva(pro,_comPct(pro,ex),50,'peito','LC50');
+  a.eq(t.itens.length,2,'as duas provas aparecem na lista');
+  a.eq(t.nComparavel,1,'uma comparável'); a.eq(t.nOutraPiscina,1,'uma de piscina diferente');
+  a.eq(t.n,1,'a mediana usa só a comparável');
+  a.ok(!t.soOutraPiscina,'há base comparável');});
+teste('conversão','só piscina diferente vira comparação descritiva',a=>{
+  const pro=_atleta({pbs:{'50 peito LC50':parseTempo('31.00')},alvos:['50 peito'],
+    resultados:[_res(50,'peito','LC50','2026-06-10','31.50')]});
+  const ex=[{data:'2026-05-10',pis:'SC25',dist:50,estilo:'peito',tags:[],tempo:parseTempo('32.00'),p1:null,forte:true,vol:200}];
+  const t=transferenciaProva(pro,_comPct(pro,ex),50,'peito','LC50');
+  a.ok(t.soOutraPiscina,'marcado como só piscina diferente');
+  a.eq(t.nComparavel,0,'nenhuma comparável');
+  const pro2=_atleta({pbs:{'50 peito LC50':parseTempo('31.00')},alvos:['50 peito'],resultados:pro.resultados});
+  a.ok(cardTransferencia(pro2,{provaRef:{d:50,e:'peito',pis:'LC50'},transf:t},_comPct(pro2,ex),[])
+       .indexOf('Comparação descritiva')>=0,'o cartão diz que é descritiva');});
+teste('evolução','série por prova e piscina traz o seu n',a=>{
+  const pro=_atleta({resultados:[
+    _res(50,'peito','SC25','2025-06-10','32.00'),_res(50,'peito','SC25','2026-06-10','31.00'),
+    _res(50,'peito','LC50','2025-07-10','33.00'),_res(50,'peito','LC50','2026-07-10','32.00')]});
+  const ev=evolucaoProvas(pro);
+  a.eq(ev.length,2,'curta e longa são séries separadas');
+  a.ok(ev.every(e=>e.pts.length===2),'duas competições em cada');
+  const h=cardEvolucao(pro,'x');
+  a.ok(h.indexOf('n = 2')>=0,'o n aparece na tela');
+  a.ok(h.indexOf('não uma tendência')>=0,'n=2 é declarado como não-tendência');});
+
 /* ── BALIZAMENTO — psych sheet HY-TEK em três colunas (v129) ─────────────── */
 const _HY_COL=[                     /* leitura por COLUNA: ordem do documento */
  '#6 Men 200 LC Meter Freestyle','Name Age Team Seed Time',
@@ -5197,7 +5275,8 @@ async function enviarProvasParaMarcas(mcId){
     if(existe.has(k))continue; existe.add(k);
     S.pro.resultados.push({chave:'mc_'+mc.id+'_'+p.id,comp:mc.nome,data:mc.data,piscina:mc.piscina,
       prova:`${p.dist}m ${p.estilo}`,dist:p.dist,estilo:p.estilo,tempo:p.tempo,
-      parciais:(p.parciais&&p.parciais.length)?p.parciais:[p.tempo],inscricao:p.inscricao||null});
+      parciais:(p.parciais&&p.parciais.length)?p.parciais:[p.tempo],inscricao:p.inscricao||null,
+      origemParc:'manual'});   /* P2-B: digitada pelo atleta, não é cronometragem oficial */
     const pk=pbKey(p.dist,p.estilo,mc.piscina);
     if(!S.pro.pbs[pk]||p.tempo<S.pro.pbs[pk])S.pro.pbs[pk]=p.tempo;
     add++;
@@ -5377,8 +5456,10 @@ async function gravarResultadoPro(ix){
   if(ps.length<np)return;
   const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const chave=c.id+'_'+p.id;
+  /* P2-B: a procedência da parcial viaja com ela. Aqui é cronometragem da
+     competição, lançada por passagem — é o que o app pode chamar de oficial. */
   const r={chave,comp:c.nome,data:c.data,piscina:c.piscina,prova:nomeProva(p),dist:p.dist,estilo:p.estilo,
-    tempo:ps[np-1],parciais:[...ps],inscricao:i.inscricao||null};
+    tempo:ps[np-1],parciais:[...ps],inscricao:i.inscricao||null,origemParc:'oficial'};
   const k=(pro.resultados||[]).findIndex(x=>x.chave===chave);
   if(k>=0)pro.resultados[k]=r; else (pro.resultados=pro.resultados||[]).push(r);
   const key=pbKey(p.dist,p.estilo,c.piscina);
@@ -5774,11 +5855,19 @@ function graficoLinha(pts){
 function cardEvolucao(pro,eyebrow){
   const ev=evolucaoProvas(pro); if(!ev.length)return'';
   return`<div class="card"><div class="eyebrow">${eyebrow}</div>
-    ${ev.map(e=>`<div style="margin-top:14px">
+    ${/* P2-D — cada série traz o seu n e o que ele permite afirmar. "Melhorou
+         1,69s" entre duas provas separadas por dois anos não é tendência; é a
+         diferença entre dois pontos, e o cartão passa a dizer qual é qual. */''}
+    ${ev.map(e=>{const n=e.pts.length;
+      const dias=(e.pts[n-1]&&e.pts[0])?null:null;
+      const limite=n>=5?null:(n<=2?`${n} provas — é a diferença entre dois pontos, não uma tendência`
+                                  :`${n} provas — direção preliminar, sensível a uma prova atípica`);
+      return`<div style="margin-top:14px">
       <div class="row"><b>${e.prova} <span class="xs muted">${e.piscina}</span></b><div class="grow"></div>
         <span class="small" style="font-weight:700;color:${e.melhora?'var(--ok)':'var(--clock)'}">${e.melhora?'▼ melhorou':'▲ piorou'} ${fmt(Math.abs(e.delta),true)}</span></div>
-      ${graficoLinha(e.pts)}</div>`).join('')}
-    <div class="xs muted" style="margin-top:8px">Cada ponto é uma competição, na ordem cronológica (dia/mês/ano). Linha para baixo = tempo menor = melhorando.</div>
+      <div class="xs muted" style="margin-top:2px">n = ${n} competição(ões)${limite?` · <b>${limite}</b>`:' · amostra suficiente para falar em tendência'}</div>
+      ${graficoLinha(e.pts)}</div>`}).join('')}
+    <div class="xs muted" style="margin-top:8px">Cada ponto é uma competição, na ordem cronológica (dia/mês/ano). Linha para baixo = tempo menor = melhorando. <b>Cada prova e piscina tem a sua própria série</b> — 50 e 100, curta e longa não se somam numa tendência só. Melhora na prova e mudança no treino andarem na mesma direção <b>não estabelece que uma causou a outra</b>: o que mudou no período não foi só o treino.</div>
   </div>`;
 }
 
@@ -7578,7 +7667,8 @@ function cardCorrelacoes(pro,comPct){
      a mesma média e espalhamentos diferentes não dizem a mesma coisa, e sem
      isso a leitura vira "esta faixa é melhor" a partir de ruído. */
   const disp=(o)=>o&&o.dp!=null?` ±${o.dp.toFixed(1)}`:'';
-  html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico. <b>n</b> é o número de tiros em cada faixa — compare as médias só quando os dois lados tiverem amostra parecida. Diferença de poucos pontos entre faixas com n pequeno é ruído, não efeito. <b>É associação, nunca causa</b>: o que separa as faixas não é só a carga.</div></div>`;
+  html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico. <b>n</b> é o número de tiros em cada faixa — compare as médias só quando os dois lados tiverem amostra parecida. Diferença de poucos pontos entre faixas com n pequeno é ruído, não efeito. <b>É associação, nunca causa</b>: o que separa as faixas não é só a carga.
+    <br><b>Estratificação:</b> estes cruzamentos juntam tiros de <b>todas</b> as suas provas, normalizados em %PB. São leitura geral de treino — <b>não</b> são tendência de uma prova específica. Para ver prova a prova, use a projeção, as parciais e a evolução, que separam distância, estilo e piscina.</div></div>`;
   return html;
 }
 /* ── BASELINE INDIVIDUAL MÓVEL ──────────────────────────────────────────────
@@ -8206,29 +8296,42 @@ function cardTransferencia(pro,motor,comPct,brk){
       : `Ainda não dá para medir a sua conversão: é preciso ter, na mesma prova, um resultado de competição <b>e</b> tiros registrados antes dele. Registre as competições em <b>Marcas</b>.`}</p></div>`;
   const sinal=v=>(v>0?'+':'')+v.toFixed(1)+'%';
   const est=t.estagio;
-  const leitura=est.chave==='sinal'
-    ? `<b>Sinal inicial.</b> Numa prova, você competiu <b>${sinal(t.mediana)}</b> em relação ao seu melhor tiro das 6 semanas anteriores. Uma observação não define a sua conversão.`
-    : `<b>Você compete ${sinal(t.mediana)}</b> em relação ao seu melhor tiro das 6 semanas anteriores (mediana de ${t.n} prova(s); metade entre ${sinal(t.p25)} e ${sinal(t.p75)}).${est.forte?' Com esta amostra já dá para usar como referência.':' '+est.rotulo+' — ainda sensível a uma prova atípica.'}`;
+  const leitura=t.soOutraPiscina
+    ? `<b>Comparação descritiva, não conversão.</b> As ${t.n} prova(s) aqui só têm tiro de referência em <b>piscina diferente</b> da prova. Num sprint a virada da piscina curta vale décimos, então este número descreve o que aconteceu — não serve para projetar. Registre um tiro de ${esc(nome)} na mesma piscina e ele vira conversão de verdade.`
+    : est.chave==='sinal'
+    ? `<b>Evidência insuficiente — uma observação.</b> Nesta prova você competiu <b>${sinal(t.mediana)}</b> em relação ao seu melhor tiro das 6 semanas anteriores. Um ponto não define a sua conversão.`
+    : `<b>Você compete ${sinal(t.mediana)}</b> em relação ao seu melhor tiro das 6 semanas anteriores (mediana de ${t.n} prova(s) comparável(is); metade entre ${sinal(t.p25)} e ${sinal(t.p75)}).${est.forte?' Com esta amostra já dá para usar como referência.':' '+est.rotulo+' — ainda sensível a uma prova atípica.'}`;
   const linhas=t.itens.slice(0,8).map(x=>`<tr><td class="small">${brCurta(x.data)}${x.qualidade!=='direta'?`<div class="xs muted">${x.qualidade}</div>`:''}</td>
     <td class="n">${fmt(x.treino,true)}${x.pisTiro&&x.pisTiro!==ref.pis?`<div class="xs muted">${x.pisTiro}</div>`:''}</td><td class="n">${fmt(x.prova,true)}</td>
     <td class="n" style="color:${x.pct<=0?'var(--ok)':(x.pct>3?'var(--clock)':'var(--ink-2)')}">${sinal(x.pct)}</td></tr>`).join('');
-  /* custo do segundo 25: treino × competição, só quando os dois lados têm parcial */
+  /* ── P2-A/B — custo da segunda metade, ESTRATIFICADO ─────────────────────
+     Antes: `brk` traz TODO tiro de 50 dos últimos 120 dias, de qualquer
+     estilo e qualquer piscina, e isso era comparado com a prova de peito.
+     Um 50 livre em piscina curta entrava na conta do 50 peito em piscina
+     longa. Agora os dois lados são da mesma distância, estilo e piscina. */
   let cmp='';
-  if(ref.d===50&&brk&&brk.length){
-    const cTre=brk.slice(-10).map(x=>x.delta).filter(x=>x!=null);
-    const comParc=((pro.resultados||[]).filter(r=>r.dist===50&&r.estilo===ref.e&&(r.parciais||[]).length>=2))
-      .map(r=>{const p1=r.parciais[0],fin=r.tempo;return(p1>0&&fin>p1)?(fin-p1)-p1:null}).filter(x=>x!=null);
-    if(cTre.length&&comParc.length){
-      const md=a=>a.reduce((s,x)=>s+x,0)/a.length;
-      const dt=md(cTre), dp=md(comParc);
-      cmp=`<div class="sep"></div><div class="eyebrow">custo do segundo 25</div>
+  if(ref.d===50||ref.d===100){
+    const pp=parciaisProva(pro,ref.d,ref.e,ref.pis);
+    const tre=metadesTreino(comPct,ref.d,ref.e,ref.pis,120);
+    const meio=ref.d/2;
+    if(pp.suportada&&pp.n&&tre){
+      /* agrega só DENTRO de uma origem; com mais de uma, usa a mais confiável
+         e diz quantas ficaram de fora */
+      const ord=['oficial','manual','nd'].filter(o=>pp.porOrigem[o]);
+      const usa=ord[0], st=pp.porOrigem[usa];
+      const dt=tre.difMedia, dp=st.difMedia;
+      cmp=`<div class="sep"></div><div class="eyebrow">custo da segunda metade — ${meio}m + ${meio}m</div>
         <div class="grid2" style="margin-top:8px">
-          <div class="kpi"><div class="v">+${fmt(dt,true)}</div><div class="l">no treino (${cTre.length} tiros)</div></div>
-          <div class="kpi"><div class="v">+${fmt(dp,true)}</div><div class="l">na prova (${comParc.length})</div></div>
+          <div class="kpi"><div class="v">${dt>=0?'+':''}${fmt(Math.abs(dt),true)}</div><div class="l">no treino (${tre.n} tiros)</div></div>
+          <div class="kpi"><div class="v">${dp>=0?'+':''}${fmt(Math.abs(dp),true)}</div><div class="l">na prova (${st.n})</div></div>
         </div>
-        <div class="xs muted" style="margin-top:6px">${Math.abs(dp-dt)<150?'A queda do segundo 25 se comporta na prova como no treino.'
-          :(dp>dt?`Na prova o segundo 25 custa <b>${fmt(dp-dt,true)} a mais</b> que no treino — a manutenção de velocidade cede mais em competição.`
-                 :`Na prova o segundo 25 custa <b>${fmt(dt-dp,true)} a menos</b> que no treino.`)} <i>Leitura para o técnico.</i></div>`;
+        <div class="xs muted" style="margin-top:6px">${Math.abs(dp-dt)<150?'A queda da segunda metade se comporta na prova como no treino.'
+          :(dp>dt?`Na prova a segunda metade custa <b>${fmt(dp-dt,true)} a mais</b> que no treino — a manutenção de velocidade cede mais em competição.`
+                 :`Na prova a segunda metade custa <b>${fmt(dt-dp,true)} a menos</b> que no treino.`)} <i>Leitura para o técnico.</i></div>
+        <div class="xs muted" style="margin-top:4px"><b>Comparabilidade:</b> os dois lados são ${ref.d}m ${esc(ref.e)} em piscina ${ref.pis==='LC50'?'longa':'curta'}. Parciais de prova: <b>${ORIGEM_PARC[usa]}</b>${ord.length>1?` (${pp.n-st.n} de outra origem ficaram fora desta média)`:''}. <b>A saída não é equivalente</b> — borda no treino, bloco na prova —, por isso os dois números são descritos lado a lado e <b>não</b> convertidos um no outro.</div>`;
+    }else if(pp.suportada&&pp.n&&!tre){
+      cmp=`<div class="sep"></div><div class="eyebrow">custo da segunda metade — ${meio}m + ${meio}m</div>
+        <div class="small muted" style="margin-top:6px">Você tem <b>${pp.n} prova(s)</b> de ${ref.d}m ${esc(ref.e)} ${ref.pis} com parcial registrada, mas <b>nenhum tiro de treino desta mesma prova e piscina com parcial</b> nos últimos 120 dias. Sem os dois lados comparáveis, o app não calcula a diferença — lançar a parcial de 25m num tiro de ${ref.d} já resolve.</div>`;
     }
   }
   return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
@@ -8241,7 +8344,55 @@ function cardTransferencia(pro,motor,comPct,brk){
     <table style="margin-top:10px"><thead><tr><th>prova</th><th class="n">melhor tiro</th><th class="n">competição</th><th class="n">conversão</th></tr></thead>
       <tbody>${linhas}</tbody></table>
     ${cmp}
-    <div class="xs muted" style="margin-top:6px">Conversão <b>positiva</b> = a prova saiu mais lenta que o melhor tiro; negativa = mais rápida. Janela de 6 semanas antes de cada competição. Associação observada no seu histórico — não é previsão.</div>
+    ${t.nOutraPiscina&&!t.soOutraPiscina?`<div class="note" style="margin-top:8px"><b>${t.nOutraPiscina} prova(s) fora da mediana.</b> O único tiro de referência delas é de piscina diferente da prova, e piscina curta tem uma virada que a longa não tem. Elas continuam listadas acima, marcadas, mas não entram no número — misturar as duas piscinas numa só conversão esconde justamente o que diferencia as provas.</div>`:''}
+    ${/* P2-C — CRITÉRIOS DE COMPARABILIDADE, à vista. O número só vale se o
+         leitor souber o que foi casado e o que não foi. */''}
+    <details class="xs" style="margin-top:8px"><summary class="muted">critérios de comparabilidade desta conversão</summary>
+      <table style="margin-top:6px"><tbody>
+        <tr><td style="width:42%"><b>Distância</b></td><td class="muted">igual dos dois lados (${ref.d} m) — obrigatório.</td></tr>
+        <tr><td><b>Estilo</b></td><td class="muted">igual dos dois lados (${esc(ref.e)}) — obrigatório.</td></tr>
+        <tr><td><b>Piscina</b></td><td class="muted">${t.nComparavel?`${t.nComparavel} prova(s) com tiro na mesma piscina (${ref.pis}).`:'nenhuma prova com tiro na mesma piscina.'}${t.nOutraPiscina?` ${t.nOutraPiscina} com tiro de piscina diferente, marcada(s) e fora da mediana.`:''}</td></tr>
+        <tr><td><b>Janela</b></td><td class="muted">6 semanas antes da prova. Sem tiro nela, o app amplia para 90 dias e rotula a linha — a conversão de janela ampliada vale menos.</td></tr>
+        <tr><td><b>Saída</b></td><td class="muted"><b>Não equivalente.</b> Treino sai da borda, prova sai do bloco. Esta é a razão de a conversão ser <b>negativa</b> na maioria dos atletas, e o motivo de ela ser medida em vez de estimada.</td></tr>
+        <tr><td><b>Tipo de esforço</b></td><td class="muted">pernada, braçada, técnica e filipina já saem antes de chegar aqui. Tiro com equipamento só é separável quando foi anotado na série.</td></tr>
+        <tr><td><b>Natureza do registro</b></td><td class="muted">tiro de treino é cronometragem de treino; resultado de prova é o tempo registrado em Marcas. São registros de naturezas diferentes e é por isso que isto é conversão observada, não equivalência.</td></tr>
+      </tbody></table></details>
+    <div class="xs muted" style="margin-top:6px">Conversão <b>positiva</b> = a prova saiu mais lenta que o melhor tiro; negativa = mais rápida. Associação observada no seu histórico — <b>não é previsão</b>, e não atribui causa: o que mudou entre o tiro e a prova não é só o treino.</div>
+  </div>`;
+}
+/* P2-B — cartão das parciais de prova, por prova e por origem do registro */
+function cardParciais(pro,motor,comPct){
+  const ref=motor.provaRef; if(!ref)return'';
+  const pp=parciaisProva(pro,ref.d,ref.e,ref.pis);
+  const nome=`${ref.d}m ${ref.e} ${ref.pis}`;
+  if(!pp.suportada)return'';
+  const meio=ref.d/2;
+  if(!pp.n)return`<div class="card" data-dom="prova"><div class="eyebrow">parciais de prova — ${esc(nome)}</div>
+    <p class="small muted" style="margin-top:6px">${pp.nProvas
+      ? `Você tem <b>${pp.nProvas} prova(s)</b> de ${esc(nome)} em Marcas, mas <b>nenhuma com parcial de ${meio}m registrada</b> — só o tempo final. A passagem dos ${meio}m é o que separa "abri rápido demais" de "não sustentei", e sem ela as duas leituras ficam iguais.`
+      : `Nenhuma prova de ${esc(nome)} registrada ainda.`}</p></div>`;
+  const ord=['oficial','manual','nd'].filter(o=>pp.porOrigem[o]);
+  const linhas=pp.itens.slice().reverse().slice(0,10).map(x=>`<tr>
+    <td class="small">${brCurta(x.data)}${x.comp?`<div class="xs muted">${esc(x.comp)}</div>`:''}</td>
+    <td class="n">${fmt(x.h1,true)}</td><td class="n">${fmt(x.h2,true)}</td>
+    <td class="n" style="font-weight:700;color:${x.dif>0?'var(--ink-2)':'var(--ok)'}">${x.dif>=0?'+':''}${fmt(Math.abs(x.dif),true)}</td>
+    <td class="xs muted">${x.origem==='nd'?'não declarada':x.origem}</td></tr>`).join('');
+  const blocos=ord.map(o=>{const s=pp.porOrigem[o];
+    return`<div style="border-top:1px solid var(--line);padding:9px 0">
+      <div class="row" style="align-items:baseline"><b>${ORIGEM_PARC[o]}</b><div class="grow"></div><span class="xs muted">${s.n} prova(s)</span></div>
+      <div class="xs muted" style="margin-top:3px">diferença média <b class="t">${s.difMedia>=0?'+':''}${fmt(Math.abs(s.difMedia),true)}</b>${s.dp!=null?` · variação entre provas <b class="t">${fmt(s.dp,true)}</b>${s.cv!=null?` (${s.cv.toFixed(0)}%)`:''}`:' · variação exige 2 provas'}
+      ${s.r!=null?` · abertura × manutenção <b class="t">r=${s.r.toFixed(2)}</b>`:` · abertura × manutenção: ${s.n<4?`precisa de 4 provas (tem ${s.n})`:'sem variação suficiente'}`}</div>
+      ${s.r!=null?`<div class="xs muted" style="margin-top:3px">${s.r>0.5?`Quanto mais rápido você abre, <b>mais</b> a segunda metade cede. Associação no seu histórico, com ${s.n} provas — não é causa.`
+        :s.r<-0.5?`Abrir mais rápido <b>não</b> tem custado a segunda metade aqui. ${s.n} provas — amostra pequena.`
+        :`Abertura e manutenção não andam juntas de forma clara (${s.n} provas).`}</div>`:''}
+    </div>`}).join('');
+  return`<div class="card" data-dom="prova" id="c-parciais"><div class="eyebrow">parciais de prova — ${esc(nome)}</div>
+    <div class="small muted" style="margin:4px 0 6px">Como a prova se divide em <b>${meio}m + ${meio}m</b>. Só provas desta distância, estilo e piscina.</div>
+    <table><thead><tr><th>prova</th><th class="n">1º ${meio}</th><th class="n">2º ${meio}</th><th class="n">dif.</th><th>origem</th></tr></thead><tbody>${linhas}</tbody></table>
+    ${blocos}
+    ${pp.misturaOrigem?`<div class="note warn" style="margin-top:8px"><b>Origens diferentes não entram na mesma média.</b> Estas parciais vêm de ${ord.length} procedências (${ord.map(o=>ORIGEM_PARC[o]).join(', ')}), e cronometragem oficial não se mistura com tempo digitado depois. Por isso cada origem tem o seu bloco acima.</div>`:''}
+    ${pp.semParcial?`<div class="xs muted" style="margin-top:6px"><b>${pp.semParcial} prova(s) de ${esc(nome)} ficaram fora</b> — só têm o tempo final registrado, sem a passagem dos ${meio}m. Continuam valendo em Marcas; o que não dá é dividir uma prova sem a parcial dela.</div>`:''}
+    <div class="xs muted" style="margin-top:6px"><b>Diferença</b> = segunda metade − primeira. Positiva é o normal: a primeira tem a saída. <b>Variação</b> é o desvio dessa diferença entre provas — quanto menor, mais repetível é a sua divisão de prova. <b>Origem não declarada</b> é registro antigo: o app não promove dado sem procedência a oficial.</div>
   </div>`;
 }
 function cardAprendizado(pro){
@@ -8555,12 +8706,111 @@ function transferenciaProva(pro,comPct,d,e,pis,janela){
   if(!itens.length)return semBase.length
     ?{n:0,itens:[],semBase,nProvas:res.length,mediana:null,p25:null,p75:null,media:null,estagio:estagioCalib(0)}
     :null;
-  const p=itens.map(x=>x.pct).sort((a,b)=>a-b);
+  /* ── P2-A — A MEDIANA NÃO MISTURA PISCINAS ───────────────────────────────
+     O nível 'piscina diferente' existe para não deixar o atleta sem leitura
+     nenhuma, mas ele comparava um tiro de 50 em piscina curta (com virada)
+     contra uma prova em piscina longa (sem) e jogava o resultado na MESMA
+     mediana dos comparáveis. Num sprint essa virada vale décimos. Agora os
+     comparáveis mandam no número; os de piscina diferente ficam listados à
+     parte, como comparação descritiva, e só viram número se não houver
+     nenhum comparável — e aí rotulados como tal. */
+  const comp=itens.filter(x=>x.qualidade!=='piscina diferente');
+  const outraPis=itens.filter(x=>x.qualidade==='piscina diferente');
+  const base=comp.length?comp:outraPis;
+  const p=base.map(x=>x.pct).sort((a,b)=>a-b);
   const q=f=>p[Math.min(p.length-1,Math.max(0,Math.round((p.length-1)*f)))];
-  return{n:itens.length,semBase,nProvas:res.length,itens:itens.sort((a,b)=>b.data.localeCompare(a.data)),
+  return{n:base.length,nComparavel:comp.length,nOutraPiscina:outraPis.length,
+    soOutraPiscina:!comp.length,outraPis,
+    semBase,nProvas:res.length,itens:itens.sort((a,b)=>b.data.localeCompare(a.data)),
     mediana:q(0.5),p25:q(0.25),p75:q(0.75),
     media:+(p.reduce((a,b)=>a+b,0)/p.length).toFixed(2),
-    estagio:estagioCalib(itens.length)};
+    estagio:estagioCalib(base.length)};
+}
+/* ── P2-B — PARCIAIS DE PROVA, POR PROVA E POR ORIGEM ──────────────────────
+   O app já comparava "custo do segundo 25", mas pegava QUALQUER tiro de 50 do
+   treino — inclusive de outro estilo e de outra piscina — e comparava com a
+   prova de peito. Aqui a estratificação é obrigatória: estilo, distância e
+   piscina iguais dos dois lados.
+
+   ORIGEM DO REGISTRO. Três procedências, que não se comparam entre si:
+     'oficial'  — cronometragem da competição, lançada pelo técnico por passagem
+     'manual'   — digitada pelo próprio atleta depois da prova
+     'nd'       — registro antigo, sem declaração de origem
+   O app NUNCA promove 'nd' a 'oficial': dado sem procedência declarada fica
+   sem procedência. Estatística só é agregada DENTRO de uma origem; quando há
+   mais de uma, elas aparecem separadas.
+
+   Fórmulas (d = 50 → metades de 25 m; d = 100 → metades de 50 m):
+     h1  = primeira parcial acumulada
+     h2  = tempo final − h1
+     dif = h2 − h1                     (positivo = segunda metade mais lenta)
+     cv  = desvio/média das difs       (variação entre competições comparáveis)
+   Abertura × manutenção: correlação de Pearson entre h1 e dif, só com n ≥ 4.
+   Sem n suficiente, o app descreve os pontos e não calcula coeficiente. */
+const ORIGEM_PARC={oficial:'cronometragem oficial',manual:'digitada por você',nd:'origem não declarada'};
+function origemParcial(r){
+  const o=r&&r.origemParc;
+  return (o==='oficial'||o==='manual')?o:'nd';
+}
+function metadesDe(r,d){
+  const ps=(r&&Array.isArray(r.parciais))?r.parciais.filter(x=>x!=null):[];
+  if(ps.length<2||!(r.tempo>0))return null;          /* [total] sozinho não é parcial */
+  const meio=d/2;
+  /* parciais são ACUMULADAS; procuro a passagem da metade pela posição */
+  const idx=ps.length===2?0:Math.round(ps.length/2)-1;
+  const h1=ps[idx];
+  if(!(h1>0)||!(r.tempo>h1))return null;
+  const h2=r.tempo-h1;
+  return{h1,h2,dif:h2-h1,meio};
+}
+function parciaisProva(pro,d,e,pis){
+  if(d!==50&&d!==100)return{suportada:false,d,e,pis};
+  const res=((pro&&pro.resultados)||[]).filter(r=>r&&r.tempo>0&&r.data
+    &&r.dist===d&&r.estilo===e&&(r.piscina||'SC25')===(pis||'SC25'));
+  const itens=[];
+  for(const r of res){
+    const m=metadesDe(r,d); if(!m)continue;
+    itens.push({data:r.data,comp:r.comp||null,total:r.tempo,...m,origem:origemParcial(r)});
+  }
+  itens.sort((a,b)=>a.data.localeCompare(b.data));
+  const porOrigem={};
+  for(const it of itens)(porOrigem[it.origem]=porOrigem[it.origem]||[]).push(it);
+  const stat=arr=>{
+    if(!arr.length)return null;
+    const difs=arr.map(x=>x.dif), n=difs.length;
+    const m=difs.reduce((a,b)=>a+b,0)/n;
+    const dp=n>1?Math.sqrt(difs.reduce((a,b)=>a+(b-m)**2,0)/(n-1)):null;
+    let r=null;
+    if(n>=4){                              /* abertura × manutenção, só com amostra */
+      const xs=arr.map(x=>x.h1), ys=difs;
+      const mx=xs.reduce((a,b)=>a+b,0)/n, my=m;
+      const num=xs.reduce((s,x,i)=>s+(x-mx)*(ys[i]-my),0);
+      const den=Math.sqrt(xs.reduce((s,x)=>s+(x-mx)**2,0)*ys.reduce((s,y)=>s+(y-my)**2,0));
+      if(den)r=+(num/den).toFixed(2);
+    }
+    return{n,difMedia:m,dp,cv:(dp!=null&&m!==0)?Math.abs(dp/m)*100:null,r,
+      h1Media:arr.reduce((a,b)=>a+b.h1,0)/n};
+  };
+  const origens=Object.keys(porOrigem);
+  return{suportada:true,d,e,pis:pis||'SC25',nProvas:res.length,n:itens.length,itens,
+    origens,misturaOrigem:origens.length>1,
+    porOrigem:Object.fromEntries(origens.map(o=>[o,stat(porOrigem[o])])),
+    semParcial:res.length-itens.length};
+}
+/* Comparação treino × prova das metades — ESTRATIFICADA. Só entra o tiro da
+   MESMA distância, MESMO estilo e MESMA piscina, e o resultado é descritivo:
+   a saída não é equivalente (borda no treino, bloco na prova), então não existe
+   conversão numérica honesta entre os dois lados — só a descrição dos dois. */
+function metadesTreino(comPct,d,e,pis,dias){
+  const h0=new Date(hoje()+'T00:00:00');
+  const arr=(comPct||[]).filter(x=>x.dist===d&&x.estilo===e&&x.p1!=null&&x.tempo>x.p1
+    &&(!pis||!x.pis||x.pis===pis)
+    &&(!dias||(h0-new Date((x.data||'')+'T00:00:00'))/86400000<dias));
+  if(!arr.length)return null;
+  const difs=arr.map(x=>(x.tempo-x.p1)-x.p1);
+  const n=difs.length, m=difs.reduce((a,b)=>a+b,0)/n;
+  return{n,difMedia:m,h1Media:arr.reduce((a,b)=>a+b.p1,0)/n,
+    dp:n>1?Math.sqrt(difs.reduce((a,b)=>a+(b-m)**2,0)/(n-1)):null};
 }
 /* ── PRESSÃO DE TREINAMENTO ────────────────────────────────────────────────
    Camada sobre fadiga/fitness e monotonia. Não é "quanto você treina": é se o
@@ -9070,7 +9320,8 @@ function telaRelatorio(){
   ${sc('idade dos dados',()=>cardFrescor(pro,comPct))}
   ${sc('projeção',()=>cardPredicao(pro,comPct,motor.estado))}
   ${sc('aprendizado do modelo',()=>cardAprendizado(pro))}
-  ${sc('treino → prova',()=>cardTransferencia(pro,motor,comPct,brk))}`)}
+  ${sc('treino → prova',()=>cardTransferencia(pro,motor,comPct,brk))}
+  ${sc('parciais de prova',()=>cardParciais(pro,motor,comPct))}`)}
   ${acc('rel_cap',_N_APOIO+'.2 Capacidade e splits','onde está a sua velocidade e onde ela escapa',`
   ${sc('estado',()=>cardEstado(pro,comPct,sem))}
   ${sc('seu estado atual',()=>cardBaseline(pro,comPct))}
