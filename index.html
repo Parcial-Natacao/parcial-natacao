@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v140';
+const VER='v141';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -525,6 +525,28 @@ function novoCodigoPro(){
   return s;
 }
 const CODIGO_PRO_ANTIGO='BARBATO-PRO-2026';   /* so para avisar quem ainda usa */
+/* IDADE MÍNIMA DO CADASTRO. Era 8, o que contradizia a política de privacidade
+   e, nas lojas, dispararia um regime inteiro a mais (Google Play Families,
+   classificação etária da Apple, questionário de público-alvo). Natação master
+   é de adultos; menor de idade entra só com consentimento do responsável
+   (LGPD art. 14), tratado fora do cadastro automático. */
+const IDADE_MINIMA=18;
+/* O endereço do app, lido de onde ele está rodando. Estava escrito à mão numa
+   instrução ("abra parcial-natacao.github.io/parcial-natacao"), e no dia em que
+   o app ganhar domínio próprio essa frase mandaria o usuário para o endereço
+   velho. Tudo mais no app já é relativo, então a troca de domínio é
+   transparente — esta era a única exceção. */
+function enderecoDoApp(){
+  try{ return (location.host+location.pathname).replace(/index\.html$/,'').replace(/\/$/,''); }
+  catch(_){ return 'parcial-natacao.github.io/parcial-natacao'; }
+}
+/* a data mais recente que ainda dá IDADE_MINIMA anos hoje — vira o `max` do
+   seletor de data, para o aparelho barrar antes de o app recusar */
+function dataMaxNascimento(){
+  const h=new Date(hoje()+'T00:00:00');
+  h.setFullYear(h.getFullYear()-IDADE_MINIMA);
+  return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
+}
 /* Troca o código da equipe. Necessário para quem foi criado antes da v90: o
    código antigo é o mesmo em todas as equipes e está no fonte público. */
 async function trocarCodigoEquipe(){
@@ -755,7 +777,7 @@ function avisoIcone(){
   return`<div class="card" style="border-color:var(--rope)">
     <div class="eyebrow">ícone novo</div>
     <p class="small" style="margin:6px 0 4px">O PARCIAL ganhou ícone próprio — um cronômetro com água. Se na sua tela de início ainda aparece o desenho antigo, é porque o iPhone guarda o ícone de quando você adicionou e não busca sozinho.</p>
-    <p class="xs muted" style="margin:0 0 10px">Para trocar, leva 20 segundos: <b>segure o ícone → Remover → Excluir da Tela de Início</b>, depois abra <b>parcial-natacao.github.io/parcial-natacao</b> e use <b>Compartilhar → Adicionar à Tela de Início</b>. Nada se perde: seus dados ficam na sua conta, não no atalho.</p>
+    <p class="xs muted" style="margin:0 0 10px">Para trocar, leva 20 segundos: <b>segure o ícone → Remover → Excluir da Tela de Início</b>, depois abra <b>${esc(enderecoDoApp())}</b> e use <b>Compartilhar → Adicionar à Tela de Início</b>. Nada se perde: seus dados ficam na sua conta, não no atalho.</p>
     <button class="sm ghost full" onclick="dispensarAvisoIcone()">Entendi, não mostrar de novo</button>
   </div>`;
 }
@@ -1194,7 +1216,8 @@ async function cadastrarFB(dados){
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
   const id=idadeDe(nascimento);
-  if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
+  if(!nascimento||id==null||id>110)return toast('Data de nascimento inválida');
+  if(id<IDADE_MINIMA)return toast(`O cadastro é para maiores de ${IDADE_MINIMA} anos. Menor de idade só com o responsável — fale com o administrador.`);
   if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
@@ -1267,7 +1290,8 @@ async function cadastrar(dados){
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
   const id=idadeDe(nascimento);
-  if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
+  if(!nascimento||id==null||id>110)return toast('Data de nascimento inválida');
+  if(id<IDADE_MINIMA)return toast(`O cadastro é para maiores de ${IDADE_MINIMA} anos. Menor de idade só com o responsável — fale com o administrador.`);
   if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
@@ -1650,7 +1674,10 @@ function telaCadastro(){
     ${p==='pro'?`<div class="field"><label for="cdPro">Código PRO da equipe</label><input id="cdPro" value="${esc(CAD.codigoPro||'')}" autocapitalize="characters" autocorrect="off" placeholder="ABCD-EFGH"><div class="xs muted" style="margin-top:5px">Peça este código ao responsável pela equipe.</div></div>`:''}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
-    <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${hoje()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
+    ${/* o `max` já barra no seletor do aparelho: a pessoa não escolhe uma data
+         que o app vai recusar depois. O aviso embaixo explica o porquê. */''}
+    <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${dataMaxNascimento()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
+    <div class="xs muted" style="margin:-4px 0 8px">O cadastro é para <b>maiores de ${IDADE_MINIMA} anos</b>. Menor de idade só com o responsável — fale com o administrador.</div>
     <div class="xs muted" style="margin:-4px 0 8px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div>
     ${p==='atleta'?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
     ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
@@ -3776,6 +3803,16 @@ teste('prontidão','sem forma específica não há score',a=>{
   const r=prontidaoCompetitiva(pro,[],null,50,'peito','SC25');
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
+
+/* ── IDADE MÍNIMA (v141) ─────────────────────────────────────────────────── */
+teste('idade','o seletor de data já barra quem tem menos de 18',a=>{
+  const max=dataMaxNascimento();
+  a.eq(idadeDe(max),IDADE_MINIMA,'a data máxima dá exatamente 18 anos');
+  const d=new Date(max+'T00:00:00'); d.setDate(d.getDate()+1);
+  const umDiaDepois=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  a.ok(idadeDe(umDiaDepois)<IDADE_MINIMA,'um dia depois já tem 17');});
+teste('idade','quem faz 18 hoje entra',a=>{
+  a.ok(idadeDe(dataMaxNascimento())>=IDADE_MINIMA,'aniversário de hoje vale');});
 
 /* ── EXCLUSÃO DE CONTA (v140) ────────────────────────────────────────────── */
 teste('exclusão','a tela lista o que sai e o que fica',a=>{
