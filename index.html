@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v138';
+const VER='v139';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1665,6 +1665,7 @@ function telaCadastro(){
   <div class="card">
     ${CAD_PASSO===1?equipe:CAD_PASSO===2?pessoal:confirmar}
     <div class="grid2" style="margin-top:16px">${CAD_PASSO>1?'<button onclick="passoCadastro(-1)">Voltar etapa</button>':'<span></span>'}${CAD_PASSO<3?'<button class="primary" onclick="passoCadastro(1)">Continuar</button>':'<button id="btnCriarConta" class="primary" onclick="enviarCadastro()">Criar conta</button>'}</div>
+    ${CAD_PASSO===3?`<div class="xs muted" style="margin-top:10px;text-align:center">Ao criar a conta você concorda com a <a href="./privacidade.html" target="_blank" rel="noopener"><b>Política de Privacidade</b></a>. Dados de saúde (relógio, exames, bioimpedância e check-in) são <b>opcionais</b> e só são tratados com o seu consentimento — o seu técnico não os enxerga.</div>`:''}
   </div>`;
 }
 function selTipo(t){TIPO=t;
@@ -1719,7 +1720,7 @@ function abrirConta(){
     </div>
     <div class="sep"></div>
     <div class="row" style="align-items:center;gap:8px">
-      <span class="xs muted grow">Versão do app: <b class="t">${VER}</b></span>
+      <span class="xs muted grow">Versão do app: <b class="t">${VER}</b> · <a href="./privacidade.html" target="_blank" rel="noopener">Privacidade</a></span>
       <button class="sm ghost" onclick="recarregarForcado()" title="Baixa a versão mais nova, ignorando o cache">Atualizar app</button>
     </div>
     ${temPro()?(()=>{const e=espacoPro(),n=anexosPendentes();
