@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v141';
+const VER='v142';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3804,6 +3804,50 @@ teste('prontidão','sem forma específica não há score',a=>{
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
 
+/* ── IMPORT DO GARMIN (v142) ─────────────────────────────────────────────── */
+teste('garmin','reconhece os quatro arquivos que importam, e só eles',a=>{
+  a.eq(garminRelevante('DI_CONNECT/DI-Connect-Metrics/TrainingReadinessDTO_2026.json'),'VFC','VFC');
+  a.eq(garminRelevante('DI_CONNECT/DI-Connect-Aggregator/UDSFile_2026-01.json'),'FC de repouso','FC');
+  a.eq(garminRelevante('DI-Connect-Wellness/2026_sleepData.json'),'sono','sono');
+  a.eq(garminRelevante('summarizedActivities.json'),'nados e atividades','atividades');
+  a.eq(garminRelevante('DI_CONNECT/user_profile.json'),null,'arquivo irrelevante fica de fora');
+  a.eq(garminRelevante('activity_12345.fit'),null,'FIT de atividade não é JSON');
+  a.eq(garminRelevante('TrainingReadinessDTO.csv'),null,'nem CSV');});
+teste('garmin','o lote diz quantos dias são novos e quantos foram atualizados',async a=>{
+  _atleta(); S.pro={pbs:{},garmin:[{data:'2026-10-01',fc:55}],seco:[],resultados:[],exames:[],bioimp:[]};
+  const itens=[
+    {nome:'UDSFile_1.json',texto:async()=>JSON.stringify([
+      {calendarDate:'2026-10-01',restingHeartRate:57},
+      {calendarDate:'2026-10-02',restingHeartRate:56}])},
+    {nome:'leiame.txt',texto:async()=>'nada'},
+    {nome:'TrainingReadinessDTO_1.json',texto:async()=>JSON.stringify([{calendarDate:'2026-10-03',lastNightAvg:41}])}
+  ];
+  const r=await importarGarminLote(itens);
+  a.eq(r.lidos,2,'leu os dois relevantes');
+  a.eq(r.ignorados,1,'e ignorou o txt');
+  a.eq(r.total,3,'três dias tocados');
+  a.eq(r.novos,2,'dois novos'); a.eq(r.atualizados,1,'um atualizado');
+  a.eq(r.de,'2026-10-01','primeira data'); a.eq(r.ate,'2026-10-03','última data');
+  a.eq(S.pro.garmin.find(x=>x.data==='2026-10-01').fc,57,'o dia existente foi atualizado, não duplicado');
+  a.eq(S.pro.garmin.length,3,'sem duplicar dia');});
+teste('garmin','arquivo ilegível não derruba o lote',async a=>{
+  _atleta(); S.pro={pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  const r=await importarGarminLote([
+    {nome:'UDSFile_a.json',texto:async()=>'{ isso não é json'},
+    {nome:'UDSFile_b.json',texto:async()=>{throw new Error('leitura falhou')}},
+    {nome:'UDSFile_c.json',texto:async()=>JSON.stringify([{calendarDate:'2026-10-05',restingHeartRate:54}])}
+  ]);
+  a.eq(r.falhas,2,'dois falharam'); a.eq(r.lidos,1,'o terceiro entrou');
+  a.eq(r.total,1,'e o dia dele foi gravado');});
+teste('garmin','sem nada reconhecido, a mensagem diz o que procurar',async a=>{
+  _atleta(); S.pro={pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  const r=await importarGarminLote([{nome:'foto.jpg',texto:async()=>''}]);
+  a.eq(r.total,0,'nada importado');
+  const h=relatorioGarmin(r);
+  a.ok(h.indexOf('Nada foi importado')>=0,'diz que nada entrou');
+  a.ok(h.indexOf('TrainingReadinessDTO')>=0,'e nomeia os arquivos certos');
+  a.ok(h.indexOf('DI_CONNECT')>=0,'dizendo onde eles ficam');});
+
 /* ── IDADE MÍNIMA (v141) ─────────────────────────────────────────────────── */
 teste('idade','o seletor de data já barra quem tem menos de 18',a=>{
   const max=dataMaxNascimento();
@@ -6399,9 +6443,15 @@ function telaGarmin(){
         <td class="n">${x.hrv??'—'}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
   const cImportar=`
-    <p class="small muted" style="margin-top:2px">Aceita a exportação do Garmin Connect: <b>TrainingReadinessDTO</b> (VFC), <b>UDSFile</b> (FC repouso), <b>sleepData</b> e <b>summarizedActivities</b> (nados).</p>
+    <p class="small muted" style="margin-top:2px">Entregue o <b>export do Garmin Connect inteiro</b> — o app procura sozinho os arquivos que interessam (VFC, FC de repouso, sono e nados) e ignora o resto.</p>
+    <input type="file" id="fGarZip" accept=".zip,application/zip" style="display:none" onchange="zipGarmin(this)">
+    <input type="file" id="fGarDir" webkitdirectory directory style="display:none" onchange="arquivoGarmin(this)">
     <input type="file" id="fGar" accept=".json,application/json" multiple style="display:none" onchange="arquivoGarmin(this)">
-    <button class="primary full" style="margin-top:8px" onclick="document.getElementById('fGar').click()">Escolher arquivos do Garmin</button>
+    <button class="primary full" style="margin-top:8px" onclick="document.getElementById('fGarZip').click()">Enviar o ZIP do export</button>
+    <button class="full" style="margin-top:6px" onclick="document.getElementById('fGarDir').click()">Escolher a pasta já descompactada</button>
+    <div class="xs muted" style="margin-top:5px">O ZIP é o caminho de um toque. Se ele for muito grande e o navegador travar, descompacte no computador e use a <b>pasta</b> — ela não carrega tudo na memória. No celular, prefira o ZIP.</div>
+    <div id="garSt" class="xs muted" style="margin-top:8px"></div>
+    <button class="sm ghost full" style="margin-top:8px" onclick="document.getElementById('fGar').click()">Escolher arquivos avulsos</button>
     <button class="sm ghost full" style="margin-top:6px" onclick="S.colarJson=!S.colarJson;render()">${S.colarJson?'Cancelar':'Ou colar o JSON'}</button>
     ${S.colarJson?`<div class="field" style="margin-top:8px">
       <textarea id="txGar" style="min-height:100px" onfocus="S.escrevendo=true" onblur="S.escrevendo=false"
@@ -6630,21 +6680,110 @@ async function salvarCheckin(){
   await salvarPro(); S.checkinDraft=null;
   toast('Check-in salvo · prontidão '+checkinScore(rec)); render();
 }
-async function arquivoGarmin(inp){
-  let n=0;
-  for(const f of inp.files){
-    const txt=await f.text();
-    n+=await importarGarmin(txt,true);
-  }
-  await salvarPro(); toast(`${n} dia(s) importado(s)`); render();
+/* ── IMPORT DO GARMIN: o atrito era ACHAR os arquivos ──────────────────────
+   O export GDPR do Garmin vem como um ZIP com centenas de arquivos, e só
+   quatro famílias interessam. Até aqui o atleta tinha de descompactar, achar
+   cada um no meio do resto e selecionar à mão — toda vez.
+   Agora ele entrega a PASTA inteira (ou o ZIP) e o app procura sozinho. */
+const ARQ_GARMIN=[
+  {re:/TrainingReadinessDTO/i, rot:'VFC'},
+  {re:/UDSFile/i,              rot:'FC de repouso'},
+  {re:/sleepData/i,            rot:'sono'},
+  {re:/summarizedActivities/i, rot:'nados e atividades'}
+];
+function garminRelevante(nome){
+  const base=String(nome||'').split(/[\\/]/).pop();
+  if(!/\.json$/i.test(base))return null;
+  const m=ARQ_GARMIN.find(x=>x.re.test(base));
+  return m?m.rot:null;
 }
+/* Núcleo compartilhado: recebe {nome, texto()} e devolve o relatório do que
+   entrou. Serve para a pasta, para o ZIP e para arquivos avulsos. */
+async function importarGarminLote(itens,diz){
+  const antes=new Set(((S.pro&&S.pro.garmin)||[]).map(x=>x.data));
+  const porTipo={}, tocados=new Set();
+  let lidos=0, ignorados=0, falhas=0;
+  for(const it of itens){
+    const rot=garminRelevante(it.nome);
+    if(!rot){ ignorados++; continue; }
+    if(diz)diz(`Lendo ${rot}… (${lidos+1})`);
+    let txt; try{ txt=await it.texto(); }catch(_){ falhas++; continue; }
+    const r=await importarGarmin(txt,true);
+    if(!r||!r.n){ falhas++; continue; }
+    porTipo[rot]=(porTipo[rot]||0)+r.n;
+    r.dias.forEach(d=>tocados.add(d));
+    lidos++;
+  }
+  const dias=[...tocados].sort();
+  return{lidos,ignorados,falhas,porTipo,
+    novos:dias.filter(d=>!antes.has(d)).length,
+    atualizados:dias.filter(d=>antes.has(d)).length,
+    de:dias[0]||null, ate:dias[dias.length-1]||null, total:dias.length};
+}
+function relatorioGarmin(r){
+  if(!r.total)return`<b>Nada foi importado.</b> ${r.ignorados?`${r.ignorados} arquivo(s) foram ignorados por não serem os do Garmin.`:''} Os arquivos que o app procura são <b>${ARQ_GARMIN.map(x=>x.re.source.replace(/\\/g,'')).join('</b>, <b>')}</b> — eles ficam dentro de <code>DI_CONNECT</code> no export.`;
+  const tipos=Object.entries(r.porTipo).map(([k,v])=>`${k} (${v})`).join(' · ');
+  return`<b>${r.total} dia(s)</b> — ${r.novos} novo(s), ${r.atualizados} atualizado(s).<br>
+    <span class="xs muted">${brCurta(r.de)} a ${brCurta(r.ate)} · ${tipos}${r.ignorados?` · ${r.ignorados} arquivo(s) irrelevante(s) ignorado(s)`:''}${r.falhas?` · ${r.falhas} não deu para ler`:''}</span>`;
+}
+function dizGarmin(html,cor){
+  const el=document.getElementById('garSt');
+  if(el){ el.className='note '+(cor||''); el.innerHTML=html; }
+}
+/* arquivos avulsos OU a pasta inteira — o mesmo manipulador serve aos dois,
+   porque webkitdirectory só muda o que o seletor devolve */
+async function arquivoGarmin(inp){
+  const fs=[...(inp.files||[])]; inp.value='';
+  if(!fs.length)return;
+  dizGarmin(`Procurando nos ${fs.length} arquivo(s)…`);
+  const r=await importarGarminLote(fs.map(f=>({nome:f.webkitRelativePath||f.name,texto:()=>f.text()})),dizGarmin);
+  if(r.total)await salvarPro();
+  dizGarmin(relatorioGarmin(r),r.total?'ok':'warn');
+  if(r.total)render();
+}
+/* ZIP: lê o índice primeiro e só descomprime os quatro que interessam — o
+   export tem centenas de FIT de atividade que não servem para nada aqui. */
+let _jszip=null;
+function carregarJSZip(){
+  if(_jszip)return Promise.resolve(_jszip);
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload=()=>{ _jszip=window.JSZip; _jszip?res(_jszip):rej(new Error('JSZip não carregou')); };
+    s.onerror=()=>rej(new Error('sem conexão para carregar o leitor de ZIP'));
+    document.head.appendChild(s);
+  });
+}
+async function zipGarmin(inp){
+  const f=(inp.files||[])[0]; inp.value='';
+  if(!f)return;
+  const mb=f.size/1048576;
+  dizGarmin(`Abrindo o ZIP (${mb.toFixed(0)} MB)…`);
+  let JZ; try{ JZ=await carregarJSZip(); }catch(e){ return dizGarmin(esc(e.message),'warn'); }
+  let zip;
+  try{ zip=await JZ.loadAsync(await f.arrayBuffer()); }
+  catch(e){
+    return dizGarmin(`Não consegui abrir este ZIP${mb>150?` — ele tem ${mb.toFixed(0)} MB, e o navegador pode não dar conta. <b>Descompacte no computador e use "Escolher a pasta"</b>, que não carrega tudo na memória.`:`: ${esc(e.message)}`}`,'warn');
+  }
+  const itens=[];
+  zip.forEach((caminho,entry)=>{ if(!entry.dir&&garminRelevante(caminho))itens.push({nome:caminho,texto:()=>entry.async('string')}); });
+  if(!itens.length)return dizGarmin(relatorioGarmin({total:0,ignorados:Object.keys(zip.files).length}),'warn');
+  const r=await importarGarminLote(itens,dizGarmin);
+  if(r.total)await salvarPro();
+  dizGarmin(relatorioGarmin(r),r.total?'ok':'warn');
+  if(r.total)render();
+}
+/* devolve {n, dias} — quantos registros entraram e QUAIS datas foram tocadas.
+   O lote precisa das datas para dizer quantos dias são novos e quantos foram
+   atualizados; antes só havia uma contagem bruta de registros. */
 async function importarGarmin(raw,silencioso){
-  if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return 0}
-  let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return 0}
+  const vazio={n:0,dias:[]};
+  if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return vazio}
+  let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return vazio}
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const arr=Array.isArray(j)?j.flat():[j],mapa={};
   (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
-  let n=0;
+  let n=0; const tocados=new Set();
   arr.forEach(o=>{
     if(!o||typeof o!=='object')return;
     const d=o.calendarDate||o.calendar_date||o.sleepStartTimestampLocal?.slice?.(0,10)||
@@ -6672,11 +6811,11 @@ async function importarGarmin(raw,silencioso){
           g.ativFc=Math.round(g._fcMin/g._min); }
       }
     }
-    mapa[dia]=g;n++;
+    mapa[dia]=g;n++;tocados.add(dia);
   });
   S.pro.garmin=Object.values(mapa);
   if(!silencioso){await salvarPro();toast(`${n} registro(s) lido(s)`);render()}
-  return n;
+  return {n,dias:[...tocados]};
 }
 async function lancarDia(){
   const d=val('gD'); if(!d)return;
