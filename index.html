@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v139';
+const VER='v141';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -525,6 +525,28 @@ function novoCodigoPro(){
   return s;
 }
 const CODIGO_PRO_ANTIGO='BARBATO-PRO-2026';   /* so para avisar quem ainda usa */
+/* IDADE MÍNIMA DO CADASTRO. Era 8, o que contradizia a política de privacidade
+   e, nas lojas, dispararia um regime inteiro a mais (Google Play Families,
+   classificação etária da Apple, questionário de público-alvo). Natação master
+   é de adultos; menor de idade entra só com consentimento do responsável
+   (LGPD art. 14), tratado fora do cadastro automático. */
+const IDADE_MINIMA=18;
+/* O endereço do app, lido de onde ele está rodando. Estava escrito à mão numa
+   instrução ("abra parcial-natacao.github.io/parcial-natacao"), e no dia em que
+   o app ganhar domínio próprio essa frase mandaria o usuário para o endereço
+   velho. Tudo mais no app já é relativo, então a troca de domínio é
+   transparente — esta era a única exceção. */
+function enderecoDoApp(){
+  try{ return (location.host+location.pathname).replace(/index\.html$/,'').replace(/\/$/,''); }
+  catch(_){ return 'parcial-natacao.github.io/parcial-natacao'; }
+}
+/* a data mais recente que ainda dá IDADE_MINIMA anos hoje — vira o `max` do
+   seletor de data, para o aparelho barrar antes de o app recusar */
+function dataMaxNascimento(){
+  const h=new Date(hoje()+'T00:00:00');
+  h.setFullYear(h.getFullYear()-IDADE_MINIMA);
+  return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
+}
 /* Troca o código da equipe. Necessário para quem foi criado antes da v90: o
    código antigo é o mesmo em todas as equipes e está no fonte público. */
 async function trocarCodigoEquipe(){
@@ -755,7 +777,7 @@ function avisoIcone(){
   return`<div class="card" style="border-color:var(--rope)">
     <div class="eyebrow">ícone novo</div>
     <p class="small" style="margin:6px 0 4px">O PARCIAL ganhou ícone próprio — um cronômetro com água. Se na sua tela de início ainda aparece o desenho antigo, é porque o iPhone guarda o ícone de quando você adicionou e não busca sozinho.</p>
-    <p class="xs muted" style="margin:0 0 10px">Para trocar, leva 20 segundos: <b>segure o ícone → Remover → Excluir da Tela de Início</b>, depois abra <b>parcial-natacao.github.io/parcial-natacao</b> e use <b>Compartilhar → Adicionar à Tela de Início</b>. Nada se perde: seus dados ficam na sua conta, não no atalho.</p>
+    <p class="xs muted" style="margin:0 0 10px">Para trocar, leva 20 segundos: <b>segure o ícone → Remover → Excluir da Tela de Início</b>, depois abra <b>${esc(enderecoDoApp())}</b> e use <b>Compartilhar → Adicionar à Tela de Início</b>. Nada se perde: seus dados ficam na sua conta, não no atalho.</p>
     <button class="sm ghost full" onclick="dispensarAvisoIcone()">Entendi, não mostrar de novo</button>
   </div>`;
 }
@@ -1194,7 +1216,8 @@ async function cadastrarFB(dados){
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
   const id=idadeDe(nascimento);
-  if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
+  if(!nascimento||id==null||id>110)return toast('Data de nascimento inválida');
+  if(id<IDADE_MINIMA)return toast(`O cadastro é para maiores de ${IDADE_MINIMA} anos. Menor de idade só com o responsável — fale com o administrador.`);
   if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
@@ -1267,7 +1290,8 @@ async function cadastrar(dados){
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
   const id=idadeDe(nascimento);
-  if(!nascimento||id==null||id<8||id>110)return toast('Data de nascimento inválida');
+  if(!nascimento||id==null||id>110)return toast('Data de nascimento inválida');
+  if(id<IDADE_MINIMA)return toast(`O cadastro é para maiores de ${IDADE_MINIMA} anos. Menor de idade só com o responsável — fale com o administrador.`);
   if(!telValido(telefone))return toast('Telefone inválido — use DDD + número');
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
@@ -1650,7 +1674,10 @@ function telaCadastro(){
     ${p==='pro'?`<div class="field"><label for="cdPro">Código PRO da equipe</label><input id="cdPro" value="${esc(CAD.codigoPro||'')}" autocapitalize="characters" autocorrect="off" placeholder="ABCD-EFGH"><div class="xs muted" style="margin-top:5px">Peça este código ao responsável pela equipe.</div></div>`:''}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
-    <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${hoje()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
+    ${/* o `max` já barra no seletor do aparelho: a pessoa não escolhe uma data
+         que o app vai recusar depois. O aviso embaixo explica o porquê. */''}
+    <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${dataMaxNascimento()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
+    <div class="xs muted" style="margin:-4px 0 8px">O cadastro é para <b>maiores de ${IDADE_MINIMA} anos</b>. Menor de idade só com o responsável — fale com o administrador.</div>
     <div class="xs muted" style="margin:-4px 0 8px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div>
     ${p==='atleta'?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
     ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
@@ -3777,6 +3804,62 @@ teste('prontidão','sem forma específica não há score',a=>{
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
 
+/* ── IDADE MÍNIMA (v141) ─────────────────────────────────────────────────── */
+teste('idade','o seletor de data já barra quem tem menos de 18',a=>{
+  const max=dataMaxNascimento();
+  a.eq(idadeDe(max),IDADE_MINIMA,'a data máxima dá exatamente 18 anos');
+  const d=new Date(max+'T00:00:00'); d.setDate(d.getDate()+1);
+  const umDiaDepois=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  a.ok(idadeDe(umDiaDepois)<IDADE_MINIMA,'um dia depois já tem 17');});
+teste('idade','quem faz 18 hoje entra',a=>{
+  a.ok(idadeDe(dataMaxNascimento())>=IDADE_MINIMA,'aniversário de hoje vale');});
+
+/* ── EXCLUSÃO DE CONTA (v140) ────────────────────────────────────────────── */
+teste('exclusão','a tela lista o que sai e o que fica',a=>{
+  _atleta(); S.u.perfil='pro';
+  S.pro={pbs:{},garmin:[{data:'2026-10-01',hrv:40}],exames:[],bioimp:[],seco:[],resultados:[]};
+  apagarMinhaConta();
+  const t=document.getElementById('sheetBody').innerText;
+  a.ok(/o que é apagado/i.test(t),'diz o que sai');
+  a.ok(/o que permanece/i.test(t),'e o que fica');
+  a.ok(/dados de saúde/i.test(t),'cita os dados de saúde de quem tem');
+  a.ok(/treinos da equipe/i.test(t),'avisa que os tempos do treino permanecem');
+  a.ok(/APAGAR/.test(t),'exige a palavra de confirmação');
+  fecharSheet();});
+teste('exclusão','sem digitar APAGAR nada acontece',async a=>{
+  _atleta(); S.u.perfil='pro'; S.pro={pbs:{},seco:[]};
+  const chaves=[]; const _ap=window.apagarChave;
+  window.apagarChave=async k=>{chaves.push(k);return true};
+  apagarMinhaConta();
+  const inp=document.getElementById('delTxt'); if(inp)inp.value='apagr';   /* errado de propósito */
+  await confirmarApagarMinhaConta();
+  window.apagarChave=_ap;
+  a.eq(chaves.length,0,'nenhuma chave foi apagada');
+  a.ok(!!S.u,'a sessão continua'); fecharSheet();});
+teste('exclusão','apaga pro_, perf_ e cadastro — em QUALQUER perfil',async a=>{
+  for(const perfil of ['pro','tecnico','atleta']){
+    _atleta();
+    const u={...S.u,perfil,equipe:'t',id:'A1',email:'x@y.com'};
+    const f=await apagarDadosDaConta(u,{pbs:{},seco:[]});
+    a.ok(f.includes('pro_A1'),'pro_ apagado ('+perfil+')');
+    a.ok(f.includes('eq_t_perf_A1'),'snapshot do técnico apagado ('+perfil+')');
+    a.ok(f.includes('u_x@y.com'),'cadastro apagado ('+perfil+')');
+  }});
+teste('exclusão','anexos saem ANTES do documento que guarda as URLs',async a=>{
+  _atleta();
+  const u={...S.u,perfil:'pro',equipe:'t',id:'A1',email:'x@y.com'};
+  const pro={pbs:{},seco:[{id:'s1',img:'https://fake/img.jpg',arquivo:'https://fake/doc.pdf'}]};
+  const f=await apagarDadosDaConta(u,pro);
+  const anexos=f.filter(x=>x.indexOf('anexo:')===0);
+  a.eq(anexos.length,2,'os dois — foto e PDF');
+  a.ok(f.indexOf(anexos[0])<f.indexOf('pro_A1'),
+       'antes do pro_, senão as URLs ficariam órfãs no Storage');});
+teste('exclusão','sem equipe não tenta apagar snapshot que não existe',async a=>{
+  _atleta();
+  const f=await apagarDadosDaConta({perfil:'atleta',equipe:null,id:'A1',email:'x@y.com'},{});
+  a.ok(f.includes('pro_A1'),'pro_ apagado');
+  a.ok(!f.some(k=>k.indexOf('_perf_')>=0),'nenhum snapshot');});
+
 /* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
 function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
 teste('chapéus','técnico abre comandando a equipe',a=>{
@@ -4719,25 +4802,59 @@ async function apagarChave(k){
   return DB.set(k,null);
 }
 
-/* Qualquer um apaga a PRÓPRIA conta — login e dados. No modo em rede pede a
-   senha para reautenticar (o Firebase exige, e garante que é mesmo você). */
+/* ── EXCLUSÃO DA PRÓPRIA CONTA (LGPD art. 18 · exigência das lojas) ─────────
+   A tela diz, item a item, o que SAI e o que FICA. Prometer apagamento total
+   e deixar rastro é pior do que não prometer: o que permanece são os tempos
+   dentro dos documentos de TREINO da equipe, que são do técnico e o atleta
+   não tem permissão para reescrever. Isso está dito aqui e na política. */
 function apagarMinhaConta(){
   const u=S.u; if(!u)return;
+  const temSaude=!!(S.pro&&((S.pro.garmin||[]).length||(S.pro.exames||[]).length||(S.pro.bioimp||[]).length));
   sheet(`<h2>Apagar minha conta</h2>
-    <div class="note" style="margin:10px 0;border-color:var(--clock)">Isso apaga sua conta ${u.perfil==='tecnico'?'de técnico':''} e os seus dados desta equipe. <b>Não dá para desfazer.</b>
-    ${u.perfil==='tecnico'?' A equipe e os atletas continuam; a equipe fica sem técnico até alguém assumir.':''}</div>
-    ${FB?`<div class="field"><label>Confirme sua senha</label><input id="delPwd" type="password" placeholder="sua senha"></div>`:''}
+    <div class="note warn" style="margin:10px 0"><b>Isto é definitivo e não dá para desfazer.</b></div>
+    <div class="eyebrow" style="margin-top:12px">o que é apagado</div>
+    <ul class="small" style="margin:6px 0 0;padding-left:18px;line-height:1.55">
+      <li>O seu <b>cadastro</b> e o seu <b>login</b>.</li>
+      <li>As suas <b>marcas</b>, competições, sessões fora d'água e o histórico de projeções.</li>
+      ${temSaude?'<li>Os seus <b>dados de saúde</b> — relógio, exames, bioimpedância e check-in.</li>':''}
+      <li>Os <b>anexos</b> (fotos e PDFs) que você enviou.</li>
+      <li>O <b>resumo de desempenho</b> que o seu técnico enxerga.</li>
+    </ul>
+    <div class="eyebrow" style="margin-top:14px">o que permanece</div>
+    <ul class="small" style="margin:6px 0 0;padding-left:18px;line-height:1.55">
+      <li>Os <b>tempos que você lançou nos treinos da equipe</b>, dentro dos registros do
+          treino. Eles pertencem ao histórico da equipe e só o técnico pode removê-los —
+          peça a ele se quiser que saiam.</li>
+      ${u.perfil==='tecnico'?'<li>A <b>equipe</b> e os <b>atletas</b> continuam. A equipe fica sem técnico até alguém assumir.</li>':''}
+    </ul>
+    <div class="field" style="margin-top:16px"><label for="delTxt">Para confirmar, digite <b>APAGAR</b></label>
+      <input id="delTxt" autocapitalize="characters" autocorrect="off" placeholder="APAGAR"></div>
+    ${FB?`<div class="field"><label for="delPwd">E a sua senha</label><input id="delPwd" type="password" placeholder="sua senha"></div>`:''}
     <button class="full danger" style="margin-top:6px" onclick="confirmarApagarMinhaConta()">Apagar definitivamente</button>
     <button class="full ghost" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
 }
 async function confirmarApagarMinhaConta(){
   const u=S.u; if(!u)return;
+  if((val('delTxt')||'').toUpperCase()!=='APAGAR')
+    return toast('Digite APAGAR para confirmar');
   if(FB){
     const senha=val('delPwd');
     if(!senha)return toast('Digite sua senha para confirmar');
     try{ await fauth.signInWithEmailAndPassword(u.email,senha); }   /* reautentica */
     catch(e){ return toast(traduzErroFB(e.code)); }
   }
+  toast('Apagando…');
+  await apagarDadosDaConta(u,S.pro);
+  if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
+  try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
+  desligarSincronia(); S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
+  fecharSheet(); toast('Conta apagada'); render();
+}
+/* A remoção propriamente dita, separada da tela: é o que dá para testar sem
+   depender de Firebase, de senha e de sheet aberta. Devolve as chaves que
+   apagou, na ordem — a ordem importa (ver os anexos abaixo). */
+async function apagarDadosDaConta(u,pro){
+  const feitas=[];
   try{
     if(u.perfil==='tecnico'){
       const eq=await DB.get(kEq(u.equipe));
@@ -4751,13 +4868,23 @@ async function confirmarApagarMinhaConta(){
       const libs=await DB.get(kLib(u.equipe))||[];
       const l=libs.find(x=>x.cpf===u.cpf); if(l){ l.usado=false; delete l.email; await DB.set(kLib(u.equipe),libs); }
     }
-    if(u.perfil==='pro') await apagarChave(kPro(u.id));
-    await apagarChave(kUser(u.email));
+    /* ANEXOS primeiro: depois de apagar o pro_ não há mais como achar as URLs,
+       e o arquivo ficaria órfão no Storage para sempre. */
+    const p=pro||await DB.get(kPro(u.id))||{};
+    for(const s of (p.seco||[]))
+      for(const campo of ['img','arquivo'])
+        if(s[campo]){ await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
+    /* pro_ SEM condicionar ao perfil: desde que o técnico ganhou área de
+       atleta, e desde que existe atleta com Marcas liberadas, dado de saúde
+       pode morar aqui em qualquer perfil. Apagar é idempotente — se o
+       documento não existe, não acontece nada. */
+    await apagarChave(kPro(u.id)); feitas.push(kPro(u.id));
+    /* o resumo que o TÉCNICO enxerga é um documento à parte e sobrevivia
+       à exclusão: o atleta saía e o painel dele continuava no elenco. */
+    if(u.equipe){ await apagarChave(kPerf(u.equipe,u.id)); feitas.push(kPerf(u.equipe,u.id)); }
+    await apagarChave(kUser(u.email)); feitas.push(kUser(u.email));
   }catch(e){ console.warn('apagar dados',e.message); }
-  if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
-  try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
-  desligarSincronia(); S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
-  fecharSheet(); toast('Conta apagada'); render();
+  return feitas;
 }
 
 /* Técnico apaga os DADOS de um atleta (o login dele só o Console remove). */
