@@ -163,6 +163,10 @@ service cloud.firestore {
         ehAdmin()
         || ( ehPro() && logado() && resource.data.dono == meuUid() )
         || ( ehU() && ( ehMeuU() || ehDev() || (resource.data.perfil == 'atleta' && tecnicoDe(resource.data.equipe)) ) )
+        // o próprio snapshot: sem isto, quem apaga a conta deixa para trás o
+        // painel que o técnico enxerga (LGPD art. 18, e exigência das lojas).
+        // É só o DELE: meuPerf() casa a chave com o uid do token.
+        || ( ehEq() && meuPerf() )
         || ( ehEq() && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
         || ( ehOutro() && ehAdmin() );
     }

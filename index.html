@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v139';
+const VER='v140';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3777,6 +3777,52 @@ teste('prontidão','sem forma específica não há score',a=>{
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
 
+/* ── EXCLUSÃO DE CONTA (v140) ────────────────────────────────────────────── */
+teste('exclusão','a tela lista o que sai e o que fica',a=>{
+  _atleta(); S.u.perfil='pro';
+  S.pro={pbs:{},garmin:[{data:'2026-10-01',hrv:40}],exames:[],bioimp:[],seco:[],resultados:[]};
+  apagarMinhaConta();
+  const t=document.getElementById('sheetBody').innerText;
+  a.ok(/o que é apagado/i.test(t),'diz o que sai');
+  a.ok(/o que permanece/i.test(t),'e o que fica');
+  a.ok(/dados de saúde/i.test(t),'cita os dados de saúde de quem tem');
+  a.ok(/treinos da equipe/i.test(t),'avisa que os tempos do treino permanecem');
+  a.ok(/APAGAR/.test(t),'exige a palavra de confirmação');
+  fecharSheet();});
+teste('exclusão','sem digitar APAGAR nada acontece',async a=>{
+  _atleta(); S.u.perfil='pro'; S.pro={pbs:{},seco:[]};
+  const chaves=[]; const _ap=window.apagarChave;
+  window.apagarChave=async k=>{chaves.push(k);return true};
+  apagarMinhaConta();
+  const inp=document.getElementById('delTxt'); if(inp)inp.value='apagr';   /* errado de propósito */
+  await confirmarApagarMinhaConta();
+  window.apagarChave=_ap;
+  a.eq(chaves.length,0,'nenhuma chave foi apagada');
+  a.ok(!!S.u,'a sessão continua'); fecharSheet();});
+teste('exclusão','apaga pro_, perf_ e cadastro — em QUALQUER perfil',async a=>{
+  for(const perfil of ['pro','tecnico','atleta']){
+    _atleta();
+    const u={...S.u,perfil,equipe:'t',id:'A1',email:'x@y.com'};
+    const f=await apagarDadosDaConta(u,{pbs:{},seco:[]});
+    a.ok(f.includes('pro_A1'),'pro_ apagado ('+perfil+')');
+    a.ok(f.includes('eq_t_perf_A1'),'snapshot do técnico apagado ('+perfil+')');
+    a.ok(f.includes('u_x@y.com'),'cadastro apagado ('+perfil+')');
+  }});
+teste('exclusão','anexos saem ANTES do documento que guarda as URLs',async a=>{
+  _atleta();
+  const u={...S.u,perfil:'pro',equipe:'t',id:'A1',email:'x@y.com'};
+  const pro={pbs:{},seco:[{id:'s1',img:'https://fake/img.jpg',arquivo:'https://fake/doc.pdf'}]};
+  const f=await apagarDadosDaConta(u,pro);
+  const anexos=f.filter(x=>x.indexOf('anexo:')===0);
+  a.eq(anexos.length,2,'os dois — foto e PDF');
+  a.ok(f.indexOf(anexos[0])<f.indexOf('pro_A1'),
+       'antes do pro_, senão as URLs ficariam órfãs no Storage');});
+teste('exclusão','sem equipe não tenta apagar snapshot que não existe',async a=>{
+  _atleta();
+  const f=await apagarDadosDaConta({perfil:'atleta',equipe:null,id:'A1',email:'x@y.com'},{});
+  a.ok(f.includes('pro_A1'),'pro_ apagado');
+  a.ok(!f.some(k=>k.indexOf('_perf_')>=0),'nenhum snapshot');});
+
 /* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
 function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
 teste('chapéus','técnico abre comandando a equipe',a=>{
@@ -4719,25 +4765,59 @@ async function apagarChave(k){
   return DB.set(k,null);
 }
 
-/* Qualquer um apaga a PRÓPRIA conta — login e dados. No modo em rede pede a
-   senha para reautenticar (o Firebase exige, e garante que é mesmo você). */
+/* ── EXCLUSÃO DA PRÓPRIA CONTA (LGPD art. 18 · exigência das lojas) ─────────
+   A tela diz, item a item, o que SAI e o que FICA. Prometer apagamento total
+   e deixar rastro é pior do que não prometer: o que permanece são os tempos
+   dentro dos documentos de TREINO da equipe, que são do técnico e o atleta
+   não tem permissão para reescrever. Isso está dito aqui e na política. */
 function apagarMinhaConta(){
   const u=S.u; if(!u)return;
+  const temSaude=!!(S.pro&&((S.pro.garmin||[]).length||(S.pro.exames||[]).length||(S.pro.bioimp||[]).length));
   sheet(`<h2>Apagar minha conta</h2>
-    <div class="note" style="margin:10px 0;border-color:var(--clock)">Isso apaga sua conta ${u.perfil==='tecnico'?'de técnico':''} e os seus dados desta equipe. <b>Não dá para desfazer.</b>
-    ${u.perfil==='tecnico'?' A equipe e os atletas continuam; a equipe fica sem técnico até alguém assumir.':''}</div>
-    ${FB?`<div class="field"><label>Confirme sua senha</label><input id="delPwd" type="password" placeholder="sua senha"></div>`:''}
+    <div class="note warn" style="margin:10px 0"><b>Isto é definitivo e não dá para desfazer.</b></div>
+    <div class="eyebrow" style="margin-top:12px">o que é apagado</div>
+    <ul class="small" style="margin:6px 0 0;padding-left:18px;line-height:1.55">
+      <li>O seu <b>cadastro</b> e o seu <b>login</b>.</li>
+      <li>As suas <b>marcas</b>, competições, sessões fora d'água e o histórico de projeções.</li>
+      ${temSaude?'<li>Os seus <b>dados de saúde</b> — relógio, exames, bioimpedância e check-in.</li>':''}
+      <li>Os <b>anexos</b> (fotos e PDFs) que você enviou.</li>
+      <li>O <b>resumo de desempenho</b> que o seu técnico enxerga.</li>
+    </ul>
+    <div class="eyebrow" style="margin-top:14px">o que permanece</div>
+    <ul class="small" style="margin:6px 0 0;padding-left:18px;line-height:1.55">
+      <li>Os <b>tempos que você lançou nos treinos da equipe</b>, dentro dos registros do
+          treino. Eles pertencem ao histórico da equipe e só o técnico pode removê-los —
+          peça a ele se quiser que saiam.</li>
+      ${u.perfil==='tecnico'?'<li>A <b>equipe</b> e os <b>atletas</b> continuam. A equipe fica sem técnico até alguém assumir.</li>':''}
+    </ul>
+    <div class="field" style="margin-top:16px"><label for="delTxt">Para confirmar, digite <b>APAGAR</b></label>
+      <input id="delTxt" autocapitalize="characters" autocorrect="off" placeholder="APAGAR"></div>
+    ${FB?`<div class="field"><label for="delPwd">E a sua senha</label><input id="delPwd" type="password" placeholder="sua senha"></div>`:''}
     <button class="full danger" style="margin-top:6px" onclick="confirmarApagarMinhaConta()">Apagar definitivamente</button>
     <button class="full ghost" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
 }
 async function confirmarApagarMinhaConta(){
   const u=S.u; if(!u)return;
+  if((val('delTxt')||'').toUpperCase()!=='APAGAR')
+    return toast('Digite APAGAR para confirmar');
   if(FB){
     const senha=val('delPwd');
     if(!senha)return toast('Digite sua senha para confirmar');
     try{ await fauth.signInWithEmailAndPassword(u.email,senha); }   /* reautentica */
     catch(e){ return toast(traduzErroFB(e.code)); }
   }
+  toast('Apagando…');
+  await apagarDadosDaConta(u,S.pro);
+  if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
+  try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
+  desligarSincronia(); S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
+  fecharSheet(); toast('Conta apagada'); render();
+}
+/* A remoção propriamente dita, separada da tela: é o que dá para testar sem
+   depender de Firebase, de senha e de sheet aberta. Devolve as chaves que
+   apagou, na ordem — a ordem importa (ver os anexos abaixo). */
+async function apagarDadosDaConta(u,pro){
+  const feitas=[];
   try{
     if(u.perfil==='tecnico'){
       const eq=await DB.get(kEq(u.equipe));
@@ -4751,13 +4831,23 @@ async function confirmarApagarMinhaConta(){
       const libs=await DB.get(kLib(u.equipe))||[];
       const l=libs.find(x=>x.cpf===u.cpf); if(l){ l.usado=false; delete l.email; await DB.set(kLib(u.equipe),libs); }
     }
-    if(u.perfil==='pro') await apagarChave(kPro(u.id));
-    await apagarChave(kUser(u.email));
+    /* ANEXOS primeiro: depois de apagar o pro_ não há mais como achar as URLs,
+       e o arquivo ficaria órfão no Storage para sempre. */
+    const p=pro||await DB.get(kPro(u.id))||{};
+    for(const s of (p.seco||[]))
+      for(const campo of ['img','arquivo'])
+        if(s[campo]){ await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
+    /* pro_ SEM condicionar ao perfil: desde que o técnico ganhou área de
+       atleta, e desde que existe atleta com Marcas liberadas, dado de saúde
+       pode morar aqui em qualquer perfil. Apagar é idempotente — se o
+       documento não existe, não acontece nada. */
+    await apagarChave(kPro(u.id)); feitas.push(kPro(u.id));
+    /* o resumo que o TÉCNICO enxerga é um documento à parte e sobrevivia
+       à exclusão: o atleta saía e o painel dele continuava no elenco. */
+    if(u.equipe){ await apagarChave(kPerf(u.equipe,u.id)); feitas.push(kPerf(u.equipe,u.id)); }
+    await apagarChave(kUser(u.email)); feitas.push(kUser(u.email));
   }catch(e){ console.warn('apagar dados',e.message); }
-  if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
-  try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
-  desligarSincronia(); S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
-  fecharSheet(); toast('Conta apagada'); render();
+  return feitas;
 }
 
 /* Técnico apaga os DADOS de um atleta (o login dele só o Console remove). */
