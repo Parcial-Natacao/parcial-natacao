@@ -505,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v135';
+const VER='v136';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1316,13 +1316,27 @@ async function autenticar(email,senha){
 async function entrarSessao(u){
   S.u=u; await DB.set('sessao',{email:u.email},false);
   S.eq=u.equipe?await DB.get(kEq(u.equipe)):null;
-  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
+  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false; S.modoAtleta=false;
   await carregarDados(); ligarSincronia(); render();
 }
 /* PRO liga/desliga o chapéu de gestão da equipe */
 function alternarGestao(){
-  S.gestao=!S.gestao; S.aba='treinos'; S.sub=null; S.provaSel=null; S.atletaSel=null; S.treino=null; S.comp=null; S.pilha=[];
+  S.gestao=!S.gestao; _limparContexto();
   fecharSheet(); toast(S.gestao?'Modo gestão ativado':'Modo gestão desativado'); render();
+}
+/* Técnico troca entre comandar a equipe e ser atleta. Mesma conta, mesma
+   sessão: o que muda é a vista. Os dados de atleta dele moram no pro_<uid>
+   dele, como os de qualquer outro — ninguém passa a ver nada de ninguém. */
+function alternarModoAtleta(){
+  if(!temDoisChapeus())return;
+  S.modoAtleta=!S.modoAtleta; _limparContexto();
+  fecharSheet(); toast(S.modoAtleta?'Você está na sua área de atleta':'De volta ao comando da equipe'); render();
+}
+/* troca de chapéu zera o que estava aberto: treino, competição, atleta
+   selecionado. Sem isso a tela nova herda a navegação da anterior. */
+function _limparContexto(){
+  S.aba='treinos'; S.sub=null; S.provaSel=null; S.atletaSel=null;
+  S.treino=null; S.comp=null; S.laudoAtleta=null; S.pilha=[];
 }
 async function sair(){
   desligarSincronia();
@@ -1706,6 +1720,13 @@ function abrirConta(){
         <div class="grow"><b>Gestão da equipe</b>
           <div class="xs muted">Ative para ajudar o técnico: liberar CPFs, montar treinos e lançar tempos de todos. Desligada, você volta à sua área de atleta.</div></div>
         <button class="sm ${S.gestao?'primary':''}" onclick="alternarGestao()">${S.gestao?'Ativada':'Ativar'}</button></div>`:''}
+    ${temDoisChapeus(u)?`<div class="sep"></div>
+      <div class="eyebrow">seus dois chapéus</div>
+      <div class="xs muted" style="margin:4px 0 8px">Técnico que também nada usa <b>a mesma conta</b> para as duas coisas. Troque quando quiser — ninguém passa a ver nada seu, e os seus dados de atleta ficam no seu espaço privado, como os de qualquer atleta.</div>
+      <div class="opt">
+        <button class="${!S.modoAtleta?'on':''}" onclick="if(S.modoAtleta)alternarModoAtleta()">Técnico<span class="xs" style="display:block;font-weight:400">treinos, elenco, competição</span></button>
+        <button class="${S.modoAtleta?'on':''}" onclick="if(!S.modoAtleta)alternarModoAtleta()">Atleta<span class="xs" style="display:block;font-weight:400">marcas, saúde, relatório</span></button>
+      </div>`:''}
     ${ehDev()?`<div class="sep"></div>
       <div class="row" style="align-items:center;gap:10px">
         <div class="grow"><b>Desenvolvedor</b><div class="xs muted">Gerencie na aba <b>Equipes</b> (na barra inferior). Ou os técnicos aqui.</div></div>
@@ -1851,7 +1872,10 @@ function renderInterno(){
   const pm=document.getElementById('pModo');
   if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
   const b=document.getElementById('pRole');
-  b.textContent=S.u.perfil==='tecnico'?'técnico':(S.u.perfil==='pro'?(S.gestao?'PRO · gestão':'PRO'):prim(S.u.nome));
+  /* a etiqueta diz o chapéu em uso: é por onde o técnico-atleta percebe,
+     sem abrir nada, em qual das duas vistas ele está */
+  b.textContent=S.u.perfil==='tecnico'?(S.modoAtleta?'técnico · atleta':'técnico')
+    :(S.u.perfil==='pro'?(S.gestao?'PRO · gestão':'PRO'):prim(S.u.nome));
   b.className='pill '+(S.u.perfil==='pro'?'pro':S.u.perfil==='tecnico'?'tec':'');
   const _cor=S.u.equipeNome?corEquipe(S.u.equipeNome):null;
   document.body.style.background=_cor?_cor.bg:'';
@@ -1859,7 +1883,8 @@ function renderInterno(){
   navBar();
   let mapa;
   if(ehGestor())mapa={treinos:telaTreinosTec,elenco:telaElenco,competicao:(S.u.perfil==='pro'&&S.compAtletaMode)?telaCompAtleta:telaCompeticao};
-  else if(S.u.perfil==='pro')mapa={treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio};
+  else if(S.u.perfil==='pro'||(temDoisChapeus()&&S.modoAtleta))
+    mapa={treinos:telaTreinosAtleta,competicao:telaCompAtleta,marcas:telaMarcas,garmin:telaGarmin,relatorio:telaRelatorio};
   else{ mapa={treinos:telaTreinosAtleta,competicao:telaCompAtleta};
     if(S.u.podeMarcas)mapa.marcas=telaMarcas;
     if(S.u.podeSaude)mapa.garmin=telaGarmin;
@@ -1927,10 +1952,21 @@ async function trocarEsporte(){ S.u.esporte=null; try{await DB.set(kUser(S.u.ema
    abas e a própria lista de treinos fora d'água — sem nada apagado, apenas sem
    caminho até elas, e sem como desligar, porque o botão de gestão deixava de
    ter efeito. Ser administrador do app não deixa de ser atleta. */
-function ehGestor(){ return !!(S.u&&(S.u.perfil==='tecnico'
+/* ── OS DOIS CHAPÉUS ───────────────────────────────────────────────────────
+   O PRO já podia LIGAR o chapéu de gestão; o técnico não podia DESLIGAR o
+   dele. Técnico que também nada ficava sem Marcas, Saúde e Relatório — não
+   por regra de segurança, só porque a barra de abas nunca ofereceu a troca.
+   `S.modoAtleta` é o mesmo mecanismo, no outro sentido. É estado de SESSÃO,
+   não do cadastro: ninguém muda de perfil, muda de vista. */
+function ehGestor(){ return !!(S.u&&((S.u.perfil==='tecnico'&&!S.modoAtleta)
   ||((S.u.perfil==='pro'||ehAdmin())&&(S.gestao||S.adminOrig)))); }
-/* quem tem dados de performance (aba Marcas/Saúde/Relatório): PRO ou atleta liberado */
-function temPro(u){ u=u||S.u; return !!(u&&(u.perfil==='pro'||u.podeMarcas||u.podeSaude||u.podeRelatorio)); }
+/* o técnico tem dois chapéus: só oferece a troca quem de fato pode usá-la */
+function temDoisChapeus(u){ u=u||S.u; return !!(u&&u.perfil==='tecnico'); }
+/* quem tem dados de performance (aba Marcas/Saúde/Relatório): PRO, atleta
+   liberado, ou o técnico quando está na própria área de atleta */
+function temPro(u){ u=u||S.u;
+  if(u===S.u&&temDoisChapeus(u)&&S.modoAtleta)return true;
+  return !!(u&&(u.perfil==='pro'||u.podeMarcas||u.podeSaude||u.podeRelatorio)); }
 /* sujeito do relatório: normalmente o próprio usuário; quando o técnico abre o laudo
    de um atleta, S.laudoAtleta é o id do atleta (e S.pro aponta para o snapshot dele) */
 function _alvoId(){ return S.laudoAtleta||S.u.id; }
@@ -1938,7 +1974,8 @@ function _alvoEq(){ return S.u.equipe; }
 function navBar(){
   let abas;
   if(ehGestor())abas=[['treinos','≡','Treinos'],['elenco','◎','Equipe'],['competicao','▲','Competição']];
-  else if(S.u.perfil==='pro')abas=[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório']];
+  else if(S.u.perfil==='pro'||(temDoisChapeus()&&S.modoAtleta))
+    abas=[['treinos','≡','Treinos'],['competicao','▲','Comp.'],['marcas','★','Marcas'],['garmin','♡','Saúde'],['relatorio','◈','Relatório']];
   else{ abas=[['treinos','≡','Treinos'],['competicao','▲','Comp.']];
     if(S.u.podeMarcas)abas.push(['marcas','★','Marcas']);
     if(S.u.podeSaude)abas.push(['garmin','♡','Saúde']);
@@ -3720,6 +3757,46 @@ teste('prontidão','sem forma específica não há score',a=>{
   const r=prontidaoCompetitiva(pro,[],null,50,'peito','SC25');
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
+
+/* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
+function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
+teste('chapéus','técnico abre comandando a equipe',a=>{
+  _tecnico();
+  a.ok(ehGestor(),'é gestor por padrão');
+  a.ok(temDoisChapeus(),'e tem os dois chapéus disponíveis');
+  a.ok(!temPro(),'sem área de atleta enquanto está no comando');});
+teste('chapéus','trocar para atleta libera Marcas, Saúde e Relatório',a=>{
+  _tecnico(); alternarModoAtleta();
+  a.ok(!ehGestor(),'deixa de ser gestor nesta vista');
+  a.ok(temPro(),'ganha a área de performance');
+  alternarModoAtleta();
+  a.ok(ehGestor(),'e volta ao comando');
+  a.ok(!temPro(),'perdendo a área de atleta de novo');});
+teste('chapéus','a troca não muda o cadastro, só a vista',a=>{
+  const u=_tecnico(); const antes=JSON.stringify(u);
+  alternarModoAtleta();
+  a.eq(JSON.stringify(S.u),antes,'o perfil gravado continua idêntico');
+  a.eq(S.u.perfil,'tecnico','continua técnico no banco');});
+teste('chapéus','trocar de chapéu fecha o que estava aberto',a=>{
+  _tecnico();
+  S.treino={id:'t1'}; S.comp={id:'c1'}; S.atletaSel='outro'; S.laudoAtleta='outro'; S.pilha=['x'];
+  alternarModoAtleta();
+  a.eq(S.treino,null,'treino fechado'); a.eq(S.comp,null,'competição fechada');
+  a.eq(S.atletaSel,null,'atleta selecionado limpo');
+  a.eq(S.laudoAtleta,null,'laudo de outro atleta fechado — não vaza para a vista de atleta');
+  a.eq(S.pilha.length,0,'navegação zerada');});
+teste('chapéus','atleta comum e PRO não ganham o botão',a=>{
+  _atleta(); S.u.perfil='atleta';
+  a.ok(!temDoisChapeus(),'atleta não tem dois chapéus');
+  S.u.perfil='pro';
+  a.ok(!temDoisChapeus(),'PRO também não — ele usa o modo gestão');
+  S.modoAtleta=true;
+  a.ok(!ehGestor(),'e modoAtleta não transforma PRO em gestor');});
+teste('chapéus','sair zera o chapéu',a=>{
+  _tecnico(); alternarModoAtleta();
+  a.ok(S.modoAtleta,'estava na área de atleta');
+  S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false; S.modoAtleta=false;
+  a.ok(!S.modoAtleta,'próxima sessão abre no comando da equipe');});
 
 /* ── PROVA EM FOCO E ORDEM DO DOCUMENTO (v135) ───────────────────────────── */
 function _cenarioBuenosAires(){
