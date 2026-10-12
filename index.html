@@ -395,6 +395,13 @@ svg.chart{width:100%;height:auto;display:block}
   nav button{font-size:10px}
   nav button b{font-size:17px}
 }
+/* P3-B — faixa que separa os três níveis do documento */
+.doc-nivel{margin:22px 0 2px;padding:7px 0 5px;border-top:2px solid var(--line-forte);
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.doc-nivel span{display:inline-block;background:var(--ink);color:var(--sobre-acento);
+  padding:2px 7px;border-radius:4px;margin-right:7px;letter-spacing:.06em}
+/* P3-A — o resumo executivo é a folha 1 e termina nela */
+.pagina-um{margin-top:10px}
 @media print{
   /* O papel é sempre claro. Sem isto, quem está no tema escuro imprime o laudo
      com fundo preto — ou, pior, sai em branco porque a impressora descarta os
@@ -430,13 +437,27 @@ svg.chart{width:100%;height:auto;display:block}
   nav,header,.noprint{display:none!important}
   body{padding:0;background:#fff}
   main,#app{max-width:100%!important;padding:0!important;margin:0!important}
-  .card{break-inside:avoid;box-shadow:none;border:0;border-top:1px solid #e5e2db;border-radius:0;margin:0;padding:11px 2px;background:#fff}
+  .card{box-shadow:none;border:0;border-top:1px solid #e5e2db;border-radius:0;margin:0;padding:11px 2px;background:#fff}
   .card:first-child{border-top:0}
   .eyebrow{font-size:10.5px}
   h2,h3,.eyebrow{page-break-after:avoid}
-  svg,table,.grid3{break-inside:avoid}
+  svg,.grid3{break-inside:avoid}   /* tabela longa PODE partir: quem não parte é a linha (tr) */
   details:not([open])>*:not(summary){display:block!important}
   details summary{display:none!important}
+  /* P3-A — o resumo executivo ocupa a folha 1 e fecha nela */
+  .pagina-um{break-after:page;page-break-after:always}
+  .pagina-um .doc-sec{margin-top:10px}
+  .doc-nivel{break-before:auto;page-break-before:auto;break-after:avoid;page-break-after:avoid;
+    background:none!important;color:var(--ink-2)!important;border-top:1.5px solid var(--line-forte)!important}
+  .doc-nivel span{background:none!important;color:var(--ink)!important;border:1px solid var(--line-forte)!important;padding:1px 5px!important}
+  /* P3-B — PÁGINAS QUASE VAZIAS. `break-inside:avoid` em TODO cartão empurrava
+     um cartão alto inteiro para a folha seguinte e deixava meia folha em
+     branco. Cartão curto continua atômico; cartão alto pode partir, desde que
+     não parta no meio de um título, de uma linha de tabela ou de um gráfico. */
+  .card{break-inside:auto;page-break-inside:auto}
+  .card.tight,.kpi,.note,.grid2,.grid3{break-inside:avoid;page-break-inside:avoid}
+  tr,li{break-inside:avoid;page-break-inside:avoid}
+  thead{display:table-header-group}
   /* o documento impresso quebra por SEÇÃO, não no meio de uma ideia */
   .doc-sec{break-inside:auto;page-break-inside:auto;margin-top:16px}
   .doc-h,.doc-lead{break-after:avoid;page-break-after:avoid}
@@ -484,7 +505,7 @@ svg.chart{width:100%;height:auto;display:block}
    PARCIAL v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v132';
+const VER='v133';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3699,6 +3720,89 @@ teste('prontidão','sem forma específica não há score',a=>{
   const r=prontidaoCompetitiva(pro,[],null,50,'peito','SC25');
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
+
+/* ── P3 — RELATÓRIO: RESUMO, NÍVEIS E COERÊNCIA (v133) ───────────────────── */
+function _cenarioRel(extra){
+  const pro=_atleta(Object.assign({
+    pbs:{'50 peito SC25':parseTempo('30.21'),'50 peito LC50':parseTempo('31.00')},
+    alvos:['50 peito'],
+    resultados:[{dist:50,estilo:'peito',piscina:'SC25',data:'2026-04-15',tempo:parseTempo('30.21'),comp:'Copa'}],
+    garmin:Array.from({length:30},(_,k)=>({data:_dAtras(k),hrv:42,fc:57,sono:7}))},extra||{}));
+  const ex=[]; for(let k=1;k<=30;k++)ex.push(_tiro(k*3,50,'33.40','SC25','16.30'));
+  const cp=_comPct(pro,ex);
+  SESSOES=Array.from({length:40},(_,k)=>({data:_dAtras(k),tipo:'n',load:600}));
+  S.provaPC='50|peito|SC25';
+  return{pro,cp,motor:motorPerformance(pro,cp,volumePorSemana(),[])};
+}
+teste('relatório','a folha 1 responde as cinco perguntas',a=>{
+  const{pro,cp,motor}=_cenarioRel();
+  const h=paginaResumo(pro,motor,cp);
+  for(const t of ['Como você está hoje','Situação da prova em foco','Carga recente',
+                  'Estimativa para','O que impede uma conclusão mais forte'])
+    a.ok(h.indexOf(t)>=0,'responde: '+t);
+  a.ok(h.indexOf('Nenhum deles é probabilidade')>=0,'não vende escore como probabilidade');});
+teste('relatório','cada indicador da folha 1 traz período, fonte e n',a=>{
+  const{pro,cp,motor}=_cenarioRel();
+  const d=document.createElement('div'); d.innerHTML=paginaResumo(pro,motor,cp);
+  const t=d.innerText;
+  a.ok(t.indexOf('Período')>=0,'período'); a.ok(t.indexOf('Fonte')>=0,'fonte');
+  a.ok(t.indexOf('Atualizado')>=0,'última atualização');
+  a.ok(t.indexOf('Observações')>=0,'nº de observações');
+  a.ok(t.indexOf('Interpretação')>=0,'interpretação');
+  a.ok(t.indexOf('Limitação')>=0,'limitação');});
+teste('relatório','dado ausente aparece como indisponível, não como zero',a=>{
+  const{pro,cp,motor}=_cenarioRel({garmin:[]});          /* sem relógio */
+  const d=document.createElement('div'); d.innerHTML=paginaResumo(pro,motor,cp);
+  const t=d.innerText;
+  a.ok(t.indexOf('indisponível')>=0,'diz indisponível');
+  a.ok(t.indexOf('Não é zero')>=0,'e diz explicitamente que não é zero');
+  a.eq(motor.estado.pr,null,'o motor devolve null, não 0');});
+teste('relatório','a projeção em destaque é sempre a da prova em foco',a=>{
+  const{pro,cp}=_cenarioRel({alvos:['50 peito','100 peito'],
+    pbs:{'50 peito SC25':parseTempo('30.21'),'50 peito LC50':parseTempo('31.00'),'100 peito SC25':parseTempo('1:07.28')}});
+  for(const k of ['50|peito|SC25','100|peito|SC25','50|peito|LC50']){
+    S.provaPC=k;
+    const m=motorPerformance(pro,cp,volumePorSemana(),[]);
+    const [d,e,pis]=k.split('|');
+    a.eq(`${m.provaRef.d}|${m.provaRef.e}|${m.provaRef.pis}`,k,'a referência é a escolhida ('+k+')');
+    if(m.predicaoFoco)a.eq(m.predicaoFoco.prova,`${d} ${e} ${pis}`,'a projeção é da mesma prova ('+k+')');
+    a.eq(conferirCoerencia(pro,m),[],'sem inconsistência em '+k);
+  }});
+teste('relatório','prova sem base diz indisponível e não substitui',a=>{
+  const pro=_atleta({pbs:{'100 peito SC25':parseTempo('1:07.28'),'50 peito LC50':parseTempo('32.80')},
+    alvos:['100 peito','50 peito']});
+  const ex=[]; for(let k=0;k<20;k++)ex.push(_tiro(k*3,100,'1:14.0'));
+  const cp=_comPct(pro,ex);
+  SESSOES=[]; S.provaPC='50|peito|LC50';
+  const m=motorPerformance(pro,cp,[],[]);
+  a.eq(m.predicaoFoco,null,'sem projeção da prova em foco');
+  a.ok(m.predicoes.length>0,'mas existem outras projeções');
+  const h=paginaResumo(pro,m,cp);
+  a.ok(h.indexOf('Indisponível para')>=0,'a folha 1 diz indisponível');
+  a.ok(h.indexOf('não mostra a projeção de outra prova')>=0,'e diz que não substitui');});
+teste('relatório','a autoverificação pega projeção de prova trocada',a=>{
+  const{pro,motor}=_cenarioRel();
+  a.eq(conferirCoerencia(pro,motor),[],'cenário íntegro não acusa nada');
+  const mau=JSON.parse(JSON.stringify({provaRef:motor.provaRef,predicaoFoco:motor.predicaoFoco}));
+  mau.predicaoFoco.prova='100 peito SC25';
+  const e=conferirCoerencia(pro,mau);
+  a.eq(e.length,1,'uma inconsistência'); a.ok(/projeção em destaque/.test(e[0]),'aponta qual');
+  a.ok(avisoCoerencia(pro,mau).indexOf('Inconsistência detectada')>=0,'e vira aviso visível');});
+teste('relatório','faixa que não contém o central é acusada',a=>{
+  const{pro,motor}=_cenarioRel();
+  const mau={provaRef:motor.provaRef,predicaoFoco:{...motor.predicaoFoco,central:motor.predicaoFoco.high+5000}};
+  a.ok(conferirCoerencia(pro,mau).some(x=>/não contém a estimativa central/.test(x)),'detectado');});
+teste('relatório','resumo e completo mostram os MESMOS números',a=>{
+  const{pro,cp,motor}=_cenarioRel();
+  const num=h=>{const d=document.createElement('div');d.innerHTML=h;
+    return (d.innerText.match(/\d+[.,:]?\d*/g)||[]).join(' ')};
+  const folha=paginaResumo(pro,motor,cp);
+  const p=motor.predicaoFoco, pc=prontidaoCompetitiva(pro,cp,motor,50,'peito','SC25');
+  /* o que a folha 1 afirma tem de ser o que o motor calcula — sem recálculo próprio */
+  a.ok(folha.indexOf(fmt(p.low,true))>=0,'a faixa da folha 1 é a do motor');
+  a.ok(folha.indexOf(fmt(p.pb,true))>=0,'o PB é o mesmo');
+  if(pc&&pc.score!=null)a.ok(num(folha).indexOf(String(pc.score))>=0,'a prontidão competitiva é a mesma');
+  a.ok(folha.indexOf(String(motor.fadiga.acwr.toFixed(2)))>=0,'a razão de carga é a mesma');});
 
 /* ── P2 — ESTRATIFICAÇÃO POR PROVA (v132) ────────────────────────────────── */
 const _res=(d,e,pis,data,t,parc,orig)=>{const o={dist:d,estilo:e,piscina:pis,data,tempo:parseTempo(t),comp:'C'};
@@ -9060,6 +9164,143 @@ function cabecalhoRelatorio(pro,motor){
    por onde começar. Estes três são os que mudam decisão: o tempo que você
    nadaria hoje, se a carga está acima do habitual, e se o corpo respondeu.
    Cada um leva ao cartão que o explica — o resumo vira o índice. */
+/* ── P3-D — AUTOVERIFICAÇÃO DE COERÊNCIA ───────────────────────────────────
+   O relatório já teve cabeçalho falando de uma prova e projeção de outra. A
+   correção foi tornar a referência canônica; esta é a trava que impede a
+   regressão: antes de desenhar, confere se todas as peças que dependem da
+   prova em foco estão de fato na mesma prova e piscina. Divergência vira
+   aviso visível — o app não publica relatório incoerente em silêncio. */
+function conferirCoerencia(pro,motor){
+  const ref=motor&&motor.provaRef; if(!ref)return[];
+  const k=`${ref.d} ${ref.e} ${ref.pis}`, erros=[];
+  const p=motor.predicaoFoco;
+  if(p&&p.prova!==k)erros.push(`a projeção em destaque é de <b>${esc(p.prova)}</b>, mas a prova em foco é <b>${esc(k)}</b>`);
+  const t=motor.transf;
+  if(t&&t.n&&t.provaRef&&t.provaRef!==k)erros.push(`a conversão treino→prova é de <b>${esc(t.provaRef)}</b>`);
+  /* a faixa tem de conter o central, e o PB tem de ser o da piscina da prova */
+  if(p){
+    if(!(p.low<=p.central&&p.central<=p.high))erros.push('a faixa da projeção não contém a estimativa central');
+    const pbRef=(pro.pbs||{})[k];
+    if(pbRef!=null&&p.pb!==pbRef)erros.push('a projeção usa um PB que não é o desta prova e piscina');
+  }
+  return erros;
+}
+function avisoCoerencia(pro,motor){
+  const e=conferirCoerencia(pro,motor); if(!e.length)return'';
+  return`<div class="note warn" style="margin-top:10px"><b>Inconsistência detectada neste relatório.</b>
+    <ul style="margin:6px 0 0;padding-left:18px">${e.map(x=>`<li>${x}</li>`).join('')}</ul>
+    <div class="xs muted" style="margin-top:6px">O app está mostrando isto em vez de esconder. Me mande esta tela — a verificação aponta exatamente qual peça saiu do lugar.</div></div>`;
+}
+/* ── P3-C — FICHA DE RASTREABILIDADE DE UM INDICADOR ───────────────────────
+   Oito campos, sempre os mesmos: nome, valor, unidade, período, fonte, última
+   atualização, n e interpretação, mais a limitação. Um indicador sem ficha é
+   um número que o leitor tem de aceitar por confiança; com ficha, ele pode
+   discordar com base. Campo sem dado aparece como "—", nunca como zero. */
+function fichaIndicador(f){
+  const v=f.valor==null?'<span class="muted">indisponível</span>':f.valor;
+  const li=(r,x)=>x?`<tr><td class="muted" style="width:34%">${r}</td><td>${x}</td></tr>`:'';
+  return`<div style="border-top:1px solid var(--line);padding:10px 0">
+    <div class="row" style="align-items:baseline;gap:8px">
+      <b class="grow">${esc(f.nome)}</b>
+      <span class="t" style="font-size:20px;font-weight:800;${f.cor?`color:${f.cor}`:''}">${v}</span>
+      ${f.unidade?`<span class="xs muted">${esc(f.unidade)}</span>`:''}
+    </div>
+    ${f.valor==null?`<div class="xs muted" style="margin-top:3px"><b>Indisponível</b> — ${esc(f.porqueIndisponivel||'falta dado para este indicador')}. Não é zero, e nada foi substituído por outra prova.</div>`:''}
+    <table class="xs" style="margin-top:4px"><tbody>
+      ${li('Período',f.periodo)}${li('Fonte',f.fonte)}${li('Atualizado',f.atualizado)}
+      ${li('Observações',f.n==null?null:(typeof f.n==='number'?`n = ${f.n}`:f.n))}${li('Interpretação',f.interpretacao)}
+      ${li('Limitação',f.limitacao)}
+    </tbody></table></div>`;
+}
+/* ── P3-A — PÁGINA 1 DO RESUMO ─────────────────────────────────────────────
+   Cinco perguntas, nesta ordem, cada uma com a sua ficha. É a folha que o
+   técnico lê em pé na beira da piscina, e a única do documento que tem de se
+   bastar sozinha. Nenhum escore aparece sem o que ele significa, e nenhum
+   deles é apresentado como probabilidade de nada. */
+function paginaResumo(pro,motor,comPct){
+  const e=motor.estado||{}, ref=motor.provaRef, p=motor.predicaoFoco, f=motor.fadiga||{};
+  const fr=(typeof frescorDados==='function')?frescorDados(pro,comPct):[];
+  const idade=id=>{const x=fr.find(y=>y.id===id);return !x||x.dias==null?'sem registro':(x.dias===0?'hoje':x.dias===1?'ontem':`há ${x.dias} dias`)};
+  const nome=ref?`${ref.d} m ${ref.e} · ${ref.pis}`:null;
+  const pc=ref?prontidaoCompetitiva(pro,comPct,motor,ref.d,ref.e,ref.pis):null;
+  const pr=e.pr?e.pr.score:null, cap=e.cap?e.cap.score:null;
+  const cor=s=>s==null?'':(s>=75?'var(--ok)':s<55?'var(--clock)':'');
+  /* 5 — INCERTEZAS. Reunidas de onde elas de fato estão, não escritas à mão. */
+  const lim=[];
+  {const pm=ref?precisaoModelo(pro,ref.d,ref.e,ref.pis):null;
+   if(!pm||!pm.n)lim.push('<b>Nenhuma competição comparada ainda</b> — o modelo não sabe o quanto erra com você nesta prova.');
+   else{
+     if(pm.n<5)lim.push(`<b>Calibração com n = ${pm.n}</b> — ${pm.estagio.rotulo}. O viés medido ainda é sensível a uma prova atípica.`);
+     if(!pm.homogenea)lim.push('<b>O erro histórico vem de provas de distâncias diferentes</b> e por isso aparece em percentual, não em segundos.');
+     if(!pm.coberturaValida)lim.push(`<b>A faixa é heurística</b> — ainda não tem cobertura medida (${pm.nFaixa} de ${pm.minCobertura} previsões prospectivas).`);
+     if(pm.nRec)lim.push(`<b>${pm.nRec} das ${pm.n} comparações são reconstruções</b> retrospectivas, não previsões que você viu antes de competir.`);
+   }}
+  if(pc&&pc.score==null)lim.push(`<b>Prontidão competitiva indisponível</b> — ${esc(pc.motivo||'faltam componentes')}.`);
+  else if(pc&&pc.confiabilidade<100)lim.push(`<b>${100-pc.confiabilidade}% do peso da prontidão competitiva está sem dado</b> — os pesos foram redistribuídos sobre o que sobrou.`);
+  if(!p&&ref)lim.push(`<b>Sem projeção para ${esc(nome)}</b> — faltam tiros recentes desta prova. O app não projeta a partir de outra.`);
+  for(const x of fr)if(x.uso==='só histórico')lim.push(`<b>${x.rot} desatualizado</b> (${x.dias} dias) — entra como histórico, não como estado de hoje.`);
+  if(motor.composicao&&motor.composicao.status&&motor.composicao.status!=='medida')
+    lim.push(`<b>Composição corporal ${motor.composicao.status}</b> — fora dos escores.`);
+  const bloco=(n,titulo,corpo)=>`<section class="doc-sec" style="margin-top:14px">
+    <h2 class="doc-h"><span class="doc-n">${n}</span>${titulo}</h2>${corpo}</section>`;
+  return`<div class="pagina-um" data-dom="prova">
+    <div class="eyebrow">resumo executivo</div>
+    <h2 style="margin:2px 0 2px">As cinco respostas</h2>
+    <p class="small muted" style="margin:0 0 4px">Cada número vem com período, fonte, nº de observações e o que ele não permite concluir. <b>Nenhum deles é probabilidade</b> de nadar bem, vencer ou bater recorde.</p>
+    ${bloco(1,'Como você está hoje',
+      fichaIndicador({nome:'Prontidão do dia',valor:pr==null?null:pr,unidade:'0–100',cor:cor(pr),
+        periodo:'hoje contra a sua base de 28 dias',fonte:'relógio (VFC, FC de repouso, sono) e carga',
+        atualizado:idade('garmin'),n:e.pr&&e.pr.dias?`${e.pr.dias} dia(s) de registro`:null,
+        interpretacao:pr==null?null:(pr>=75?'acima da sua faixa habitual':pr>=55?'dentro da sua faixa habitual':'abaixo da sua faixa habitual'),
+        limitacao:'descreve o estado do dia, não a capacidade de nadar a prova',
+        porqueIndisponivel:'sem dados do relógio nem check-in no período'})
+      +fichaIndicador({nome:'Velocidade média',valor:cap==null?null:cap+'%',unidade:'% do seu PB',
+        periodo:'últimos 15 tiros',fonte:'tiros cronometrados no treino',atualizado:idade('tiros'),
+        n:e.cap?e.cap.n:null,interpretacao:'média de %PB de todas as provas — recorte diferente do eixo Velocidade do radar',
+        limitacao:'junta provas diferentes; não é leitura de uma prova específica',
+        porqueIndisponivel:'sem tiro com PB registrado na mesma prova'})
+      /* a fonte e o n SEGUEM a janela: sem competição com 2+ resultados, a
+         tendência é calculada sobre os tiros, e dizer "n = 0 · fonte Marcas"
+         ao lado de "30 tiros" é o relatório se contradizendo numa ficha. */
+      +(e.tend?fichaIndicador({nome:'Tendência',valor:e.tend.dir,unidade:'direção',cor:e.tend.cor,
+        periodo:e.tend.janela,
+        fonte:e.tend.nEv?'resultados de competição em Marcas':'tiros de treino (sem competição com 2+ resultados na mesma prova)',
+        atualizado:idade('tiros'),
+        n:e.tend.nEv||e.tend.nPct,interpretacao:e.tend.txt,
+        limitacao:e.tend.divergencia?`diverge da leitura curta (últimos 7 dias: ${e.tend.curto.pct>=0?'+':''}${e.tend.curto.pct}%) — janelas diferentes`:'olha o histórico inteiro, não a janela de análise'}):''))}
+    ${bloco(2,`Situação da prova em foco${nome?` — ${esc(nome)}`:''}`,
+      ref?fichaIndicador({nome:'Prontidão competitiva',valor:pc&&pc.score!=null?pc.score:null,unidade:'0–100',
+        cor:pc&&pc.score!=null?cor(pc.score):'',
+        periodo:'forma 42d · especificidade 28d · fisiológica 7d · carga 7/28d',
+        fonte:'tiros, relógio, carga e resultados desta prova',atualizado:idade('tiros'),
+        n:pc?pc.ok:null,interpretacao:pc&&pc.score!=null?`${pc.rotulo} — média ponderada dos componentes disponíveis`:null,
+        limitacao:pc&&pc.score!=null?`${pc.confiabilidade}% do peso disponível; metade do score se apoia em evidência correlacionada (forma × especificidade, r≈0,56)`:null,
+        porqueIndisponivel:pc?pc.motivo:'sem prova em foco definida'})
+      :'<p class="small muted">Nenhuma prova-alvo definida. Escolha em <b>Marcas</b>.</p>')}
+    ${bloco(3,'Carga recente contra a sua referência',
+      fichaIndicador({nome:'Carga 7d ÷ média de 28d',valor:f.acwr==null?null:f.acwr.toFixed(2)+'×',unidade:'UA (duração × RPE)',
+        cor:f.acwr==null?'':(f.acwr>1.5?'var(--clock)':f.acwr>=0.8?'var(--ok)':''),
+        periodo:'7 dias contra a média das 4 semanas anteriores',fonte:'RPE e duração digitados por você em cada sessão',
+        atualizado:idade('carga'),n:f.nSessoes==null?null:f.nSessoes,
+        interpretacao:f.acwr==null?null:(f.acwr>1.5?'carga recente elevada em relação à sua referência histórica':f.acwr>=0.8?'carga dentro da sua faixa habitual':'carga abaixo da sua referência'),
+        limitacao:'é uma razão de carga relativa à SUA história — não é diagnóstico de overtraining nem avaliação clínica',
+        porqueIndisponivel:'sem sessões com RPE e duração registrados'})
+      +(f.monotonia!=null?fichaIndicador({nome:'Monotonia',valor:f.monotonia.toFixed(1),unidade:'razão',
+        periodo:'últimos 7 dias',fonte:'carga diária de sessão',atualizado:idade('carga'),n:null,
+        interpretacao:f.monotonia>2.2?'estímulo pouco variado na semana':'variação de estímulo dentro do habitual',
+        limitacao:'sensível a semana com poucos treinos registrados'}):''))}
+    ${bloco(4,`Estimativa para ${nome?esc(nome):'a prova em foco'}`,
+      p?fichaIndicador({nome:'Tempo provável hoje',valor:`${fmt(p.low,true)}–${fmt(p.high,true)}`,unidade:`central ~${fmt(p.central,true)} · PB ${fmt(p.pb,true)}`,
+        periodo:'melhores tiros dos últimos 120 dias, convertidos para condição de prova',
+        fonte:'tiros de treino + calibração pelas suas competições',atualizado:idade('tiros'),
+        n:null,interpretacao:`${p.banda}. Qualidade dos dados ${p.qual}%`,
+        limitacao:`${p.calN?`calibrada por ${p.calN} prova(s) suas`:'<b>sem competição para calibrar</b>'} — a faixa é heurística, sem cobertura estatística conhecida, e a qualidade dos dados não é probabilidade`})
+      :`<p class="small muted">${ref?`<b>Indisponível para ${esc(nome)}</b> — ${((pro.pbs||{})[`${ref.d} ${ref.e} ${ref.pis}`])?'faltam tiros recentes desta prova':'sem PB registrado nesta prova e piscina'}. O app não mostra a projeção de outra prova no lugar.`:'Sem prova em foco.'}</p>`)}
+    ${bloco(5,'O que impede uma conclusão mais forte',
+      lim.length?`<ul class="small" style="margin:6px 0 0;padding-left:18px;line-height:1.6">${lim.slice(0,7).map(x=>`<li>${x}</li>`).join('')}</ul>`
+        :'<p class="small muted">Nenhuma limitação relevante detectada nas fontes desta prova.</p>')}
+  </div>`;
+}
 function cardKPIs(pro,motor,sem){
   const p=motor.predicaoFoco;   /* a da PROVA EM FOCO, nunca a de melhor dado */
   const f=(typeof fadigaCarga==='function')?fadigaCarga():null;
@@ -9296,6 +9537,9 @@ function telaRelatorio(){
     ${!S.laudoAtleta?`<button class="sm ghost" onclick="compartilharRelatorio()">Enviar</button>`:''}
     ${temIA()?`<button class="sm primary" onclick="gerarLaudoIA()">Laudo por IA</button>`:''}</div>
   ${sc('cabeçalho',()=>cabecalhoDocumento(pro,motor))}
+  ${sc('coerência',()=>avisoCoerencia(pro,motor))}
+  ${sc('resumo executivo',()=>paginaResumo(pro,motor,comPct))}
+  <div class="doc-nivel"><span>Nível 2</span> Indicadores e tendências — o que cada número diz e para onde ele vem andando</div>
   ${(()=>{const S_=montarSecoes([
     ['Síntese e prioridade','O que os dados apontam como mais importante nesta semana, e com quanta base.',
       sc('prioridade',()=>cardPrioridadeSemana(pro,motor,diag))+sc('indicadores do topo',()=>cardKPIs(pro,motor,sem)),'prova'],
@@ -9311,6 +9555,7 @@ function telaRelatorio(){
       sc('indicadores para decisão',()=>cardPlanoAcao(pro,motor,diag,comPct)),'carga']
   ]); _N_APOIO=S_.n+1; return S_.html;})()}
   ${S.laudoIA?`<div class="card" id="laudoIA"><div class="row"><div class="eyebrow">laudo por IA</div><div class="grow"></div><button class="sm ghost noprint" onclick="S.laudoIA='';render()">ocultar</button></div>${mdSimples(S.laudoIA)}</div>`:''}
+  <div class="doc-nivel"><span>Nível 3</span> Evidências, fontes, fórmulas e limitações — o material de auditoria</div>
   <details class="report-details" id="dt_relDet" ontoggle="lembraDetails(this)" ${detAberto('dt_relDet')}><summary>${_N_APOIO} — Dados de apoio e detalhamento</summary><div>
   ${/* Eram vinte e poucos cartões de peso igual, um atrás do outro. Agrupados
        por PERGUNTA, não por origem do dado: o atleta chega aqui querendo saber
@@ -9461,10 +9706,12 @@ const SECOES_REL=['rel_proj','rel_cap','rel_carga','rel_corpo'];
 function abrirImpressao(){
   sheet(`<h2>Imprimir relatório</h2>
     <div class="small muted">Duas versões, para públicos diferentes.</div>
-    <button class="primary full" style="margin-top:14px;text-align:left" onclick="imprimirRelatorio('enxuto')">
-      Resumo<div class="xs" style="font-weight:400;opacity:.8">Prioridade, prontidão competitiva, provas-alvo e indicadores. É o que o técnico lê antes do treino.</div></button>
+    <button class="primary full" style="margin-top:14px;text-align:left" onclick="imprimirRelatorio('pagina1')">
+      Uma folha<div class="xs" style="font-weight:400;opacity:.8">Só o resumo executivo: as cinco respostas, com período, fonte, nº de observações e limitações. É o que se lê em pé na beira da piscina.</div></button>
+    <button class="ghost full" style="margin-top:10px;text-align:left" onclick="imprimirRelatorio('enxuto')">
+      Resumo<div class="xs" style="font-weight:400">A folha 1 mais os indicadores e tendências. Sem o material de auditoria.</div></button>
     <button class="ghost full" style="margin-top:10px;text-align:left" onclick="imprimirRelatorio('completo')">
-      Completo<div class="xs" style="font-weight:400">Tudo, com as quatro seções de detalhamento abertas — projeção, capacidade, carga e corpo.</div></button>
+      Completo<div class="xs" style="font-weight:400">Os três níveis, com as quatro seções de detalhamento abertas — é a versão auditável.</div></button>
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Cancelar</button>`);
 }
 /* As seções recolhíveis não existem no DOM quando estão fechadas: imprimir sem
@@ -9485,7 +9732,16 @@ function imprimirRelatorio(modo){
     n.removeAttribute('onclick');n.removeAttribute('oninput');
     n.removeAttribute('ontoggle');n.removeAttribute('onchange');});
   clone.querySelectorAll('details').forEach(d=>d.setAttribute('open',''));
-  if(modo==='enxuto'){ const d=clone.querySelector('.report-details'); if(d)d.remove(); }
+  /* P3-B — os três modos recortam por NÍVEL, não por cartão solto */
+  if(modo==='enxuto'||modo==='pagina1'){
+    clone.querySelectorAll('.report-details,.doc-meta').forEach(n=>n.remove());
+    clone.querySelectorAll('.doc-nivel').forEach(n=>{ if(/Nível 3/.test(n.textContent))n.remove(); });
+  }
+  if(modo==='pagina1'){
+    clone.querySelectorAll('.doc-sec').forEach(n=>{ if(!n.closest('.pagina-um'))n.remove(); });
+    clone.querySelectorAll('.doc-nivel').forEach(n=>n.remove());
+    const p1=clone.querySelector('.pagina-um'); if(p1)p1.style.breakAfter='auto';
+  }
   /* rodapé de folha: um PDF que circula entre técnico e atleta precisa que
      cada página solta diga de quem é e de quando */
   const rod=document.createElement('div'); rod.className='doc-rodape';
