@@ -1,4 +1,4 @@
-# Como contribuir — PARCIAL
+# Como contribuir — Meros360
 
 Guia rápido para quem for desenvolver o app. Leia isto **antes** de começar.
 
@@ -6,7 +6,7 @@ Guia rápido para quem for desenvolver o app. Leia isto **antes** de começar.
 
 ## 1. Visão geral do projeto
 
-O **PARCIAL** é um app de performance de natação. Características importantes:
+O **Meros360** é um app de performance de natação. Características importantes:
 
 - **PWA single-file**: praticamente tudo vive em [`index.html`](index.html) (~380 KB) — HTML + CSS + JS puro, **sem build, sem framework, sem `npm install`**.
 - **Sync na nuvem**: usa **Firebase / Firestore** (projeto `parcial-cdb0e`) para sincronizar dados entre usuários.

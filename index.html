@@ -33,7 +33,7 @@
 <!-- a barra de status do aparelho acompanha o tema; o script abaixo acerta o
      valor no boot e `definirTema` o atualiza quando o usuário troca -->
 <meta name="theme-color" content="#F4F2EE">
-<title>PARCIAL — natação</title>
+<title>Meros360 — natação</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icone-r2-192.png" sizes="192x192" type="image/png">
 <!-- vários tamanhos: o iOS escolhe o mais próximo do aparelho. Sem o tamanho
@@ -478,7 +478,7 @@ svg.chart{width:100%;height:auto;display:block}
   <div class="rope"></div>
   <div class="wrap hbar">
     <button class="sm ghost hide" id="btnVoltar" onclick="voltar()" aria-label="Voltar" style="padding:8px 11px;font-size:18px;line-height:1">‹</button>
-    <div class="brand">PAR<span>CIAL</span><small id="verTag" style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px"></small></div>
+    <div class="brand"><span id="marcaApp"></span><small id="verTag" style="font-size:9px;opacity:.5;font-weight:600;margin-left:4px"></small></div>
     <button class="pill" id="pRole" onclick="abrirConta()">—</button>
     <div class="grow"></div>
     <button class="pill" id="pModo" onclick="abrirModo()">·</button>
@@ -502,10 +502,10 @@ svg.chart{width:100%;height:auto;display:block}
 
 <script>
 /* =====================================================================
-   PARCIAL v04 — natação  ·  iPhone-first
+   Meros360 v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v142';
+const VER='v143';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -530,6 +530,24 @@ const CODIGO_PRO_ANTIGO='BARBATO-PRO-2026';   /* so para avisar quem ainda usa *
    classificação etária da Apple, questionário de público-alvo). Natação master
    é de adultos; menor de idade entra só com consentimento do responsável
    (LGPD art. 14), tratado fora do cadastro automático. */
+/* ── NOME DO APP ───────────────────────────────────────────────────────────
+   Só a MARCA mudou (PARCIAL → Meros360). Os identificadores de ARMAZENAMENTO
+   ficam como estão, de propósito:
+     PFX='parcial_'        prefixo do localStorage
+     'parcial-tema'        preferência de tema
+     'parcial-chapeu-'     chapéu do técnico, por aparelho
+     projeto parcial-cdb0e Firebase
+     u_ / pro_ / eq_       chaves do Firestore
+   Trocar qualquer um deles desconectaria todo mundo e órfãos os dados já
+   gravados. Nome é rótulo; chave é endereço, e endereço não se renomeia
+   junto com a placa. */
+const APP_NOME='Meros360';
+const APP_MARCA='MEROS<span>360</span>';   /* a cor cai na segunda metade */
+/* a marca do cabeçalho é HTML estático (fora de qualquer template), então vem
+   daqui — assim o nome mora num lugar só e não se espalha pelo arquivo. Tem
+   de ser DEPOIS do const: antes dele, a leitura cai na zona morta temporal e
+   o try engole o erro em silêncio (foi o que aconteceu na primeira tentativa). */
+try{ const _m=document.getElementById('marcaApp'); if(_m)_m.innerHTML=APP_MARCA; }catch(_){}
 const IDADE_MINIMA=18;
 /* O endereço do app, lido de onde ele está rodando. Estava escrito à mão numa
    instrução ("abra parcial-natacao.github.io/parcial-natacao"), e no dia em que
@@ -776,7 +794,7 @@ function avisoIcone(){
   try{ if(localStorage.getItem(KEY_AVISO_ICONE))return''; }catch(_){ return''; }
   return`<div class="card" style="border-color:var(--rope)">
     <div class="eyebrow">ícone novo</div>
-    <p class="small" style="margin:6px 0 4px">O PARCIAL ganhou ícone próprio — um cronômetro com água. Se na sua tela de início ainda aparece o desenho antigo, é porque o iPhone guarda o ícone de quando você adicionou e não busca sozinho.</p>
+    <p class="small" style="margin:6px 0 4px">O Meros360 ganhou ícone próprio — um cronômetro com água. Se na sua tela de início ainda aparece o desenho antigo, é porque o iPhone guarda o ícone de quando você adicionou e não busca sozinho.</p>
     <p class="xs muted" style="margin:0 0 10px">Para trocar, leva 20 segundos: <b>segure o ícone → Remover → Excluir da Tela de Início</b>, depois abra <b>${esc(enderecoDoApp())}</b> e use <b>Compartilhar → Adicionar à Tela de Início</b>. Nada se perde: seus dados ficam na sua conta, não no atalho.</p>
     <button class="sm ghost full" onclick="dispensarAvisoIcone()">Entendi, não mostrar de novo</button>
   </div>`;
@@ -843,7 +861,7 @@ function exportarBackup(){
   if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
     if(k&&k.startsWith(PFX))dados[k.slice(PFX.length)]=JSON.parse(localStorage.getItem(k))}}
   else Object.keys(MEM).forEach(k=>dados[k]=JSON.parse(MEM[k]));
-  const pacote={app:'PARCIAL',versao:VER,em:new Date().toISOString(),dados};
+  const pacote={app:APP_NOME,versao:VER,em:new Date().toISOString(),dados};
   try{
     const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
     const a=document.createElement('a'); a.href=url; a.download=`parcial-backup-${hoje()}.json`; a.click();
@@ -1580,7 +1598,7 @@ function telaEntrada(){
   return`
   <div style="height:26px"></div>
   <div class="center">
-    <div class="brand" style="font-size:34px">PAR<span>CIAL</span></div>
+    <div class="brand" style="font-size:34px">${APP_MARCA}</div>
     <div class="eyebrow" style="margin-top:4px">prancheta digital de natação</div>
   </div>
   <div class="card" style="margin-top:22px">
@@ -1946,7 +1964,7 @@ const temaEscuro=()=>document.documentElement.dataset.tema==='escuro';
 function corEquipe(nome){
   const of=CORES_OFICIAIS[(nome||'').trim().toLowerCase().replace(/\s+/g,' ')];
   let hue; if(of&&!temaEscuro())return of;
-  if(of)hue=of.hue; else{ let h=0; for(const c of (nome||'PARCIAL'))h=(h*31+c.charCodeAt(0))>>>0; hue=h%360; }
+  if(of)hue=of.hue; else{ let h=0; for(const c of (nome||APP_NOME))h=(h*31+c.charCodeAt(0))>>>0; hue=h%360; }
   /* No tema escuro a faixa da equipe não pode ser clara: um bloco de 95% de
      luminosidade no meio de uma tela preta cega e rouba o foco do conteúdo.
      Mantemos o MATIZ — que é o que identifica a equipe — e invertemos a
@@ -5547,7 +5565,7 @@ function compartilharProva(){
     t+=`\n  trechos: ${tr.map(x=>fmt(x,true)).join(' · ')}`;
     if(ps.length>=np&&i.inscricao){const d=ps[np-1]-i.inscricao; t+=`\n  ${d<0?'−':'+'}${fmt(Math.abs(d),true)} vs inscrição`}
   });
-  enviar(t+`\n\nPARCIAL ${VER}`,destinosProva(p));
+  enviar(t+`\n\n${APP_NOME} ${VER}`,destinosProva(p));
 }
 /* ---------- compartilhamento ----------
    Dentro do app o navegador bloqueia janelas automáticas, então sempre
@@ -5604,7 +5622,7 @@ function compartilharTreino(){
     }
     if(ls.length)x+=`\n_${b.titulo}_\n${ls.join('\n')}\n`;
   }
-  enviar(x+`\nVolume: ${(volTreino(t)/1000).toFixed(1)}k · PARCIAL ${VER}`,destinosTreino(t));
+  enviar(x+`\nVolume: ${(volTreino(t)/1000).toFixed(1)}k · ${APP_NOME} ${VER}`,destinosTreino(t));
 }
 
 /* ---------- competição na visão do atleta ---------- */
@@ -5685,7 +5703,7 @@ function compartilharMinhasProvas(){
     const tr=ps.map((v,k)=>k===0?v:v-ps[k-1]);
     t+=`\n${nomeProva(p)} — ${fmt(ps[ps.length-1],true)}\n  ${tr.map((x,k)=>`${p.tipo==='rev'?(k+1)+'º':((k+1)*passo)+'m'} ${fmt(x,true)}`).join(' · ')}`;
   }));
-  enviar(t+`\n\nPARCIAL ${VER}`,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
+  enviar(t+`\n\n${APP_NOME} ${VER}`,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
 }
 
 /* ---------- competições lançadas pelo próprio atleta ---------- */
@@ -10285,7 +10303,7 @@ function imprimirRelatorio(modo){
   /* rodapé de folha: um PDF que circula entre técnico e atleta precisa que
      cada página solta diga de quem é e de quando */
   const rod=document.createElement('div'); rod.className='doc-rodape';
-  rod.textContent=`${nomeLaudo()} — relatório de performance · ${brData(hoje())} · PARCIAL ${VER}`;
+  rod.textContent=`${nomeLaudo()} — relatório de performance · ${brData(hoje())} · ${APP_NOME} ${VER}`;
   clone.appendChild(rod);
   setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
   const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
@@ -10331,7 +10349,7 @@ async function compartilharRelatorio(){
     t+=`\n*Composição — ${brData(bioUlt.data)}*\n${susp?`(bioimpedância com valor suspeito: ${susp} — verificar)\n`:''}${ps.join(' · ')||'—'}\n`;}
   const pbs=Object.entries(pro.pbs||{}).slice(0,8);
   if(pbs.length)t+=`\n*Melhores marcas*\n${pbs.map(([k,v])=>`  ${k}: ${fmt(v,true)}`).join('\n')}\n`;
-  t+=`\n_Análise automática de apoio — não substitui avaliação médica._\nPARCIAL ${VER}`;
+  t+=`\n_Análise automática de apoio — não substitui avaliação médica._\n${APP_NOME} ${VER}`;
   enviar(t,S.tecnico?[{nome:S.tecnico.nome+' (técnico)',tel:S.tecnico.telefone}]:[]);
 }
 

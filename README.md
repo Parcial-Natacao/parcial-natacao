@@ -1,4 +1,4 @@
-# PARCIAL — prancheta digital de natação
+# Meros360 — prancheta digital de natação
 
 Aplicativo web de página única para equipes de natação masters: prescrição de
 treinos, registro de tempos e parciais, competições, marcas, carga/fadiga e

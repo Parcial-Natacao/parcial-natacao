@@ -1,4 +1,4 @@
-# PARCIAL — ligar a sincronia entre pessoas (Firebase)
+# Meros360 — ligar a sincronia entre pessoas (Firebase)
 
 Guia para sair do "cada aparelho por si" e chegar em **técnico e atletas
 compartilhando os mesmos dados, cada um com a sua conta**, com login de
@@ -17,10 +17,10 @@ projeto no console e colar a configuração. Nada de programar.
 
 Acesse <https://console.firebase.google.com>.
 
-- **Novo projeto** (recomendado, mantém o PARCIAL separado do Controle de OS):
+- **Novo projeto** (recomendado, mantém o Meros360 separado do Controle de OS):
   "Adicionar projeto" → nome `parcial` → pode desligar o Google Analytics.
 - Ou **reaproveitar o projeto do Controle de OS**: também funciona, os dados
-  do PARCIAL ficam numa coleção própria (`kv`) e não se misturam.
+  do Meros360 ficam numa coleção própria (`kv`) e não se misturam.
 
 ## 2. Ativar o login por e-mail e senha
 

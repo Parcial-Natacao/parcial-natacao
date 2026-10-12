@@ -1,4 +1,4 @@
-# PARCIAL — Arquitetura e Modelo de Dados (para análise externa)
+# Meros360 — Arquitetura e Modelo de Dados (para análise externa)
 
 App de performance de natação (nadador Master, foco 50/100 peito). Documento
 para mapear **o que o app já coleta e como os dados estão estruturados**, de
@@ -315,7 +315,7 @@ tela e `salvarPro()` descartam os rascunhos.
 
 ### v61
 
-- **Parcial 25/50/100m + botão "+" (v61)**: o seletor de parcial passou a oferecer todos os
+- **Meros360 25/50/100m + botão "+" (v61)**: o seletor de parcial passou a oferecer todos os
   intervalos válidos p/ a distância — `intervalosValidos(dist)`=[25,50,100].filter(iv<dist &&
   dist%iv==0). `splitElegivel` agora inclui 50m (dist≥50), então o 50m entra no fluxo de
   passagens (a cada 25m; 2 passagens) em vez da tabela legada; padrão 50m p/ 100+ e 25m p/ 50m.
