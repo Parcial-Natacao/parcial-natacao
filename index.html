@@ -35,12 +35,12 @@
 <meta name="theme-color" content="#F4F2EE">
 <title>Meros360 — natação</title>
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="icon" href="./icone-r2-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="./icone-m360-192.png" sizes="192x192" type="image/png">
 <!-- vários tamanhos: o iOS escolhe o mais próximo do aparelho. Sem o tamanho
      certo ele redimensiona outro e, às vezes, reaproveita um antigo do cache -->
-<link rel="apple-touch-icon" sizes="180x180" href="./icone-r2-180.png">
-<link rel="apple-touch-icon" sizes="167x167" href="./icone-r2-167.png">
-<link rel="apple-touch-icon" sizes="152x152" href="./icone-r2-152.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./icone-m360-180.png">
+<link rel="apple-touch-icon" sizes="167x167" href="./icone-m360-167.png">
+<link rel="apple-touch-icon" sizes="152x152" href="./icone-m360-152.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -151,8 +151,21 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
 header{position:sticky;top:0;z-index:30;background:var(--deck);border-bottom:1px solid var(--line);padding-top:var(--sat)}
 .rope{height:6px;background:repeating-linear-gradient(90deg,var(--rope) 0 14px,var(--ink) 14px 28px)}
 .hbar{display:flex;align-items:center;gap:9px;padding:9px 0 10px;min-height:52px}
-.brand{font-family:var(--disp);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.06em}
+.brand{font-family:var(--disp);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.06em;
+  display:flex;align-items:center;gap:5px}
 .brand span{color:var(--clock)}
+/* a logo ocupa o lugar do nome: altura fixa, largura pelo aspecto */
+.marca-img{height:21px;width:auto;display:block}
+.marca-clara{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-tema="claro"]) .marca-escura{display:none}
+  :root:not([data-tema="claro"]) .marca-clara{display:block}}
+:root[data-tema="escuro"] .marca-escura{display:none}
+:root[data-tema="escuro"] .marca-clara{display:block}
+:root[data-tema="claro"] .marca-escura{display:block}
+:root[data-tema="claro"] .marca-clara{display:none}
+/* na tela de entrada ela aparece grande, empilhada */
+.brand.grande{flex-direction:column;gap:0}
+.brand.grande .marca-img{height:auto;width:min(300px,72vw)}
 .pill{font-family:var(--disp);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;border:1.5px solid var(--ink);
   border-radius:999px;padding:3px 10px;font-weight:600;white-space:nowrap;background:none;color:var(--ink);min-height:0}
 .pill.pro{border-color:var(--rope);background:var(--rope);color:var(--sobre-amarelo)}
@@ -288,6 +301,13 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
    tela de aplicativo que se rola. */
 .doc-cap{margin:14px 0 6px}
 .doc-cap h1{font-size:27px;line-height:1.05;letter-spacing:-.01em}
+/* assinatura do documento: logo + nome, acima do título */
+.doc-logo{display:flex;align-items:center;gap:11px;margin:0 0 12px;
+  padding-bottom:11px;border-bottom:1px solid var(--line)}
+.doc-logo img{height:46px;width:auto;display:block;flex:none}
+.doc-logo div{display:flex;flex-direction:column;line-height:1.2}
+.doc-logo b{font-family:var(--disp);font-size:17px;letter-spacing:.01em}
+.doc-logo span{font-size:11.5px;color:var(--ink-2);letter-spacing:.055em;text-transform:uppercase}
 .doc-sub{font-size:14.5px;color:var(--ink-2);margin-top:5px}
 .doc-ident{width:100%;margin-top:13px;border-top:2px solid var(--ink);border-bottom:1px solid var(--line)}
 .doc-ident td{padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
@@ -505,7 +525,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v143';
+const VER='v144';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -542,7 +562,12 @@ const CODIGO_PRO_ANTIGO='BARBATO-PRO-2026';   /* so para avisar quem ainda usa *
    gravados. Nome é rótulo; chave é endereço, e endereço não se renomeia
    junto com a placa. */
 const APP_NOME='Meros360';
-const APP_MARCA='MEROS<span>360</span>';   /* a cor cai na segunda metade */
+/* A marca virou IMAGEM. Duas versões: a palavra "MEROS" é azul-marinho e
+   desapareceria no tema escuro, então existe uma variante com a palavra
+   clara. A troca é por CSS (`.marca-clara`), não por JS, para não piscar a
+   imagem errada entre a primeira pintura e o render. */
+const APP_MARCA=`<img class="marca-img marca-escura" src="./logo-m360.png" alt="${APP_NOME}" width="447" height="96">`
+  +`<img class="marca-img marca-clara" src="./logo-m360-claro.png" alt="" aria-hidden="true" width="447" height="96">`;
 /* a marca do cabeçalho é HTML estático (fora de qualquer template), então vem
    daqui — assim o nome mora num lugar só e não se espalha pelo arquivo. Tem
    de ser DEPOIS do const: antes dele, a leitura cai na zona morta temporal e
@@ -1598,7 +1623,7 @@ function telaEntrada(){
   return`
   <div style="height:26px"></div>
   <div class="center">
-    <div class="brand" style="font-size:34px">${APP_MARCA}</div>
+    <div class="brand grande">${APP_MARCA}</div>
     <div class="eyebrow" style="margin-top:4px">prancheta digital de natação</div>
   </div>
   <div class="card" style="margin-top:22px">
@@ -10007,6 +10032,14 @@ function cabecalhoDocumento(pro,motor){
   const iv=motor.inventario||{};
   const linha=(r,v)=>`<tr><td class="rot">${r}</td><td><b>${v}</b></td></tr>`;
   return`<div class="doc-cap">
+    ${/* a assinatura do documento: é o que identifica de quem é o relatório
+         quando a folha circula solta entre técnico e atleta */''}
+    <div class="doc-logo">
+      ${/* só a MARCA: a logo empilhada traz a palavra embaixo, que a 46px
+           fica ilegível e ainda repete o nome escrito ao lado. */''}
+      <img src="./icone-m360-512.png" alt="${APP_NOME}" width="512" height="512">
+      <div><b>${APP_NOME}</b><span>Swim Performance &amp; Analytics</span></div>
+    </div>
     <h1>Relatório de performance — natação</h1>
     <div class="doc-sub">${prox
       ? `${esc(prox.comp||prox.nome||'Próxima competição')} — ${brData(prox.data)}${(prox.pis||prox.piscina)?` · piscina de ${(prox.pis||prox.piscina)==='LC50'?'50':'25'} m`:''}`
@@ -10309,7 +10342,11 @@ function imprimirRelatorio(modo){
   const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
   const nome=nomeLaudo();
   const corpo=clone.innerHTML;
-  const cabeca=`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)} — relatório</title>${estilos}<style>body{padding:14px;background:#fff}@media print{body{padding:0}}</style>`;
+  /* A janela de impressão nasce em about:blank, onde "./logo-m360-*.png" não
+     resolve — a logo sairia quebrada no PDF. O <base> amarra os caminhos
+     relativos ao endereço de onde o app está servido. */
+  const base=`<base href="${location.href.replace(/[^/]*$/,'')}">`;
+  const cabeca=base+`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)} — relatório</title>${estilos}<style>body{padding:14px;background:#fff}@media print{body{padding:0}}</style>`;
   const script='<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},500);};window.onafterprint=function(){setTimeout(function(){try{window.close();}catch(e){}},300);};</scr'+'ipt>';
   const doc='<!doctype html><html lang="pt-BR"><head>'+cabeca+'</head><body>'+corpo+script+'</body></html>';
   let w=null; try{ w=window.open('','_blank'); }catch(e){}
