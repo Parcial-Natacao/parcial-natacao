@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v147';
+const VER='v148';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1548,6 +1548,22 @@ async function carregarDados(){
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
+/* ── O CONTEXTO ADMINISTRATIVO SOBREVIVE À SINCRONIA ───────────────────────
+   `assumirEquipe` reaponta S.u.equipe EM MEMÓRIA para a equipe que o
+   administrador está gerindo. A sincronia de 12 segundos relia o cadastro do
+   banco e o escrevia inteiro por cima — devolvendo a equipe de origem. O
+   efeito era o app "voltar sozinho" para a equipe antiga no meio do trabalho
+   em outra, e não havia como gerir equipe nenhuma além da própria.
+   O cadastro GRAVADO continua intocado: o que se preserva aqui é só a vista. */
+function mesclaUsuarioSincronia(atual,doBanco,adminOrig){
+  if(!doBanco)return atual;
+  if(adminOrig&&atual){
+    doBanco.equipe=atual.equipe;
+    doBanco.equipeNome=atual.equipeNome;
+    doBanco.aprovado=true;          /* o administrador não espera aprovação */
+  }
+  return doBanco;
+}
 async function sincronizar(sil){
   if(!S.u)return;
   /* A sincronia SILENCIOSA nunca interrompe quem está preenchendo algo: nem
@@ -1555,7 +1571,8 @@ async function sincronizar(sil){
      edição ou alterado e ainda não salvo (usuarioDigitando). Ela volta a
      rodar sozinha em 12s, então nada fica desatualizado por muito tempo. */
   if(sil&&(S.sub==='novo'||usuarioDigitando()||document.getElementById('sheet')?.classList.contains('on')))return;
-  const u=await DB.get(kUser(S.u.email)); if(u)S.u=u;
+  const u=await DB.get(kUser(S.u.email));
+  if(u)S.u=mesclaUsuarioSincronia(S.u,u,S.adminOrig);
   await carregarDados(); if(S.u.equipe&&S.u.aprovado!==false)ligarSincronia(); if(!sil)toast('Atualizado'); render();
 }
 setInterval(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},12000);
@@ -3978,6 +3995,33 @@ teste('exclusão','sem equipe não tenta apagar snapshot que não existe',async 
   const f=await apagarDadosDaConta({perfil:'atleta',equipe:null,id:'A1',email:'x@y.com'},{});
   a.ok(f.includes('pro_A1'),'pro_ apagado');
   a.ok(!f.some(k=>k.indexOf('_perf_')>=0),'nenhum snapshot');});
+
+/* ── CONTEXTO ADMINISTRATIVO (v148) ──────────────────────────────────────── */
+teste('admin','a equipe assumida sobrevive à sincronia de 12s',a=>{
+  const noBanco={id:'A1',email:'x@y.com',perfil:'pro',equipe:'a3',equipeNome:'A3 Swim Team',aprovado:true};
+  /* o administrador assume outra equipe: só a vista muda */
+  const emMemoria={...noBanco,equipe:'nova',equipeNome:'Equipe Nova',aprovado:true};
+  const orig={equipe:'a3',equipeNome:'A3 Swim Team',aprovado:true};
+  const dps=mesclaUsuarioSincronia(emMemoria,{...noBanco},orig);
+  a.eq(dps.equipe,'nova','continua na equipe assumida');
+  a.eq(dps.equipeNome,'Equipe Nova','e com o nome dela');
+  a.ok(dps.aprovado,'aprovado na vista');});
+teste('admin','sem contexto administrativo, o banco manda',a=>{
+  const noBanco={id:'A1',email:'x@y.com',equipe:'a3',equipeNome:'A3 Swim Team',nome:'Bruno'};
+  const emMemoria={...noBanco,equipe:'desatualizada',nome:'nome velho'};
+  const dps=mesclaUsuarioSincronia(emMemoria,{...noBanco},null);
+  a.eq(dps.equipe,'a3','a equipe do cadastro prevalece');
+  a.eq(dps.nome,'Bruno','e o resto do cadastro também');});
+teste('admin','a sincronia traz o resto do cadastro mesmo no contexto assumido',a=>{
+  const emMemoria={id:'A1',email:'x@y.com',equipe:'nova',equipeNome:'Equipe Nova',nome:'antigo',telefone:'1'};
+  const doBanco={id:'A1',email:'x@y.com',equipe:'a3',equipeNome:'A3',nome:'Bruno Barbato',telefone:'67999'};
+  const dps=mesclaUsuarioSincronia(emMemoria,doBanco,{equipe:'a3'});
+  a.eq(dps.equipe,'nova','a vista administrativa fica');
+  a.eq(dps.nome,'Bruno Barbato','mas nome e telefone vêm atualizados do banco');
+  a.eq(dps.telefone,'67999','idem');});
+teste('admin','sem resposta do banco, nada é sobrescrito',a=>{
+  const atual={id:'A1',equipe:'nova'};
+  a.eq(mesclaUsuarioSincronia(atual,null,{equipe:'a3'}),atual,'mantém o que estava');});
 
 /* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
 function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
