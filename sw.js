@@ -23,14 +23,15 @@
    O nome do cache deriva dela; sem incrementar, o cache antigo continua sendo
    servido e o arquivo novo nunca chega. Aconteceu na v86: o ícone foi trocado,
    a VERSAO não, e o app seguiu mostrando o ícone velho. */
-const VERSAO = 'v143';
+const VERSAO = 'v144';
 const CACHE  = 'meros360-' + VERSAO;
 /* Os ícones têm NOME versionado (app-icone-*) em vez de `?v=`: para o ícone da
    tela de início o iOS às vezes ignora a query e guarda por caminho, e o ícone
    antigo continuava aparecendo mesmo com tudo certo no servidor. Trocar o nome
    do arquivo é o único jeito que funciona sempre. */
 const ESSENCIAIS = ['./', './index.html', './manifest.webmanifest', './privacidade.html',
-                    './icone-r2-192.png', './icone-r2-512.png', './icone-r2-180.png'];
+                    './icone-m360-192.png', './icone-m360-512.png', './icone-m360-180.png',
+                    './logo-m360.png', './logo-m360-claro.png'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();                       /* versão nova assume sem esperar */
