@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v148';
+const VER='v149';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3996,6 +3996,75 @@ teste('exclusão','sem equipe não tenta apagar snapshot que não existe',async 
   a.ok(f.includes('pro_A1'),'pro_ apagado');
   a.ok(!f.some(k=>k.indexOf('_perf_')>=0),'nenhum snapshot');});
 
+/* ── CURRÍCULO ABMN DE ATLETA LONGEVO (v149) ─────────────────────────────── */
+/* o layout é o que o pdfTexto devolve: "PRÉ-" na MESMA linha do tempo, e
+   "MASTE"/"R" como linhas órfãs logo abaixo */
+const _ABMN=[
+ 'Faixa em 2026: 40 +',
+ 'Melhores tempos por faixa - 25 METROS',
+ ' PROVA   FAIXA   TEMPO   EVENTO   DATA',
+ '50 LIVRE MASC   PRÉ-  22.99   COPA BRASIL   15/06/2008',
+ 'MASTE','R',
+ '25 +   22.72   TORNEIO ABERTO   27/09/2009',
+ '40 +   24.12   TROFEU BRASIL   27/06/2025',
+ ' 50 PEITO MASC   30 +   32.83   CIRCUITO PAULISTA   16/03/2014',
+ ' 50 BORBOLETA MASC   PRÉ-  25.42   CAMPEONATO BRASILEIRO   23/04/2005',
+ 'MASTE','R',
+ '40 +   25.51   COPA BRASIL   14/09/2025',
+ 'Melhores tempos all-time - 25 METROS',
+ ' PROVA   FAIXA   TEMPO   EVENTO   DATA',
+ '50 LIVRE MASC   25 +   22.72   TORNEIO ABERTO   27/09/2009',
+ '50 BORBOLETA MASC   25 +   25.41   TORNEIO ABERTO   26/09/2009',
+ 'Histórico por competição',
+ 'TROFEU BRASIL MASTERS - 25 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '1º 36ª 50 LIVRE MASC 40 + TNT SP 00:24.12 0,00 108,85 27/06/2025',
+ '1º 40ª 4X50 LIVRE MASC 160 + TNT SP A 01:36.06 36,00 101,20 27/06/2025',
+ 'COPA BRASIL MASTERS - 25 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '2º 10ª 50 LIVRE MASC 40 + TNT SP 00:24.40 0,00 107,00 14/09/2025',
+ '1º 12ª 50 LIVRE MASC 35 + TNT SP 00:24.63 0,00 105,00 10/12/2023'
+].join('\n');
+teste('abmn','prova que abre em pré-master não contamina a anterior',a=>{
+  const c=parseABMN(_ABMN);
+  const p=c.itens.filter(x=>x.dist===50&&x.piscina==='SC25');
+  const peito=p.filter(x=>x.estilo==='peito'), borbo=p.filter(x=>x.estilo==='borboleta');
+  a.eq(peito.length,1,'o peito tem UMA faixa só');
+  a.eq(peito[0].tempo,parseTempo('32.83'),'e é o tempo dele, não o da borboleta');
+  a.ok(borbo.some(x=>x.faixa===40&&x.tempo===parseTempo('25.51')),'a borboleta ficou com o 25.51');
+  a.ok(borbo.some(x=>x.faixa===0),'pré-master entra como faixa 0');});
+teste('abmn','o PB do modelo é o da faixa atual, não o da vida',a=>{
+  const pro=_atleta({}); const c=parseABMN(_ABMN); aplicarABMN(pro,c);
+  a.eq(pro.faixa,40,'faixa lida do cabeçalho');
+  a.eq(pro.pbs['50 livre SC25'],parseTempo('24.12'),'50 livre: o de 40+, não o 22.72 de 2009');
+  a.eq(pro.pbs['50 peito SC25'],parseTempo('32.83'),'peito só tem 30+, e é o que vale');});
+teste('abmn','o PB da vida fica à parte, com a faixa em que foi feito',a=>{
+  const pro=_atleta({}); aplicarABMN(pro,parseABMN(_ABMN));
+  const at=pro.pbAllTime||{};
+  a.eq(at['50 livre SC25'].tempo,parseTempo('22.72'),'guardado');
+  a.eq(at['50 livre SC25'].faixa,'25+','com a faixa de origem');
+  a.ok(at['50 livre SC25'].tempo<pro.pbs['50 livre SC25'],'é mais rápido que o da faixa de hoje');
+  a.eq(pro.pbs['50 livre SC25'],parseTempo('24.12'),'e NÃO virou o PB do modelo');});
+teste('abmn','o histórico por competição vira resultado, sem revezamento',a=>{
+  const h=parseABMNHistorico(_ABMN);
+  a.eq(h.length,3,'três provas individuais');
+  a.ok(!h.some(x=>x.dist===200||/4X50/i.test(x.prova||'')),'revezamento fora');
+  a.eq(h[0].piscina,'SC25','piscina veio do cabeçalho da competição');
+  a.eq(h[0].tempo,parseTempo('24.12'),'tempo 00:24.12 lido certo');
+  a.eq([...new Set(h.map(x=>x.faixa))].sort(),[35,40],'cada linha traz a faixa');});
+teste('abmn','a evolução usa só a faixa de hoje',a=>{
+  const pro=_atleta({}); aplicarABMN(pro,parseABMN(_ABMN));
+  const usados=resultadosDaFaixa(pro);
+  a.ok(usados.every(r=>r.faixa==null||r.faixa===40),'nada de outra faixa entra');
+  const ev=evolucaoProvas(pro).find(e=>e.prova==='50m livre'&&e.piscina==='SC25');
+  a.ok(ev,'há série do 50 livre curta');
+  a.eq(ev.pts.length,2,'os dois tiros de 40+, e não os de 2008/2009/2023');
+  a.ok(ev.pts.every(p=>/\/25$/.test(p.rot)),'ambos de 2025 (o rótulo é dd/mm/aa)');});
+teste('abmn','sem faixa conhecida, nada é filtrado',a=>{
+  const pro=_atleta({resultados:[{dist:50,estilo:'livre',piscina:'SC25',data:'2009-01-01',tempo:parseTempo('22.72'),faixa:25},
+                                 {dist:50,estilo:'livre',piscina:'SC25',data:'2025-01-01',tempo:parseTempo('24.12'),faixa:40}]});
+  a.eq(resultadosDaFaixa(pro).length,2,'sem pro.faixa, passa tudo');});
+
 /* ── CONTEXTO ADMINISTRATIVO (v148) ──────────────────────────────────────── */
 teste('admin','a equipe assumida sobrevive à sincronia de 12s',a=>{
   const noBanco={id:'A1',email:'x@y.com',perfil:'pro',equipe:'a3',equipeNome:'A3 Swim Team',aprovado:true};
@@ -6106,10 +6175,19 @@ function msHMSC(h,m,s,cc){ h=+h||0;m=+m||0;s=+s||0;cc=+cc||0; return ((h*3600+m*
 function pbsTabela(pbs,pis){
   const ent=Object.entries(pbs||{}).filter(([k])=>k.endsWith(' '+pis)).sort((a,b)=>a[0].localeCompare(b[0]));
   if(!ent.length)return'<div class="small muted" style="margin:6px 0 2px">Nenhuma marca nesta piscina.</div>';
+  /* duas colunas de tempo, e elas significam coisas diferentes: a primeira é
+     o melhor da FAIXA ATUAL — a que alimenta projeção e %PB — e a segunda é
+     o melhor da vida inteira, marcado com *, que não entra em conta nenhuma */
+  const at=(S.pro&&S.pro.pbAllTime)||{};
+  const temAT=ent.some(([k,v])=>at[k]&&at[k].tempo<v);
   return`<table style="margin-top:6px"><tbody>${ent.map(([k,v])=>{const[d,e]=k.split(' ');
-    return`<tr><td><b>${d}m ${e}</b></td>
+    const a=at[k];
+    const melhorDaVida=a&&a.tempo<v;
+    return`<tr><td><b>${d}m ${e}</b>${melhorDaVida?`<div class="xs muted">${a.faixa} · ${brCurta(a.data)}</div>`:''}</td>
       <td class="n" style="text-align:right;font-weight:700">${fmt(v,true)}</td>
-      <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}</tbody></table>`;
+      ${temAT?`<td class="n" style="text-align:right;color:var(--ink-2)">${melhorDaVida?fmt(a.tempo,true)+'<b style="color:var(--rope-ink)">*</b>':''}</td>`:''}
+      <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}</tbody></table>
+    ${temAT?`<div class="xs muted" style="margin-top:7px"><b>*</b> melhor tempo da <b>vida inteira</b>, feito em outra faixa etária — está aqui como referência e <b>não entra</b> em projeção, %PB nem prontidão. O número da esquerda é o melhor da sua <b>faixa de hoje</b>${S.pro&&S.pro.faixa?` (${S.pro.faixa}+)`:''}, que é contra quem você compete.</div>`:''}`;
 }
 /* provas principais do atleta — foco da projeção e da assinatura de sprint */
 function provasAlvo(pro){
@@ -6336,20 +6414,84 @@ function parseABMN(txt){
   while((s=secRe.exec(t))){
     const pool=s[1]==='50'?'LC50':'SC25';
     const corpo=s[2].split('\n').filter(l=>!/revez/i.test(l)&&!/\d\s*[xX]\s*\d{2,}/.test(l)).join('\n');
-    /* prova (opcional, só na 1ª linha do grupo) + faixa + tempo + evento + data */
-    const re=/(?:(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(MASC|FEM)\s+)?(\d{2})\s*\+\s+(\d{1,3}:\d{2}\.\d{2}|\d{1,2}\.\d{2})\s+([\s\S]*?)(\d{2}\/\d{2}\/\d{4})/g;
+    /* prova (opcional, só na 1ª linha do grupo) + faixa + tempo + evento + data
+       A FAIXA aceita PRÉ-MASTER, e isso conserta um erro silencioso: quando a
+       primeira linha de uma prova era pré-master, ela NÃO casava, a prova não
+       era capturada, e as linhas seguintes herdavam a prova ANTERIOR. No
+       currículo do Renê o 50 borboleta abre em pré-master, então 25.41 e
+       25.51 iam parar no 50 PEITO — o PB de peito dele virava tempo de
+       borboleta. Pré-master entra como faixa 0 e sai do filtro de faixa. */
+    const re=/(?:(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(MASC|FEM)\s+)?(PR[ÉE]-?|\d{2}\s*\+)\s+(\d{1,3}:\d{2}\.\d{2}|\d{1,2}\.\d{2})\s+([\s\S]*?)(\d{2}\/\d{2}\/\d{4})/g;
     let m, dist=null, estilo=null, genero=null;
     while((m=re.exec(corpo))){
       if(m[1]){ dist=+m[1]; estilo=ESTIL[m[2].toUpperCase()]||'livre'; genero=m[3].toUpperCase(); }
       if(dist==null)continue;
       const tempo=parseTempo(m[5]); if(!tempo)continue;
       const d=m[7].split('/');
-      itens.push({dist,estilo,genero,faixa:+m[4],piscina:pool,tempo,
+      itens.push({dist,estilo,genero,faixa:/PR[ÉE]/i.test(m[4])?0:parseInt(m[4],10),piscina:pool,tempo,
         comp:m[6].replace(/\s+/g,' ').trim().slice(0,90),
         data:`${d[2]}-${d[1]}-${d[0]}`,prova:`${dist}m ${estilo}`,parciais:[],inscricao:null});
     }
   }
-  return {faixaAtual,matricula:mM?mM[1]:null,itens};
+  /* ── ALL-TIME: o PB da vida inteira ──────────────────────────────────────
+     Não entra no modelo — `pbs` continua sendo o melhor da FAIXA ATUAL, que é
+     o que projeta um alvo realista. Entra como referência de vitrine: quem
+     nada há vinte anos quer ver o 22.72 que fez aos 25, e quer saber que é
+     de outra época. Guardamos o tempo, a faixa em que foi feito e a data. */
+  const alltime={};
+  const atRe=/Melhores\s+tempos\s+all-?time\s*[-–]\s*(25|50)\s*METROS([\s\S]*?)(?=Melhores\s+tempos|Hist[óo]rico\s+por|$)/gi;
+  let a;
+  while((a=atRe.exec(t))){
+    const pool=a[1]==='50'?'LC50':'SC25';
+    const corpo=a[2].split('\n').filter(l=>!/revez/i.test(l)&&!/\d\s*[xX]\s*\d{2,}/.test(l)).join('\n');
+    const re=/(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(?:MASC|FEM)\s+(PR[ÉE]-?|\d{2}\s*\+)\s+(\d{1,3}:\d{2}\.\d{2}|\d{1,2}\.\d{2})\s+([\s\S]*?)(\d{2}\/\d{2}\/\d{4})/gi;
+    let m;
+    while((m=re.exec(corpo))){
+      const tempo=parseTempo(m[4]); if(!tempo)continue;
+      const d=m[6].split('/');
+      const fx=/PR[ÉE]/i.test(m[3])?'pré-master':m[3].replace(/\s+/g,'');
+      const k=`${+m[1]} ${ESTIL[m[2].toUpperCase()]||'livre'} ${pool}`;
+      if(!alltime[k]||tempo<alltime[k].tempo)
+        alltime[k]={tempo,faixa:fx,data:`${d[2]}-${d[1]}-${d[0]}`,
+          comp:m[5].replace(/\s+/g,' ').trim().slice(0,90)};
+    }
+  }
+  return {faixaAtual,matricula:mM?mM[1]:null,itens,alltime,
+          historico:parseABMNHistorico(t)};
+}
+/* ── HISTÓRICO POR COMPETIÇÃO ──────────────────────────────────────────────
+   É a seção que torna possível um gráfico de evolução DENTRO da faixa atual.
+   A tabela de "melhores por faixa" dá um ponto por faixa — para um atleta de
+   40+ isso é um ponto só, e o gráfico que existia ligava 2009 a 2025, o que
+   mostra envelhecimento, não treino. Aqui cada linha é uma prova nadada, com
+   a FAIXA em que foi disputada, então dá para recortar.
+   Linha: colocação · nº da prova · distância estilo gênero · faixa · equipe ·
+          tempo · rec · pontos · índice · data.
+   A piscina vem do cabeçalho da competição ("… - 50 METROS"). */
+function parseABMNHistorico(txt){
+  const ESTIL={LIVRE:'livre',PEITO:'peito',COSTAS:'costas',BORBOLETA:'borboleta',MEDLEY:'medley'};
+  const t=String(txt||'').replace(/\r/g,'');
+  const i=t.search(/Hist[óo]rico\s+por\s+competi[çc][ãa]o/i);
+  if(i<0)return [];
+  const out=[];
+  let comp=null, pool=null;
+  for(const bruto of t.slice(i).split('\n')){
+    const l=bruto.trim(); if(!l)continue;
+    /* cabeçalho de competição: "NOME ... - 25 METROS" | "- 50 METROS" */
+    const mc=l.match(/^(.+?)\s*[-–]\s*(25|50)\s*METROS\s*$/i);
+    if(mc&&!/^\d/.test(l)){ comp=mc[1].replace(/\s+/g,' ').trim().slice(0,90); pool=mc[2]==='50'?'LC50':'SC25'; continue; }
+    if(!pool)continue;
+    if(/revez/i.test(l)||/\b\d\s*[xX]\s*\d{2,}\b/.test(l))continue;   /* revezamento fora */
+    const m=l.match(/^\s*(?:\d+[ºªo]|N\/?C|DQL|DNS)\s+\d+[ºªa]\s+(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(?:MASC|FEM)\s+(\d{2,3})\s*\+\s+.*?(\d{2}:\d{2}\.\d{2})\s+.*?(\d{2}\/\d{2}\/\d{4})\s*$/i);
+    if(!m)continue;
+    const tempo=parseTempo(m[4].replace(/^00:/,''));   /* 00:25.82 → 25.82 */
+    if(!tempo)continue;
+    const d=m[5].split('/');
+    out.push({dist:+m[1],estilo:ESTIL[m[2].toUpperCase()]||'livre',piscina:pool,
+      faixa:+m[3],tempo,comp,data:`${d[2]}-${d[1]}-${d[0]}`,
+      prova:`${+m[1]}m ${ESTIL[m[2].toUpperCase()]||'livre'}`,parciais:[],inscricao:null});
+  }
+  return out;
 }
 /* Melhor tempo POR PROVA na faixa atual. Sem registro na faixa atual, cai para
    a faixa mais recente que o atleta tem — nunca para a da juventude. */
@@ -6372,9 +6514,16 @@ function aplicarABMN(pro,cur){
   pro.pbs=pro.pbs||{}; pro.resultados=pro.resultados||[];
   if(cur.faixaAtual)pro.faixa=cur.faixaAtual;
   if(cur.matricula)pro.matricula=cur.matricula;
+  /* o PB da vida inteira fica à parte: é vitrine, não entra no modelo */
+  if(cur.alltime&&Object.keys(cur.alltime).length)pro.pbAllTime=cur.alltime;
   const existe=new Set(pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
   let add=0;
-  for(const r of cur.itens){
+  /* O HISTÓRICO por competição entra junto com as melhores por faixa. É ele
+     que dá mais de um ponto dentro da faixa atual — sem ele, o gráfico de
+     evolução de um atleta de 40+ tem um ponto só por prova, ou liga 2009 a
+     2025 e mostra envelhecimento em vez de treino. A deduplicação é por
+     prova+piscina+data+tempo, então a mesma prova nas duas listas não dobra. */
+  for(const r of [...(cur.historico||[]),...cur.itens]){
     const k=`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`;
     if(existe.has(k))continue; existe.add(k);
     pro.resultados.push(Object.assign({chave:'abmn_'+k.replace(/\|/g,'_')},r)); add++;
@@ -6386,7 +6535,10 @@ function aplicarABMN(pro,cur){
     const r=melhores[pk];
     if(pro.pbs[pk]!==r.tempo){ pro.pbs[pk]=r.tempo; ajust++; }
   }
-  return {add,ajust,faixa:cur.faixaAtual,provas:Object.keys(melhores).length};
+  return {add,ajust,faixa:cur.faixaAtual,provas:Object.keys(melhores).length,
+          historico:(cur.historico||[]).length,
+          naFaixa:(cur.historico||[]).filter(r=>r.faixa===cur.faixaAtual).length,
+          allTime:Object.keys(cur.alltime||{}).length};
 }
 /* ── Currículo enviado pelo TÉCNICO ────────────────────────────────────────
    O técnico não escreve (nem deve) no pro_ do atleta: dados pessoais têm dono.
@@ -6443,9 +6595,25 @@ async function importarABMN(inp){
 }
 
 /* agrupa os resultados de competição por prova+piscina para a linha do tempo */
+/* ── EVOLUÇÃO: SÓ A CATEGORIA DE HOJE ──────────────────────────────────────
+   Atleta longevo compete em várias faixas. Ligar o 22.72 que ele fez aos 25
+   ao 24.12 que fez aos 42 desenha uma linha de envelhecimento, não de treino
+   — e era isso que o gráfico mostrava. A evolução passa a usar só as provas
+   da FAIXA ATUAL, que é onde ele compete hoje e contra quem ele compete.
+   Resultado sem faixa declarada (o que o atleta lança no app) entra sempre:
+   é recente por definição. Sem faixa conhecida, nada muda. */
+function resultadosDaFaixa(pro){
+  const fx=pro&&pro.faixa;
+  const todos=(pro&&pro.resultados)||[];
+  if(!fx)return todos;
+  const naFaixa=todos.filter(r=>r.faixa==null||r.faixa===fx);
+  /* se a faixa atual ainda não tem prova nenhuma, não deixa o atleta sem
+     gráfico: devolve tudo e quem desenha avisa que é de faixas diferentes */
+  return naFaixa.length?naFaixa:todos;
+}
 function evolucaoProvas(pro){
   const g={};
-  for(const r of (pro.resultados||[])){
+  for(const r of resultadosDaFaixa(pro)){
     if(r.tempo==null||!r.data)continue;
     const k=pbKey(r.dist,r.estilo,r.piscina);
     (g[k]=g[k]||[]).push(r);
