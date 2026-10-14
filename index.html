@@ -33,7 +33,7 @@
 <!-- a barra de status do aparelho acompanha o tema; o script abaixo acerta o
      valor no boot e `definirTema` o atualiza quando o usuário troca -->
 <meta name="theme-color" content="#F4F2EE">
-<title>Meros360 — natação</title>
+<title>Meros360</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icone-m360-192.png" sizes="192x192" type="image/png">
 <!-- vários tamanhos: o iOS escolhe o mais próximo do aparelho. Sem o tamanho
@@ -149,7 +149,11 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
 .muted{color:var(--ink-2)} .small{font-size:14px} .xs{font-size:12.5px}
 .center{text-align:center}
 header{position:sticky;top:0;z-index:30;background:var(--deck);border-bottom:1px solid var(--line);padding-top:var(--sat)}
-.rope{height:6px;background:repeating-linear-gradient(90deg,var(--rope) 0 14px,var(--ink) 14px 28px)}
+/* Era uma raia de piscina listrada em amarelo e preto, 6px de altura. A ideia
+   era boa — identidade de natação — mas o desenho envelheceu e briga com a
+   logo nova. Virou um fio de 3px no gradiente da própria marca: continua
+   assinando o topo, sem gritar. */
+.rope{height:3px;background:linear-gradient(90deg,#0E2E63 0%,#1C6FD0 32%,#29C2F2 64%,#44D3A5 100%)}
 .hbar{display:flex;align-items:center;gap:9px;padding:9px 0 10px;min-height:52px}
 .brand{font-family:var(--disp);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.06em;
   display:flex;align-items:center;gap:5px}
@@ -542,10 +546,10 @@ svg.chart{width:100%;height:auto;display:block}
 
 <script>
 /* =====================================================================
-   Meros360 v04 — natação  ·  iPhone-first
+   Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v145';
+const VER='v146';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -10060,7 +10064,7 @@ function cabecalhoDocumento(pro,motor){
       <img src="./icone-m360-512.png" alt="${APP_NOME}" width="512" height="512">
       <div><b>${APP_NOME}</b><span>Swim Performance &amp; Analytics</span></div>
     </div>
-    <h1>Relatório de performance — natação</h1>
+    <h1>Relatório de performance</h1>
     <div class="doc-sub">${prox
       ? `${esc(prox.comp||prox.nome||'Próxima competição')} — ${brData(prox.data)}${(prox.pis||prox.piscina)?` · piscina de ${(prox.pis||prox.piscina)==='LC50'?'50':'25'} m`:''}`
       : `Emitido em ${brData(hoje())} · janela de análise: últimos 120 dias de treino · histórico completo de competições`}</div>
