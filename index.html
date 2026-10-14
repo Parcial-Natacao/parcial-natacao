@@ -388,6 +388,10 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
 .destin{display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink)}
 .hide{display:none!important}
 .doc-rodape{display:none}   /* so existe no papel */
+/* o tamanho da marca do rodapé mora FORA do @media print de propósito: se o
+   bloco de impressão não se aplicar por qualquer motivo, a imagem de 512px
+   não explode na tela */
+.doc-rodape img{height:13px;width:13px;display:block}
 .ficha th,.ficha td{border:1px solid var(--line);text-align:center;padding:6px 3px;font-size:13.5px}
 .ficha td.nome{text-align:left;font-weight:600}
 svg.chart{width:100%;height:auto;display:block}
@@ -488,9 +492,25 @@ svg.chart{width:100%;height:auto;display:block}
   .accbody{padding:0!important}
   /* rodapé repetido: num PDF que circula entre técnico e atleta, cada folha
      solta precisa dizer de quem é e de quando */
-  .doc-rodape{position:fixed;bottom:0;left:0;right:0;font-size:9.5px;color:var(--ink-3);
-    border-top:1px solid var(--line);padding-top:3px;display:block!important}
-  @page{margin:16mm 12mm 14mm}
+  .doc-rodape{position:fixed;bottom:0;left:0;right:0;font-size:9px;color:var(--ink-3);
+    border-top:1px solid var(--line);padding-top:4px;display:flex!important;
+    align-items:center;gap:10px;background:#fff}
+  .doc-rodape .rod-marca{display:flex;align-items:center;gap:5px;flex:none}
+  .doc-rodape .rod-marca img{height:13px;width:13px;display:block}
+  .doc-rodape .rod-marca b{color:var(--ink);font-family:var(--disp);letter-spacing:.02em}
+  .doc-rodape .rod-url{color:var(--ink-2)}
+  .doc-rodape .rod-quem{flex:1;text-align:center}
+  .doc-rodape .rod-ver{flex:none}
+  /* a faixa da equipe é navegação de TELA; no papel a equipe aparece na
+     tabela de identificação, embaixo do nome do atleta */
+  .faixa-eq{display:none!important}
+  /* A margem de 16mm no topo era apertada demais: o navegador desenha o
+     cabeçalho dele (data e título) dentro da margem, e numa página de
+     continuação a borda do primeiro cartão caía em cima desse texto — era a
+     "sobreposição" da página 2. 20mm no topo e 18mm embaixo dão folga para o
+     cabeçalho do navegador E para o nosso rodapé fixo, que agora é mais alto
+     por causa da marca. */
+  @page{margin:20mm 12mm 18mm}
 }
 </style>
 
@@ -525,7 +545,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 v04 — natação  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v144';
+const VER='v145';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -10046,6 +10066,9 @@ function cabecalhoDocumento(pro,motor){
       : `Emitido em ${brData(hoje())} · janela de análise: últimos 120 dias de treino · histórico completo de competições`}</div>
     <table class="doc-ident"><tbody>
       ${linha('Atleta',esc(nome)+(idade>0?` (${idade} anos)`:''))}
+      ${/* a equipe é identificação do atleta, não da marca do documento: ela
+           sai da faixa do topo (que é navegação de tela) e vem para cá */''}
+      ${(S.u&&S.u.equipeNome)?linha('Equipe',esc(S.u.equipeNome)):''}
       ${linha('Provas-alvo',alvos.length?alvos.join(' · '):'—')}
       ${linha('Prova em foco',ref?`${ref.d} m ${esc(ref.e)} · ${ref.pis}`:'—')}
       ${linha('Projeção para hoje',p
@@ -10333,10 +10356,14 @@ function imprimirRelatorio(modo){
     clone.querySelectorAll('.doc-nivel').forEach(n=>n.remove());
     const p1=clone.querySelector('.pagina-um'); if(p1)p1.style.breakAfter='auto';
   }
-  /* rodapé de folha: um PDF que circula entre técnico e atleta precisa que
-     cada página solta diga de quem é e de quando */
+  /* Rodapé de folha, repetido em TODAS as páginas: um PDF que circula entre
+     técnico e atleta precisa que cada folha solta diga de quem é, de quando,
+     e de onde veio. Por isso a marca e o endereço entram aqui e não só na
+     capa — a folha 7 pode chegar sozinha na mão de alguém. */
   const rod=document.createElement('div'); rod.className='doc-rodape';
-  rod.textContent=`${nomeLaudo()} — relatório de performance · ${brData(hoje())} · ${APP_NOME} ${VER}`;
+  rod.innerHTML=`<span class="rod-marca"><img src="./icone-m360-512.png" alt="" width="512" height="512"><b>${esc(APP_NOME)}</b><span class="rod-url">meros360.com</span></span>`
+    +`<span class="rod-quem">${esc(nomeLaudo())} — relatório de performance · ${brData(hoje())}</span>`
+    +`<span class="rod-ver">${VER}</span>`;
   clone.appendChild(rod);
   setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
   const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
