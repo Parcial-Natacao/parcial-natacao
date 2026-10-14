@@ -75,7 +75,13 @@ service cloud.firestore {
       function ehPro() { return chave.matches('pro_.*'); }
       function ehU()   { return chave.matches('u_.*'); }
       function ehEq()  { return chave.matches('eq_.*'); }
-      function ehOutro() { return !ehPro() && !ehU() && !ehEq(); }
+      // Afiliação pública criada por atleta. É separada de `eq_`: não contém
+      // treinos, não tem técnico e nunca concede gestão. A chave determinística
+      // limita cada conta a um único registro público.
+      function ehTime() { return chave.matches('time_.*'); }
+      function ehMeuTime() { return logado() && chave == 'time_' + meuUid(); }
+      function ehTimePublico() { return resource.data.get('categoria', null) == 'time'; }
+      function ehOutro() { return !ehPro() && !ehU() && !ehEq() && !ehTime(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
@@ -102,8 +108,11 @@ service cloud.firestore {
       // ───────────────────────── LEITURA ─────────────────────────
       allow read: if
         ehAdmin() ||
+        // Vem antes das regras de perfil: estes documentos têm `perfil:null`;
+        // numa consulta o Firestore não pode avaliar `null in [...]`.
+        ( ehTimePublico() && logado() )
         // dados privados do atleta: dono; o administrador global é a exceção
-        ( ehPro() && logado() && resource.data.dono == meuUid() )
+        || ( ehPro() && logado() && resource.data.dono == meuUid() )
         // cadastro: o próprio, o técnico aprovado da equipe dele, ou o dev
         || ( ehU() && ( ehMeuU() || ehDev() || tecnicoDe(resource.data.equipe) ) )
         // consultas de gestores filtradas por equipe + perfil (atleta/PRO)
@@ -130,6 +139,12 @@ service cloud.firestore {
         // documentos internos de equipe: gestor aprovado. A raiz eq_<slug>
         // só pode ser criada pelo administrador (já coberto no primeiro ramo).
         || ( ehEq() && !ehEqRaiz() && tecnicoDe(request.resource.data.equipe) )
+        || ( ehTime() && ehMeuTime()
+             && request.resource.data.dono == meuUid()
+             && request.resource.data.donoEmail == null
+             && request.resource.data.equipe == null
+             && request.resource.data.perfil == null
+             && request.resource.data.categoria == 'time' )
         || ( ehOutro() && ehAdmin() );
 
       // ─────────────────────── ATUALIZAÇÃO ──────────────────────
@@ -156,6 +171,9 @@ service cloud.firestore {
         // demais documentos da equipe: só o técnico (ou o dono da equipe)
         || ( ehEq() && !ehEqAtleta() && naoMexeEm('equipe')
              && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
+        || ( ehTime() && ehMeuTime() && resource.data.dono == meuUid()
+             && request.resource.data.dono == meuUid() && naoMexeEm('dono')
+             && naoMexeEm('categoria') )
         || ( ehOutro() && ehAdmin() );
 
       // ───────────────────────── EXCLUSÃO ───────────────────────
@@ -168,6 +186,7 @@ service cloud.firestore {
         // É só o DELE: meuPerf() casa a chave com o uid do token.
         || ( ehEq() && meuPerf() )
         || ( ehEq() && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
+        || ( ehTime() && ehMeuTime() && resource.data.dono == meuUid() )
         || ( ehOutro() && ehAdmin() );
     }
   }

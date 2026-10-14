@@ -21,8 +21,12 @@ Não existe histórico consolidado para orientar carga.
 ## 2. Perfis
 
 ### 2.1 Atleta
-- Cadastro exige CPF **previamente liberado pelo técnico**. Sem liberação, não
-  há conta. É assim de propósito: a equipe controla quem entra.
+- Cadastro aberto; CPF é opcional. **Equipe/clube** e **técnico no app** são
+  vínculos independentes e opcionais.
+- Sem equipe ou sem técnico, entra normalmente e registra os próprios treinos.
+  Um pedido de técnico pendente não bloqueia o restante do app.
+- Pode escolher uma equipe do catálogo ou registrar uma equipe pública que
+  ficará disponível para outros usuários. Criá-la não dá poderes de gestão.
 - Escolhe se compete em **piscina** ou **águas abertas**.
 - Vê apenas os treinos endereçados a ele.
 - Lança os próprios tempos, com campo separado para parcial quando a série é
@@ -32,10 +36,8 @@ Não existe histórico consolidado para orientar carga.
 - Compartilha por WhatsApp.
 
 ### 2.2 Atleta PRO
-- **Não depende do técnico.** A tranca é o código mestre `CODIGO_PRO`,
-  constante declarada no topo do script. Sem CPF, sem liberação.
-- Se a equipe informada não existir, ela é criada sem técnico vinculado. O
-  técnico entra depois usando o mesmo nome de equipe e se vincula sozinho.
+- Usa o código individual da equipe operacional. A equipe precisa ter sido
+  criada pelo administrador; não há mais código mestre global no fonte.
 - Tudo do atleta, mais:
   - **Marcas** — melhores tempos por prova e piscina; histórico de
     competições. Quando o técnico lança uma parcial completa numa prova, o
@@ -48,7 +50,8 @@ Não existe histórico consolidado para orientar carga.
   - **Relatório** — consolida tudo e produz diagnóstico e sugestão de sessão.
 
 ### 2.3 Técnico
-- Cria a equipe. Se a equipe já existir sem técnico, se vincula a ela.
+- Escolhe uma equipe operacional previamente criada pelo administrador e
+  aguarda aprovação antes de gerir atletas e treinos.
 - **Treinos**: cola o treino em texto livre, escolhe o nível e marca quem
   recebe. Lança tempos por atleta. Edita e exclui.
 - **Elenco**: libera CPFs, define e troca o nível de cada atleta, vê a ficha
@@ -163,7 +166,8 @@ Armazenamento chave-valor. Prefixos:
 
 | Chave | Conteúdo |
 |---|---|
-| `u_<email>` | usuário: id, perfil, equipe, nome, email, idade, telefone, sal, senha (SHA-256), tipo, cpf, nivel, ativo |
+| `u_<email>` | usuário: id, perfil, afiliação pública opcional, equipe operacional/técnico opcional, aprovação e dados cadastrais |
+| `time_<uid>` | equipe pública criada pelo atleta (nome, cidade, UF, dono); não contém treinos nem concede gestão |
 | `eq_<slug>` | equipe: slug, nome, tecnicoEmail, codigoPro |
 | `eq_<slug>_users` | lista de e-mails |
 | `eq_<slug>_libs` | liberações: cpf, nome, nivel, usado, email |
