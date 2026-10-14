@@ -305,6 +305,14 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
    tela de aplicativo que se rola. */
 .doc-cap{margin:14px 0 6px}
 .doc-cap h1{font-size:27px;line-height:1.05;letter-spacing:-.01em}
+/* rastreabilidade recolhida: o gatilho é discreto, o número é que manda */
+.ficha-det>summary{cursor:pointer;font-size:11.5px;color:var(--ink-3);
+  margin-top:4px;list-style:none;display:inline-flex;align-items:center;gap:4px}
+.ficha-det>summary::-webkit-details-marker{display:none}
+.ficha-det>summary::before{content:'▸';font-size:9px;transition:transform .12s}
+.ficha-det[open]>summary::before{transform:rotate(90deg)}
+.ficha-det>summary:hover{color:var(--ink-2)}
+.ficha-det table{margin-top:4px}
 /* assinatura do documento: logo + nome, acima do título */
 .doc-logo{display:flex;align-items:center;gap:11px;margin:0 0 12px;
   padding-bottom:11px;border-bottom:1px solid var(--line)}
@@ -549,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v146';
+const VER='v147';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4060,15 +4068,15 @@ teste('foco','sem competição marcada, manda a prova-alvo',a=>{
   S.cidx=[]; _compFut={}; S.provaPC=null;
   const f=provaEmFoco(pro);
   a.ok(f&&f.alvo,'o foco é uma prova-alvo');});
-teste('relatório','abre com síntese e prontidão, antes das cinco respostas',a=>{
+teste('relatório','abre com síntese e prontidão, antes do quadro de indicadores',a=>{
   const{pro,cp,motor}=_cenarioRel();
   ESF=cp.map(e=>({...e,tags:[]})); ESF_ERRO=null; S.pro=pro; S.acc={};
   const d=document.createElement('div'); d.innerHTML=telaRelatorio();
   const t=d.innerText;
-  const iS=t.indexOf('Síntese e prioridade'), iP=t.indexOf('Prontidão competitiva'), iR=t.indexOf('As cinco respostas');
+  const iS=t.indexOf('Síntese e prioridade'), iP=t.indexOf('Prontidão competitiva'), iR=t.indexOf('Quadro de indicadores');
   a.ok(iS>=0&&iP>=0&&iR>=0,'as três partes existem');
-  a.ok(iS<iR,'síntese antes das cinco respostas');
-  a.ok(iP<iR,'prontidão competitiva antes das cinco respostas');
+  a.ok(iS<iR,'síntese antes do quadro de indicadores');
+  a.ok(iP<iR,'prontidão competitiva antes do quadro');
   const sec=[...d.querySelectorAll('.doc-h')].map(h=>h.innerText.trim());
   a.eq(sec[0].indexOf('1'),0,'a primeira seção é a 1');
   a.ok(/Síntese/.test(sec[0]),'e é a síntese');});
@@ -9797,11 +9805,17 @@ function fichaIndicador(f){
       ${f.unidade?`<span class="xs muted">${esc(f.unidade)}</span>`:''}
     </div>
     ${f.valor==null?`<div class="xs muted" style="margin-top:3px"><b>Indisponível</b> — ${esc(f.porqueIndisponivel||'falta dado para este indicador')}. Não é zero, e nada foi substituído por outra prova.</div>`:''}
-    <table class="xs" style="margin-top:4px"><tbody>
-      ${li('Período',f.periodo)}${li('Fonte',f.fonte)}${li('Atualizado',f.atualizado)}
-      ${li('Observações',f.n==null?null:(typeof f.n==='number'?`n = ${f.n}`:f.n))}${li('Interpretação',f.interpretacao)}
-      ${li('Limitação',f.limitacao)}
-    </tbody></table></div>`;
+    ${/* A rastreabilidade RECOLHE na tela e ABRE no papel. Na tela, quem lê
+         quer o número; os oito campos de procedência empilhados em cinco
+         indicadores viravam uma parede. No PDF eles reaparecem inteiros,
+         porque lá o documento precisa se sustentar sozinho numa auditoria —
+         o bloco @media print já força todo <details> aberto. */''}
+    <details class="ficha-det"><summary>como este número é apurado</summary>
+      <table class="xs"><tbody>
+        ${li('Período',f.periodo)}${li('Fonte',f.fonte)}${li('Atualizado',f.atualizado)}
+        ${li('Observações',f.n==null?null:(typeof f.n==='number'?`n = ${f.n}`:f.n))}${li('Interpretação',f.interpretacao)}
+        ${li('Limitação',f.limitacao)}
+      </tbody></table></details></div>`;
 }
 /* ── P3-A — PÁGINA 1 DO RESUMO ─────────────────────────────────────────────
    Cinco perguntas, nesta ordem, cada uma com a sua ficha. É a folha que o
@@ -9838,8 +9852,8 @@ function paginaResumo(pro,motor,comPct){
     <h2 class="doc-h"><span class="doc-n" style="font-size:.72em;letter-spacing:.02em">${n}/5</span>${titulo}</h2>${corpo}</section>`;
   return`<div class="pagina-um" data-dom="prova">
     <div class="eyebrow">resumo executivo</div>
-    <h2 style="margin:2px 0 2px">As cinco respostas</h2>
-    <p class="small muted" style="margin:0 0 4px">Cada número vem com período, fonte, nº de observações e o que ele não permite concluir. <b>Nenhum deles é probabilidade</b> de nadar bem, vencer ou bater recorde.</p>
+    <h2 style="margin:2px 0 2px">Quadro de indicadores</h2>
+    <p class="small muted" style="margin:0 0 4px">Cinco blocos, do estado geral à estimativa da prova. Cada número guarda período, fonte, nº de observações e o que ele não permite concluir — abra <b>“como este número é apurado”</b> para ver, ou imprima, que no PDF vem tudo aberto. <b>Nenhum deles é probabilidade</b> de nadar bem, vencer ou bater recorde.</p>
     ${bloco(1,'Como você está hoje',
       fichaIndicador({nome:'Prontidão do dia',valor:pr==null?null:pr,unidade:'0–100',cor:cor(pr),
         periodo:'hoje contra a sua base de 28 dias',fonte:'relógio (VFC, FC de repouso, sono) e carga',
@@ -10147,7 +10161,7 @@ function telaRelatorio(){
   ${sc('cabeçalho',()=>cabecalhoDocumento(pro,motor))}
   ${sc('coerência',()=>avisoCoerencia(pro,motor))}
   ${/* O documento abre com o que se DECIDE (prioridade da semana e prontidão
-       para a prova), não com a rastreabilidade. As cinco respostas vêm logo
+       para a prova), não com a rastreabilidade. O quadro de indicadores vem logo
        abaixo, na mesma folha: elas destrincham estes mesmos números. */''}
   <div class="doc-nivel"><span>Nível 1</span> Síntese executiva — o que decidir esta semana</div>
   ${(()=>{const S1=montarSecoes([
@@ -10325,7 +10339,7 @@ function abrirImpressao(){
   sheet(`<h2>Imprimir relatório</h2>
     <div class="small muted">Duas versões, para públicos diferentes.</div>
     <button class="primary full" style="margin-top:14px;text-align:left" onclick="imprimirRelatorio('pagina1')">
-      Uma folha<div class="xs" style="font-weight:400;opacity:.8">Só o resumo executivo: as cinco respostas, com período, fonte, nº de observações e limitações. É o que se lê em pé na beira da piscina.</div></button>
+      Uma folha<div class="xs" style="font-weight:400;opacity:.8">Só o resumo executivo: o quadro de indicadores, com período, fonte, nº de observações e limitações — tudo aberto. É o que se lê em pé na beira da piscina.</div></button>
     <button class="ghost full" style="margin-top:10px;text-align:left" onclick="imprimirRelatorio('enxuto')">
       Resumo<div class="xs" style="font-weight:400">A folha 1 mais os indicadores e tendências. Sem o material de auditoria.</div></button>
     <button class="ghost full" style="margin-top:10px;text-align:left" onclick="imprimirRelatorio('completo')">
