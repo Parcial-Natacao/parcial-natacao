@@ -109,7 +109,29 @@ baseline individual por atleta, predição de tempo com intervalo de confiança,
 e um "Performance Fingerprint" (radar) a partir das dimensões que já existem
 (velocidade, manutenção, composição, recuperação, tendência).
 
-## 8. Atualização recente (já implementado — v79)
+## 8. Atualizações recentes
+
+### v147 — equipe e técnico deixam de ser o mesmo vínculo
+
+- **Atleta independente é um estado completo**, não uma tela de bloqueio. Sem
+  equipe e sem técnico ele entra nas abas normais, registra `+ Meu treino` e
+  mantém o `pro_<uid>` privado. Pedido de técnico pendente também não bloqueia.
+- `u_<email>.afiliacao/afiliacaoNome` guarda a **equipe ou clube público**;
+  `u_<email>.equipe/equipeNome` continua sendo o **espaço operacional do
+  técnico**, por compatibilidade com os documentos `eq_*`. Os vínculos podem
+  existir separadamente em qualquer combinação.
+- A escolha de afiliação usa uma lista visível com o catálogo ABMN, equipes
+  operacionais e registros da comunidade. `time_<uid>` é uma afiliação pública
+  criada pelo próprio usuário; a chave por uid limita uma por conta e nunca dá
+  gestão, aprovação ou acesso a treinos.
+- As regras permitem ler `time_*` autenticado e criar/editar apenas
+  `time_<request.auth.uid>`. O campo espelhado `categoria:'time'` torna a
+  consulta comprovável pelas regras do Firestore.
+- A administração global mostra e edita separadamente a afiliação pública e o
+  grupo de treinos/técnico. Atleta independente não aparece como aprovação
+  pendente; o indicador só conta vínculos que realmente aguardam liberação.
+- `sheet()` volta ao topo ao trocar de etapa; no celular a próxima folha não
+  abre mais fora da tela.
 
 ### v69–v72 — Segurança (P0): o app deixa de decidir permissão sozinho
 
@@ -455,8 +477,9 @@ tela e `salvarPro()` descartam os rascunhos.
   - **Snapshot de performance** `eq_<slug>_perf_<uid>` (kPerf) gravado em `salvarPro` — pbs,
     resultados, seco, alvos (SEM Garmin/exames/bioimpedância). Doc não-pro → legível pelo
     técnico (privacidade da Saúde preservada; visibilidade é por app, regra vem na Etapa 2).
-  - Atleta **sai da equipe** (`sairDaEquipe` no menu da conta) com aviso; atleta comum sem
-    equipe cai em `telaSemEquipe` (entrar em equipe por nome → aguarda aprovação) `entrarEmEquipe`.
+  - Histórico: nesta versão, o atleta sem equipe ainda caía em uma tela de bloqueio. A partir
+    da v147 esse fluxo foi substituído pelo uso independente e pelos vínculos separados de
+    equipe pública e técnico (`abrirVinculos`).
   - PENDENTE Etapa 2: PRO lança treinos com o lançador do técnico (técnico vê); técnico abre o
     **relatório completo** do atleta (reuso do motor via snapshot).
 

@@ -549,7 +549,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v146';
+const VER='v147';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -749,7 +749,7 @@ const fkey=k=>k.replace(/\//g,'∕');
    escreve nos treinos dela". Enquanto as regras novas não são publicadas isto
    é inócuo: só acrescenta campos. */
 function camposSeguranca(k,v){
-  const o={dono:null,donoEmail:null,equipe:null,perfil:null,aprovado:null};
+  const o={dono:null,donoEmail:null,equipe:null,perfil:null,aprovado:null,categoria:null};
   const val=(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
   if(k.startsWith('pro_')){ o.dono=k.slice(4)||null; }
   else if(k.startsWith('u_')){
@@ -764,6 +764,12 @@ function camposSeguranca(k,v){
        reconhecer o DONO da equipe — quem cria a própria equipe (técnico ou PRO
        avulso) pode se auto-aprovar nela; entrar na equipe dos outros, não. */
     o.donoEmail=val.tecnicoEmail?String(val.tecnicoEmail).toLowerCase():null;
+  }
+  else if(k.startsWith('time_')){
+    /* Catálogo público criado por atleta: o uid espelhado permite às regras
+       limitar criação/edição ao próprio dono sem expor ou conceder gestão. */
+    o.dono=val.dono||k.slice(5)||null;
+    o.categoria='time';
   }
   return o;
 }
@@ -944,6 +950,10 @@ const kCIdx=eq=>`eq_${eq}_cidx`;
 const kCmp=(eq,id)=>`eq_${eq}_cmp_${id}`;
 const kPerf=(eq,uid)=>`eq_${eq}_perf_${uid}`; /* snapshot de performance p/ o técnico (SEM Saúde) */
 const kPro=uid=>`pro_${uid}`;                 /* {pbs,garmin,seco,resultados} */
+/* Equipe pública criada pelo próprio atleta. A chave é o uid, não o nome:
+   cada conta só cria um registro e duas equipes homônimas não se atropelam.
+   Isto é AFILIAÇÃO; não dá poderes de técnico nem abre dados compartilhados. */
+const kTime=uid=>`time_${uid}`;
 const kTok=t=>`tok_${t}`;
 
 /* ---------- estado ---------- */
@@ -1142,7 +1152,11 @@ function toast(m){const e=document.getElementById('toast');e.textContent=m;e.cla
   clearTimeout(tT);tT=setTimeout(()=>e.classList.remove('on'),4200)}
 function sheet(html){
   const sh=document.getElementById('sheet'); _focoAntesSheet=document.activeElement;
-  document.getElementById('sheetBody').innerHTML=html; sh.classList.add('on'); sh.setAttribute('aria-hidden','false');
+  document.getElementById('sheetBody').innerHTML=html;
+  /* A mesma folha troca de conteúdo em fluxos de várias etapas. Sem voltar ao
+     topo, no celular a etapa seguinte podia abrir inteiramente fora da tela. */
+  const inner=sh.querySelector('.inner'); if(inner)inner.scrollTop=0;
+  sh.classList.add('on'); sh.setAttribute('aria-hidden','false');
   requestAnimationFrame(()=>{const alvo=sh.querySelector('input,select,textarea,button,[tabindex="0"]')||sh.querySelector('.inner'); alvo?.focus();});
 }
 /* aviso que precisa ser LIDO: toast some em 4 s e explicação não cabe nele */
@@ -1289,7 +1303,11 @@ async function cadastrarFB(dados){
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
 
-  const em=email.toLowerCase(), eqSlug=semEquipe?'':slug(equipe);
+  /* Para atleta, equipe/clube é apenas afiliação pública. O vínculo que dá
+     acesso aos treinos de um técnico é escolhido separadamente, já dentro do
+     app. Técnico e PRO mantêm a equipe operacional antiga. */
+  const em=email.toLowerCase(), eqSlug=perfil==='atleta'?'':slug(equipe);
+  const afiliacao=perfil==='atleta'&&equipe?`cat:${slug(equipe)}`:null;
   let cred;
   try{ cred=await fauth.createUserWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
@@ -1307,9 +1325,8 @@ async function cadastrarFB(dados){
     if(!aceito)return abortar('Código PRO inválido. Peça ao técnico o código DESTA equipe — ele aparece na tela de Conta dele.');
     nivelFinal='Master';
   }else{
-    /* cadastro livre: não precisa de liberação prévia. Entra pendente e o
-       técnico (ou PRO em gestão) aprova depois. CPF é opcional. */
-    if(!semEquipe&&!eq)return abortar('Equipe não encontrada. Confira o nome com seu técnico.');
+    /* Cadastro livre: a afiliação não depende de técnico e não concede acesso
+       compartilhado. O atleta escolhe um técnico depois, se quiser. */
     if(cpf&&!cpfValido(cpf))return abortar('CPF inválido');
     nivelFinal=nivel||'Master';
   }
@@ -1318,7 +1335,8 @@ async function cadastrarFB(dados){
      dos dados PRO (o dono e o administrador global leem pro_<uid>). */
   /* Ninguém nasce aprovado. O técnico é liberado pelo administrador; atletas
      e PROs vinculados a uma equipe são liberados pelo gestor dela. */
-  const u={id:cred.user.uid,perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,nome:nome.trim(),
+  const u={id:cred.user.uid,perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,
+    afiliacao,afiliacaoNome:perfil==='atleta'&&equipe?equipe.trim():null,nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
     nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:false,criadoEm:Date.now()};
@@ -1364,7 +1382,8 @@ async function cadastrar(dados){
   if(senha!==senha2)return toast('As senhas não conferem');
   if(await DB.get(kUser(email)))return toast('Já existe conta com este e-mail');
 
-  const eqSlug=semEquipe?'':slug(equipe);
+  const eqSlug=perfil==='atleta'?'':slug(equipe);
+  const afiliacao=perfil==='atleta'&&equipe?`cat:${slug(equipe)}`:null;
   let eq=eqSlug?await DB.get(kEq(eqSlug)):null;
   let nivelFinal=nivel||'Master';
 
@@ -1377,7 +1396,6 @@ async function cadastrar(dados){
     if(!aceito)return toast('Código PRO inválido. Peça ao técnico o código DESTA equipe.');
     nivelFinal='Master';
   }else{
-    if(!semEquipe&&!eq)return toast('Equipe não encontrada. Confira o nome com seu técnico.');
     if(cpf&&!cpfValido(cpf))return toast('CPF inválido');
     nivelFinal=nivel||'Master';
   }
@@ -1385,7 +1403,8 @@ async function cadastrar(dados){
   const sal=novoSal();
   const em=email.toLowerCase();
   const aprovInicial=perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false;
-  const u={id:uid(),perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,nome:nome.trim(),
+  const u={id:uid(),perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,
+    afiliacao,afiliacaoNome:perfil==='atleta'&&equipe?equipe.trim():null,nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
     ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
@@ -1393,7 +1412,7 @@ async function cadastrar(dados){
   if(eqSlug)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   await entrarSessao(u);
-  toast(semEquipe?'Conta criada. Escolha uma equipe quando quiser.':u.aprovado?'Conta criada. Bem-vindo!':(perfil==='tecnico'?'Cadastro de técnico enviado. Aguarde a liberação do administrador.':'Cadastro enviado! Aguarde a liberação do técnico.'));
+  toast(perfil==='atleta'?'Conta criada. Você já pode usar o app.':u.aprovado?'Conta criada. Bem-vindo!':'Cadastro de técnico enviado. Aguarde a liberação do administrador.');
 }
 
 async function autenticar(email,senha){
@@ -1500,13 +1519,14 @@ async function carregarDados(){
   const eq=S.u.equipe;
   if(!eq){
     S.eq=null; S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
-    if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+    if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
      equipe. Evita leituras negadas e mantém apenas o nome necessário à espera. */
   if(S.u.aprovado===false&&['atleta','pro','tecnico'].includes(S.u.perfil)){
     S.eq=await DB.get(kEq(eq)); S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
     return;
   }
   S.tridx=await DB.get(kTrIdx(eq))||[];
@@ -1536,7 +1556,7 @@ async function carregarDados(){
   if(temPro())await carregarCompFuturas(eq);
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
-  if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
@@ -1624,14 +1644,14 @@ function ligarSincronia(){
   _fbEq=eq; _fbSnap=()=>offs.forEach(f=>{try{f()}catch(_){}});
 }
 async function salvarPro(){
-  if(!(S.u&&temPro()))return;
+  if(!(S.u&&temDadosPessoais()))return;
   /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
      senão o formulário se repreenche sozinho no render seguinte. */
   limparRascunhos();
   await DB.set(kPro(S.u.id),S.pro);
   /* snapshot visível ao técnico (desempenho + carga + composição p/ a assinatura de sprint;
      SEM Saúde: Garmin (VFC/sono) e exames laboratoriais ficam só no pro_ privado) */
-  if(S.u.equipe)await DB.set(kPerf(S.u.equipe,S.u.id),{nome:S.u.nome,nivel:S.u.nivel||null,
+  if(S.u.equipe&&S.u.aprovado!==false)await DB.set(kPerf(S.u.equipe,S.u.id),{nome:S.u.nome,nivel:S.u.nivel||null,
     pbs:S.pro.pbs||{},resultados:S.pro.resultados||[],seco:S.pro.seco||[],alvos:S.pro.alvos||null,
     bioimp:S.pro.bioimp||[],prontidao:(typeof prontidaoSubj==='function'?prontidaoSubj(7):null),
     /* o técnico precisa saber se o atleta está bem para ajustar a carga. Vai só
@@ -1721,9 +1741,16 @@ function telaCadastro(){
   /* No Firebase a lista protegida só pode ser lida depois que o Auth cria a
      conta. Antes disso usamos entrada por nome; a validação real ocorre já
      autenticada, sem abrir o catálogo e os códigos da equipe ao público. */
-  const precisaLista=(p==='tecnico'||p==='atleta')&&!FB;
+  const precisaLista=p==='tecnico'&&!FB;
   if(precisaLista&&S.equipesDisp==null){carregarEquipesDisp().then(()=>render());}
-  const campoEquipe=!precisaLista
+  const opcoesCatalogo=[...CATALOGO_EQUIPES].sort((a,b)=>a.nome.localeCompare(b.nome));
+  const campoEquipe=p==='atleta'
+    ? `<select id="cdEquipe">
+         <option value="">— escolha sua equipe —</option>
+         ${opcoesCatalogo.map(e=>`<option value="${esc(e.nome)}" ${CAD.equipe===e.nome?'selected':''}>${esc(e.nome)}</option>`).join('')}
+       </select>
+       <div class="xs muted" style="margin-top:5px">A equipe é opcional e não precisa ter técnico. Se ela não estiver aqui, crie sua conta sem equipe e registre-a depois.</div>`
+    : !precisaLista
     ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" autocapitalize="words" placeholder="ex.: A3 Swim Team">
        <div class="xs muted" style="margin-top:5px">${p==='atleta'?'Digite exatamente o nome informado pelo seu técnico.':p==='tecnico'?'Digite o nome oficial da equipe. Se ela já existir, seu cadastro será vinculado a ela.':'Digite o nome oficial da equipe vinculada ao código PRO.'}</div>`
     : (S.equipesDisp==null
@@ -1737,7 +1764,7 @@ function telaCadastro(){
       <button type="button" class="${!CAD.semEquipe?'on':''}" aria-pressed="${!CAD.semEquipe}" onclick="selSituacaoEquipe('com')">Tenho uma equipe</button>
       <button type="button" class="${CAD.semEquipe?'on':''}" aria-pressed="${!!CAD.semEquipe}" onclick="selSituacaoEquipe('sem')">Ainda não tenho equipe</button>
     </div></div>`:'';
-  const equipe=`${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Sua conta será criada sem equipe. Depois de confirmar o e-mail, você poderá procurar uma equipe ou pedir para um técnico te incluir.</div>`:`<div class="field"><label for="cdEquipe">Equipe</label>${campoEquipe}</div>`}
+  const equipe=`${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Equipe e técnico são opcionais. Depois de confirmar o e-mail, você já poderá registrar seus próprios treinos e escolher qualquer um dos dois quando quiser.</div>`:`<div class="field"><label for="cdEquipe">Equipe ou clube <span class="muted">(opcional)</span></label>${campoEquipe}</div>`}
     ${p==='pro'?`<div class="field"><label for="cdPro">Código PRO da equipe</label><input id="cdPro" value="${esc(CAD.codigoPro||'')}" autocapitalize="characters" autocorrect="off" placeholder="ABCD-EFGH"><div class="xs muted" style="margin-top:5px">Peça este código ao responsável pela equipe.</div></div>`:''}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
@@ -1751,7 +1778,7 @@ function telaCadastro(){
   const confirmar=`<div class="cad-resumo"><b>${esc(CAD.nome||'Novo usuário')}</b><span>${esc(CAD.email||'')}</span><span>${CAD.semEquipe?'Sem equipe por enquanto':esc(CAD.equipe||'')} · ${titulo}</span></div>
     <div class="grid2"><div class="field"><label for="cdSenha">Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="10+ caracteres"></div><div class="field"><label for="cdSenha2">Repita a senha</label><input id="cdSenha2" type="password" autocomplete="new-password"></div></div>
     <div class="xs muted" style="margin:-4px 0 12px">Use de 10 a 72 caracteres, com letras e números. Uma frase longa é uma boa opção.</div>
-    <label class="small" style="display:flex;gap:9px;align-items:flex-start"><input id="cdAceite" type="checkbox" style="width:auto;margin-top:3px">Confirmo que os dados são meus e entendo que o acesso depende da confirmação do e-mail${p==='tecnico'?' e da aprovação do administrador':(!CAD.semEquipe?' e da aprovação da equipe':'')}.</label>`;
+    <label class="small" style="display:flex;gap:9px;align-items:flex-start"><input id="cdAceite" type="checkbox" style="width:auto;margin-top:3px">Confirmo que os dados são meus e entendo que o acesso depende da confirmação do e-mail${p==='tecnico'?' e da aprovação do administrador':''}.</label>`;
   return`
   <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
   <h1>${titulo}</h1>
@@ -1784,10 +1811,11 @@ function abrirConta(){
     <div class="small muted">${esc(u.email)} · ${anos(u)} anos</div>
     <div class="chips" style="margin:10px 0 4px">
       <span class="tag ${u.perfil==='pro'?'y':u.perfil==='tecnico'?'w':'o'}">${u.perfil==='tecnico'?'técnico':u.perfil==='pro'?'atleta pro':'atleta'}</span>
-      <span class="tag o">${esc(u.equipeNome)}</span>
+      ${nomeAfiliacao(u)?`<span class="tag o">${esc(nomeAfiliacao(u))}</span>`:'<span class="tag">sem equipe</span>'}
       ${u.nivel?`<span class="tag o">${esc(u.nivel)}</span>`:''}
       ${u.tipo?`<span class="tag o">${u.tipo==='aguas'?'águas abertas':'piscina'}</span>`:''}
     </div>
+    ${u.perfil==='atleta'?`<button class="full ghost" style="margin-top:10px" onclick="abrirVinculos()">Configurar equipe e técnico</button>`:''}
     <div class="sep"></div>
     <div class="field"><label>WhatsApp</label>
       <div class="row"><input id="acTel" type="tel" inputmode="tel" value="${telBr(u.telefone||'')}" placeholder="(67) 99999-9999">
@@ -1846,8 +1874,8 @@ function abrirConta(){
         <button class="sm" onclick="fecharSheet();irPara('equipes')">Equipes</button>
         <button class="sm" onclick="abrirDevTecnicos()">Técnicos</button></div>`:''}
     ${(u.perfil!=='tecnico'&&u.equipe)?`<div class="sep"></div>
-      <button class="full ghost" style="color:var(--clock)" onclick="sairDaEquipe()">Sair da equipe</button>
-      <div class="xs muted" style="margin-top:6px">Você deixa de ver os treinos e competições da equipe. Seu cadastro, marcas e histórico continuam salvos.</div>`:''}
+      <button class="full ghost" style="color:var(--clock)" onclick="sairDaEquipe()">Desvincular técnico</button>
+      <div class="xs muted" style="margin-top:6px">Você deixa de receber os treinos desse técnico. Sua equipe do perfil, seus treinos e seu histórico continuam salvos.</div>`:''}
     <div class="sep"></div>
     <button class="full ghost" onclick="abrirModo()">Dados e backup</button>
     <button class="full danger" style="margin-top:9px" onclick="sair()">Sair da conta</button>
@@ -1951,9 +1979,10 @@ function renderInterno(){
     app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset,verificar:telaVerificarEmail}[S.vista]();
     return;
   }
-  /* a tela de espera é só para quem está PENDENTE numa equipe. Sem equipe, o
-     atleta vai para a tela de entrar numa equipe (saiu ou foi removido). */
-  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&['atleta','pro','tecnico'].includes(S.u.perfil)){
+  /* Técnico e PRO ainda dependem da aprovação administrativa. O atleta comum
+     nunca fica bloqueado: enquanto o pedido ao técnico está pendente, continua
+     usando seus próprios treinos e vê o status num cartão não modal. */
+  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&['pro','tecnico'].includes(S.u.perfil)){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
@@ -1971,15 +2000,6 @@ function renderInterno(){
     app.innerHTML=S.u.esporte?telaEmDesenvolvimento():telaEsporte();
     return;
   }
-  /* atleta comum sem equipe: tela para entrar numa equipe (pode ter saído ou sido removido) */
-  if(S.u.perfil==='atleta'&&!S.u.equipe&&!ehDev()){
-    hdr.classList.remove('hide'); nav.classList.add('hide');
-    document.getElementById('btnVoltar').classList.add('hide');
-    const pm0=document.getElementById('pModo'); if(pm0){pm0.textContent=MODO;pm0.className='pill '+(EMREDE?'tec':'')}
-    const b0=document.getElementById('pRole'); if(b0){b0.textContent=prim(S.u.nome);b0.className='pill'}
-    document.body.style.background='';
-    app.innerHTML=telaSemEquipe(); return;
-  }
   hdr.classList.remove('hide');
   document.getElementById('btnVoltar').classList.toggle('hide',!S.pilha.length);
   const pm=document.getElementById('pModo');
@@ -1990,7 +2010,8 @@ function renderInterno(){
   b.textContent=S.u.perfil==='tecnico'?(S.modoAtleta?'técnico · atleta':'técnico')
     :(S.u.perfil==='pro'?(S.gestao?'PRO · gestão':'PRO'):prim(S.u.nome));
   b.className='pill '+(S.u.perfil==='pro'?'pro':S.u.perfil==='tecnico'?'tec':'');
-  const _cor=S.u.equipeNome?corEquipe(S.u.equipeNome):null;
+  const _nomeCor=nomeAfiliacao(S.u);
+  const _cor=_nomeCor?corEquipe(_nomeCor):null;
   document.body.style.background=_cor?_cor.bg:'';
   document.body.classList.toggle('t-escura',!!(_cor&&_cor.escura));
   navBar();
@@ -2023,15 +2044,17 @@ function corEquipe(nome){
     : {bg:`hsl(${hue},45%,95%)`,ac:`hsl(${hue},55%,40%)`};
 }
 function bannerEquipe(){
-  if(!S.u||!S.u.equipeNome)return'';
-  const c=corEquipe(S.u.equipeNome);
+  if(!S.u)return'';
+  const nome=nomeAfiliacao(S.u);
   if(S.adminOrig)return`<div class="note warn" style="margin:10px 0 2px"><div class="row"><span class="grow"><b>Modo administrador:</b> visualizando e editando ${esc(S.u.equipeNome)}.</span><button class="sm" onclick="sairContextoAdmin()">Sair da equipe</button></div></div>`;
+  if(!nome)return'';
+  const c=corEquipe(nome);
   /* Uma linha, não um bloco. A boas-vindas ocupava a melhor parte da tela —
      a primeira dobra — para dizer algo que o atleta já sabe e lê uma vez na
      vida. O que é útil permanentemente é só saber em qual equipe se está, e
      isso cabe numa linha com a cor dela. */
   return`<div class="faixa-eq" style="color:${c.ac}">
-    <span class="pt" style="background:${c.ac}"></span><b>${esc(S.u.equipeNome)}</b></div>`;
+    <span class="pt" style="background:${c.ac}"></span><b>${esc(nome)}</b></div>`;
 }
 const ESPORTES=['Natação','Corrida','Triathlon','Musculação','Bicicleta','Ciclismo','Futebol','Vôlei','Basquete','Funcional','Crossfit','Outro'];
 function telaEsporte(){
@@ -2080,6 +2103,18 @@ function temDoisChapeus(u){ u=u||S.u; return !!(u&&u.perfil==='tecnico'); }
 function temPro(u){ u=u||S.u;
   if(u===S.u&&temDoisChapeus(u)&&S.modoAtleta)return true;
   return !!(u&&(u.perfil==='pro'||u.podeMarcas||u.podeSaude||u.podeRelatorio)); }
+/* Todo atleta tem um espaço privado para registrar os próprios treinos, mesmo
+   sem equipe e sem técnico. As abas avançadas continuam seguindo as permissões
+   de `temPro`; aqui decidimos apenas se o pro_<uid> existe e pode ser salvo. */
+function temDadosPessoais(u){ u=u||S.u;
+  return !!(u&&(u.perfil==='atleta'||u.perfil==='pro'||(u===S.u&&temDoisChapeus(u)&&S.modoAtleta))); }
+/* Cadastros novos separam afiliação pública de vínculo técnico. Cadastros
+   antigos ainda não têm o campo `afiliacao`; neles a equipe anterior continua
+   aparecendo como afiliação até a pessoa ajustar os vínculos. */
+function nomeAfiliacao(u){
+  if(!u)return null;
+  return Object.prototype.hasOwnProperty.call(u,'afiliacao')?(u.afiliacaoNome||null):(u.equipeNome||null);
+}
 /* sujeito do relatório: normalmente o próprio usuário; quando o técnico abre o laudo
    de um atleta, S.laudoAtleta é o id do atleta (e S.pro aponta para o snapshot dele) */
 function _alvoId(){ return S.laudoAtleta||S.u.id; }
@@ -3238,6 +3273,7 @@ function telaTreinosAtleta(){
   <div class="row" style="margin:16px 0 6px"><h2>Meus treinos</h2><div class="grow"></div>
     ${S.u.perfil==='pro'?`<button class="sm ghost" onclick="novoTreinoPro()">+ Piscina</button>`:''}
     <button class="sm primary" onclick="abrirTreinoExtra()">+ Meu treino</button></div>
+  ${cardVinculosAtleta()}
   ${heroTreino(meus)}
   ${faixaSemana()}
   ${futuros?`<div class="xs muted" style="margin:2px 0 8px">${futuros===1?'Há 1 treino programado':'Há '+futuros+' treinos programados'} para os próximos dias — cada um aparece aqui no seu dia.</div>`:''}
@@ -3289,9 +3325,13 @@ function telaAguardando(){
 }
 async function cancelarPedidoEquipe(){
   if(!S.u||S.u.perfil!=='atleta'||S.u.aprovado!==false||!S.u.equipe)return;
-  const atualizado={...S.u,equipe:null,equipeNome:null,aprovado:false};
+  const tinhaAf=Object.prototype.hasOwnProperty.call(S.u,'afiliacao');
+  const atualizado={...S.u,
+    afiliacao:tinhaAf?S.u.afiliacao:'eq:'+S.u.equipe,
+    afiliacaoNome:tinhaAf?S.u.afiliacaoNome:S.u.equipeNome,
+    equipe:null,equipeNome:null,aprovado:false};
   if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui cancelar o pedido. Tente novamente.');
-  S.u=atualizado; S.eq=null; desligarSincronia(); await carregarDados(); toast('Pedido cancelado. Escolha outra equipe quando quiser.'); render();
+  S.u=atualizado; S.eq=null; desligarSincronia(); await carregarDados(); toast('Pedido cancelado. Escolha outro técnico quando quiser.'); render();
 }
 function telaElenco(){
   /* técnico no "modo espelho": vê o relatório ou as marcas do atleta */
@@ -4505,11 +4545,34 @@ async function mesclarEquipe(orig,dest){
   toast(`Fundido em ${nomeD}: ${nTr} treino(s)${nTrPula?` (${nTrPula} já existiam)`:''}, ${nCm} competição(ões), ${nU} atleta(s). Confira e apague a origem.`);
   render();
 }
-/* equipes já criadas, para o dropdown do cadastro (técnico/atleta escolhem a sua) */
+/* Times públicos registrados por atletas. Não são espaços de treino e não dão
+   gestão a quem criou; servem apenas como afiliação visível e pesquisável. */
+async function carregarTimesPublicos(){
+  const out=[];
+  if(FB)try{
+    const snap=await fdb.collection('kv').where('categoria','==','time').get();
+    snap.forEach(d=>{try{const t=JSON.parse(d.data().v);if(t&&t.nome&&t.ativo!==false)out.push(t)}catch(_){}});
+  }catch(e){console.warn('carregarTimesPublicos',e.message)}
+  else{
+    const ids=await DB.get('public_times')||[];
+    for(const id of ids){const t=await DB.get(kTime(id));if(t&&t.nome&&t.ativo!==false)out.push(t)}
+  }
+  return out;
+}
+/* Catálogo de afiliações: lista oficial embutida + equipes operacionais do
+   app + nomes criados por usuários. Uma lista real, não um datalist que no
+   celular esconde quase todas as opções até a pessoa adivinhar o texto. */
 async function carregarEquipesDisp(){
-  const slugs=await DB.get('dev_equipes')||[]; const out=[];
-  for(const sg of slugs){const eq=await DB.get(kEq(sg)); if(eq)out.push({slug:sg,nome:eq.nome});}
-  S.equipesDisp=out.sort((a,b)=>a.nome.localeCompare(b.nome));
+  const mapa=new Map();
+  for(const e of CATALOGO_EQUIPES){const k=slug(e.nome);mapa.set(k,{id:'cat:'+k,nome:e.nome,sigla:e.sigla||'',fonte:'Catálogo ABMN',slug:null,tecnicoEmail:null})}
+  const slugs=await DB.get('dev_equipes')||[];
+  for(const sg of slugs){const eq=await DB.get(kEq(sg));if(!eq)continue;const k=slug(eq.nome);
+    const atual=mapa.get(k)||{id:'eq:'+sg,nome:eq.nome,sigla:'',fonte:'Equipe no app'};
+    mapa.set(k,{...atual,slug:sg,tecnicoEmail:eq.tecnicoEmail||null,fonte:'Equipe no app'});
+  }
+  const personalizados=await carregarTimesPublicos();
+  for(const t of personalizados){const k='time:'+(t.id||t.dono);mapa.set(k,{id:k,nome:t.nome,cidade:t.cidade||'',uf:t.uf||'',fonte:'Criada no app',slug:null,tecnicoEmail:null,dono:t.dono||null})}
+  S.equipesDisp=[...mapa.values()].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
 }
 /* ── ABA EQUIPES (desenvolvedor) ─────────────────────────────────────────── */
 async function carregarEquipesDevList(){
@@ -4531,8 +4594,9 @@ function abrirAdminUsuario(email){
   sheet(`<h2>Gerenciar usuário</h2><div class="small muted">${esc(u.email)}</div>
     <div class="field"><label for="auNome">Nome</label><input id="auNome" value="${esc(u.nome||'')}"></div>
     <div class="field"><label for="auPerfil">Perfil</label><select id="auPerfil">${[['atleta','Atleta'],['pro','Atleta PRO'],['tecnico','Técnico']].map(([v,n])=>`<option value="${v}" ${u.perfil===v?'selected':''}>${n}</option>`).join('')}</select></div>
-    <div class="field"><label for="auEquipe">Equipe</label><select id="auEquipe"><option value="">Sem equipe</option>${eqs.map(e=>`<option value="${e.slug}" ${u.equipe===e.slug?'selected':''}>${esc(e.nome)}</option>`).join('')}</select></div>
-    <label class="small" style="display:flex;gap:8px;margin:10px 0"><input id="auAprov" type="checkbox" style="width:auto" ${u.aprovado!==false?'checked':''}>Acesso aprovado</label>
+    <div class="field"><label for="auAfiliacao">Equipe ou clube do perfil (opcional)</label><input id="auAfiliacao" value="${esc(nomeAfiliacao(u)||'')}" placeholder="Atleta independente"></div>
+    <div class="field"><label for="auEquipe">Técnico / grupo de treinos no app</label><select id="auEquipe"><option value="">Sem técnico</option>${eqs.map(e=>`<option value="${e.slug}" ${u.equipe===e.slug?'selected':''}>${esc(e.nome)}</option>`).join('')}</select></div>
+    <label class="small" style="display:flex;gap:8px;margin:10px 0"><input id="auAprov" type="checkbox" style="width:auto" ${u.aprovado!==false?'checked':''}>Vínculo de acesso aprovado</label>
     <label class="small" style="display:flex;gap:8px;margin:10px 0 16px"><input id="auAtivo" type="checkbox" style="width:auto" ${u.ativo!==false?'checked':''}>Conta ativa</label>
     <button class="primary full" onclick="salvarAdminUsuario('${esc(u.email)}')">Salvar alterações</button>`);
 }
@@ -4540,6 +4604,8 @@ async function registrarAuditoria(acao,alvo,antes,depois){if(!ehAdmin())return;a
 async function salvarAdminUsuario(email){
   if(!ehAdmin())return;const u=await DB.get(kUser(email));if(!u)return toast('Usuário não encontrado');const antes={...u}, novoEq=(document.getElementById('auEquipe')||{}).value;
   u.nome=val('auNome');u.perfil=(document.getElementById('auPerfil')||{}).value;u.aprovado=!!document.getElementById('auAprov')?.checked;u.ativo=!!document.getElementById('auAtivo')?.checked;
+  const novaAf=val('auAfiliacao');
+  u.afiliacao=novaAf?(novaAf===nomeAfiliacao(antes)&&antes.afiliacao?antes.afiliacao:'admin:'+slug(novaAf)):null;u.afiliacaoNome=novaAf||null;
   if(u.equipe!==novoEq){if(u.equipe)await transacao(kEqUsers(u.equipe),xs=>(xs||[]).filter(x=>x!==email));u.equipe=novoEq;const eq=(S.equipesDevList||[]).find(e=>e.slug===novoEq);u.equipeNome=eq?eq.nome:'';if(novoEq)await transacao(kEqUsers(novoEq),xs=>{xs=xs||[];if(!xs.includes(email))xs.push(email);return xs})}
   if(!await DB.set(kUser(email),u))return;await registrarAuditoria('editar_usuario',email,antes,u);fecharSheet();S.adminUsuarios=null;await carregarAdminUsuarios();toast('Usuário atualizado');render();
 }
@@ -4547,8 +4613,8 @@ function telaEquipes(){
   if(!ehDev())return`<div class="empty"><div class="big">Sem acesso</div></div>`;
   if(S.equipesDevList==null||S.adminUsuarios==null){Promise.all([carregarEquipesDevList(),carregarAdminUsuarios()]).then(()=>render());return`<div class="empty"><div class="big">Carregando administração…</div></div>`;}
   const lst=S.equipesDevList, ja=new Set(lst.map(x=>x.slug));
-  const usuarios=S.adminUsuarios||[], pendentes=usuarios.filter(u=>u.aprovado===false), ativos=usuarios.filter(u=>u.ativo!==false), busca=(S.adminBusca||'').toLowerCase();
-  const visiveis=usuarios.filter(u=>!busca||[u.nome,u.email,u.equipeNome,u.perfil].some(x=>String(x||'').toLowerCase().includes(busca)));
+  const usuarios=S.adminUsuarios||[], pendentes=usuarios.filter(u=>u.aprovado===false&&(u.equipe||u.perfil!=='atleta')), ativos=usuarios.filter(u=>u.ativo!==false), busca=(S.adminBusca||'').toLowerCase();
+  const visiveis=usuarios.filter(u=>!busca||[u.nome,u.email,nomeAfiliacao(u),u.equipeNome,u.perfil].some(x=>String(x||'').toLowerCase().includes(busca)));
   const disp=CATALOGO_EQUIPES.filter(e=>!ja.has(slug(e.nome))).sort((a,b)=>a.nome.localeCompare(b.nome));
   const opts=disp.map(e=>`<option value="${esc(e.nome)}">${esc(e.nome)}${e.sigla&&e.sigla!==e.nome?' — '+esc(e.sigla):''}</option>`).join('');
   return`
@@ -4558,7 +4624,7 @@ function telaEquipes(){
   <div class="admin-kpis"><div class="kpi"><div class="v">${usuarios.length}</div><div class="l">usuários</div></div><div class="kpi"><div class="v">${pendentes.length}</div><div class="l">pendentes</div></div><div class="kpi"><div class="v">${ativos.length}</div><div class="l">ativos</div></div></div>
   <div class="card"><div class="row"><div><div class="eyebrow">usuários</div><div class="small muted">Editar perfil, equipe, aprovação e acesso.</div></div><div class="grow"></div></div>
     <div class="field"><label for="adminBusca">Buscar usuário</label><input id="adminBusca" value="${esc(S.adminBusca||'')}" placeholder="nome, e-mail, equipe ou perfil" oninput="S.adminBusca=this.value;render()"></div>
-    ${visiveis.length?visiveis.slice(0,50).map(u=>`<button class="lst full" style="text-align:left" onclick="abrirAdminUsuario('${esc(u.email)}')"><span class="av">${esc((u.nome||'?')[0])}</span><span class="grow"><b>${esc(u.nome||u.email)}</b><span class="xs muted" style="display:block">${esc(u.email)} · ${esc(u.perfil||'')} · ${esc(u.equipeNome||'sem equipe')}</span></span>${u.aprovado===false?'<span class="tag y">pendente</span>':''}${u.ativo===false?'<span class="tag w">inativo</span>':''}</button>`).join(''):'<div class="small muted">Nenhum usuário encontrado.</div>'}
+    ${visiveis.length?visiveis.slice(0,50).map(u=>{const pend=u.aprovado===false&&(u.equipe||u.perfil!=='atleta');return`<button class="lst full" style="text-align:left" onclick="abrirAdminUsuario('${esc(u.email)}')"><span class="av">${esc((u.nome||'?')[0])}</span><span class="grow"><b>${esc(u.nome||u.email)}</b><span class="xs muted" style="display:block">${esc(u.email)} · ${esc(u.perfil||'')} · ${esc(nomeAfiliacao(u)||'independente')}${u.equipeNome?' · técnico: '+esc(u.equipeNome):''}</span></span>${pend?'<span class="tag y">pendente</span>':''}${u.ativo===false?'<span class="tag w">inativo</span>':''}</button>`}).join(''):'<div class="small muted">Nenhum usuário encontrado.</div>'}
   </div>
   <div class="card">
     <div class="eyebrow">nova equipe</div>
@@ -4694,7 +4760,8 @@ function telaAtletaDetalhe(){
       <tr><td class="muted">WhatsApp</td><td class="n">${a.telefone?telBr(a.telefone):'<span style="color:var(--clock)">não cadastrado</span>'}</td></tr>
       <tr><td class="muted">Modalidade</td><td>${a.tipo==='aguas'?'Águas abertas':'Piscina'}</td></tr>
       <tr><td class="muted">Perfil</td><td>${a.perfil==='pro'?'Atleta PRO <span class="xs muted">(código mestre)</span>':'Atleta'}</td></tr>
-      <tr><td class="muted">Equipe</td><td>${a.equipeNome?esc(a.equipeNome):'<span style="color:var(--clock)">sem equipe</span>'}</td></tr>
+      <tr><td class="muted">Equipe</td><td>${nomeAfiliacao(a)?esc(nomeAfiliacao(a)):'<span style="color:var(--clock)">sem equipe</span>'}</td></tr>
+      <tr><td class="muted">Técnico no app</td><td>${a.equipeNome?esc(a.equipeNome):'<span class="muted">sem técnico</span>'}</td></tr>
       <tr><td class="muted">Na equipe desde</td><td>${a.criadoEm?brData(new Date(a.criadoEm).toISOString().slice(0,10)):'—'}</td></tr>
       <tr><td class="muted">Treinos recebidos</td><td class="n">${seus.length}</td></tr>
     </tbody></table>
@@ -4754,6 +4821,8 @@ async function removerDaEquipe(atId){
   if(!confirm(`Remover ${prim(a.nome)} da equipe ${S.u.equipeNome||''}?\n\nO cadastro NÃO é apagado — o atleta fica sem equipe e mantém histórico e marcas.`))return;
   const sg=a.equipe||S.u.equipe;
   const us=(await DB.get(kEqUsers(sg))||[]).filter(e=>e!==a.email); await DB.set(kEqUsers(sg),us);
+  const tinhaAf=Object.prototype.hasOwnProperty.call(a,'afiliacao');
+  if(!tinhaAf){a.afiliacao='eq:'+sg;a.afiliacaoNome=a.equipeNome||S.u.equipeNome||null}
   a.equipe=null; a.equipeNome=null; a.aprovado=false; await DB.set(kUser(a.email),a);
   S.atletaSel=null; await carregarDados(); toast(prim(a.nome)+' removido(a) da equipe'); render();
 }
@@ -4807,46 +4876,127 @@ function nomeLaudo(){ return S.laudoAtleta?(S.laudoNome||'Atleta'):((S.u&&S.u.no
 /* atleta sai da própria equipe (voluntário) — cadastro/marcas/histórico preservados */
 async function sairDaEquipe(){
   if(!S.u||S.u.perfil==='tecnico'||!S.u.equipe)return;
-  if(!confirm(`Sair da equipe ${S.u.equipeNome||''}?\n\nVocê deixa de ver os treinos e competições da equipe. Seu cadastro, marcas e histórico continuam salvos. Para voltar, escolha uma equipe aqui ou peça ao técnico para te incluir.`))return;
+  if(!confirm(`Desvincular o técnico de ${S.u.equipeNome||''}?\n\nVocê deixa de receber os treinos compartilhados por ele. Sua equipe do perfil, seus próprios treinos, marcas e histórico continuam salvos.`))return;
   const sg=S.u.equipe;
   const usAntes=await DB.get(kEqUsers(sg))||[], us=usAntes.filter(e=>e!==S.u.email);
   if(!await DB.set(kEqUsers(sg),us))return toast('Não consegui atualizar a equipe. Tente novamente.');
-  /* sair da equipe REBAIXA a aprovação (a regra só deixa o próprio usuário
-     baixar, nunca subir). Sem equipe, a tela de entrar numa equipe aparece. */
-  const atualizado={...S.u,equipe:null,equipeNome:null,aprovado:false};
+  /* Cadastros antigos usavam o mesmo campo para equipe e técnico. Na primeira
+     separação preservamos o nome antigo como afiliação pública. */
+  const tinhaAf=Object.prototype.hasOwnProperty.call(S.u,'afiliacao');
+  const atualizado={...S.u,
+    afiliacao:tinhaAf?S.u.afiliacao:'eq:'+sg,
+    afiliacaoNome:tinhaAf?S.u.afiliacaoNome:S.u.equipeNome,
+    equipe:null,equipeNome:null,aprovado:false};
   if(!await DB.set(kUser(S.u.email),atualizado)){
     await DB.set(kEqUsers(sg),usAntes);
     return toast('Não consegui tirar sua conta da equipe. Tente novamente.');
   }
   S.u=atualizado; desligarSincronia();
-  S.eq=null; fecharSheet(); await carregarDados(); toast('Você saiu da equipe'); render();
+  S.eq=null; fecharSheet(); await carregarDados(); toast('Técnico desvinculado. Seus dados pessoais continuam disponíveis.'); render();
 }
-function telaSemEquipe(){
-  if(S.equipesDisp==null){carregarEquipesDisp().then(()=>render());}
-  const dl=S.equipesDisp?`<datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>`:'';
-  return`
-  <div style="height:16px"></div>
-  <div class="center"><div class="brand" style="font-size:28px">PAR<span>CIAL</span></div></div>
-  <div class="card" style="margin-top:16px">
-    <div class="eyebrow">você está sem equipe</div>
-    <p class="small" style="margin:6px 0 10px">Sua conta continua ativa e seus dados (marcas, histórico) estão salvos. Para ver treinos e competições, entre em uma equipe — ou peça ao seu técnico para te incluir.</p>
-    <div class="field"><label>Equipe</label>
-      <input id="seEquipe" list="listaEquipes" autocomplete="off" autocapitalize="characters" placeholder="digite para buscar sua equipe">${dl}</div>
-    <button class="primary full" onclick="entrarEmEquipe()">Entrar na equipe</button>
-    <div class="xs muted" style="margin-top:8px">Ao entrar, seu pedido vai para o técnico aprovar.</div>
-    <div class="sep"></div>
-    <button class="full ghost" onclick="abrirConta()">Minha conta</button>
-    <button class="full danger" style="margin-top:8px" onclick="sair()">Sair da conta</button>
+function cardVinculosAtleta(){
+  if(!S.u||S.u.perfil!=='atleta')return'';
+  const af=nomeAfiliacao(S.u), temTec=!!S.u.equipe, pend=temTec&&S.u.aprovado===false;
+  const tecnico=!temTec?'Sem técnico — seus treinos continuam disponíveis'
+    : pend?`Pedido enviado para ${S.u.equipeNome||'o técnico'} — aguardando aprovação`
+    :(S.tecnico?`Treinos com ${S.tecnico.nome}`:`Técnico vinculado por ${S.u.equipeNome||'uma equipe'}`);
+  return`<div class="card tight" style="margin-top:10px">
+    <div class="row" style="align-items:flex-start;gap:10px">
+      <div class="grow" style="min-width:0"><b>${af?esc(af):'Atleta independente'}</b>
+        <div class="xs muted" style="margin-top:3px;overflow-wrap:anywhere">${esc(tecnico)}</div></div>
+      <button class="sm ghost" onclick="abrirVinculos()">Configurar</button>
+    </div>
+    ${pend?'<div class="xs" style="margin-top:8px;color:var(--clock)">Você pode continuar registrando seus próprios treinos enquanto espera.</div>':''}
   </div>`;
 }
-async function entrarEmEquipe(){
-  const nome=(val('seEquipe')||'').trim(); if(!nome)return toast('Escolha uma equipe');
-  const sg=slug(nome), eq=await DB.get(kEq(sg));
-  if(!eq)return toast('Equipe não encontrada — confira o nome exato.');
-  const atualizado={...S.u,equipe:sg,equipeNome:eq.nome,aprovado:false};
-  if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui enviar seu pedido. Confira a conexão e tente novamente.');
-  S.u=atualizado; S.eq=eq; if(!FB)await transacao(kEqUsers(sg),us=>{us=us||[]; if(!us.includes(S.u.email))us.push(S.u.email); return us;});
-  await carregarDados(); toast('Pedido enviado ao técnico da '+eq.nome); render();
+function abrirVinculos(){
+  const af=nomeAfiliacao(S.u), temTec=!!S.u.equipe, pend=temTec&&S.u.aprovado===false;
+  sheet(`<h2>Equipe e técnico</h2>
+    <p class="small muted" style="margin:6px 0 14px">São escolhas independentes e opcionais. Você pode usar o app sem nenhuma delas.</p>
+    <div class="row" style="align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--line)">
+      <div class="grow"><b>Equipe ou clube</b><div class="xs muted">${af?esc(af):'Nenhuma equipe informada'}</div></div>
+      <button class="sm" onclick="abrirEscolherEquipe()">${af?'Trocar':'Escolher'}</button>
+    </div>
+    ${af?'<button class="ghost full" style="margin-bottom:8px" onclick="removerAfiliacao()">Remover equipe do perfil</button>':''}
+    <div class="row" style="align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--line)">
+      <div class="grow"><b>Técnico no app</b><div class="xs muted">${!temTec?'Nenhum técnico vinculado':pend?'Pedido aguardando aprovação':`Vinculado por ${esc(S.u.equipeNome||'equipe')}`}</div></div>
+      ${temTec?`<button class="sm ghost" onclick="${pend?'cancelarPedidoEquipe()':'sairDaEquipe()'}">${pend?'Cancelar':'Desvincular'}</button>`:`<button class="sm" onclick="abrirEscolherTecnico()">Escolher</button>`}
+    </div>
+    <div class="note" style="margin:12px 0 0"><b>Sem técnico?</b> Use <b>+ Meu treino</b> normalmente. Com um técnico, os treinos enviados por ele aparecem junto dos seus.</div>
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
+async function abrirEscolherEquipe(){
+  sheet('<h2>Escolher equipe</h2><div class="small muted">Carregando a lista…</div>');
+  if(S.equipesDisp==null)await carregarEquipesDisp();
+  const itens=(S.equipesDisp||[]).map(e=>`<button class="lst eq-opcao" data-busca="${esc((e.nome+' '+(e.cidade||'')+' '+(e.uf||'')).toLowerCase())}" onclick="escolherAfiliacao('${esc(e.id)}')">
+    <span class="grow" style="text-align:left;min-width:0"><b style="overflow-wrap:anywhere">${esc(e.nome)}</b>
+    <span class="xs muted" style="display:block">${esc([e.cidade,e.uf,e.fonte].filter(Boolean).join(' · '))}</span></span><span class="tag o">escolher</span></button>`).join('');
+  sheet(`<h2>Escolher equipe</h2>
+    <p class="small muted" style="margin:6px 0 10px">Isto informa sua afiliação. Não obriga você a ter técnico.</p>
+    <input id="buscaEquipe" type="search" autocomplete="off" placeholder="Buscar pelo nome, cidade ou estado" oninput="filtrarEquipes(this.value)">
+    <div id="listaEquipesVisivel" style="max-height:48vh;overflow:auto;margin-top:9px;border:1px solid var(--line);border-radius:12px">${itens}</div>
+    <div id="semEquipeBusca" class="small muted center hide" style="padding:16px">Nenhuma equipe encontrada.</div>
+    <button class="primary full" style="margin-top:12px" onclick="abrirCriarEquipePublica()">Minha equipe não está na lista</button>
+    <button class="ghost full" style="margin-top:8px" onclick="abrirVinculos()">Voltar</button>`);
+}
+function filtrarEquipes(q){
+  q=String(q||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); let n=0;
+  document.querySelectorAll('.eq-opcao').forEach(el=>{const b=(el.dataset.busca||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');const ok=!q||b.includes(q);el.classList.toggle('hide',!ok);if(ok)n++});
+  document.getElementById('semEquipeBusca')?.classList.toggle('hide',n>0);
+}
+async function escolherAfiliacao(id){
+  const e=(S.equipesDisp||[]).find(x=>x.id===id);if(!e)return toast('Equipe não encontrada. Atualize a lista.');
+  const atualizado={...S.u,afiliacao:e.id,afiliacaoNome:e.nome};
+  if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui salvar a equipe. Tente novamente.');
+  S.u=atualizado;fecharSheet();toast('Equipe atualizada');render();
+}
+async function removerAfiliacao(){
+  const atualizado={...S.u,afiliacao:null,afiliacaoNome:null};
+  if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui remover a equipe. Tente novamente.');
+  S.u=atualizado;fecharSheet();toast('Você continua usando o app como atleta independente');render();
+}
+function abrirCriarEquipePublica(){
+  const propria=(S.equipesDisp||[]).find(e=>e.dono===S.u.id);
+  sheet(`<h2>${propria?'Editar minha equipe':'Registrar minha equipe'}</h2>
+    <p class="small muted" style="margin:6px 0 10px">Ela ficará disponível para outras pessoas escolherem. Isso <b>não</b> transforma você em técnico nem libera gestão de treinos.</p>
+    <div class="field"><label for="novaEqNome">Nome oficial</label><input id="novaEqNome" maxlength="80" value="${esc(propria?.nome||'')}" autocapitalize="words" placeholder="ex.: Equipe Mar Azul"></div>
+    <div class="grid2"><div class="field"><label for="novaEqCidade">Cidade</label><input id="novaEqCidade" maxlength="80" value="${esc(propria?.cidade||'')}" autocapitalize="words"></div>
+      <div class="field"><label for="novaEqUf">UF</label><input id="novaEqUf" maxlength="2" value="${esc(propria?.uf||'')}" autocapitalize="characters" placeholder="MS"></div></div>
+    <button id="btnSalvarTime" class="primary full" onclick="salvarEquipePublica()">${propria?'Salvar alterações':'Registrar equipe'}</button>
+    <button class="ghost full" style="margin-top:8px" onclick="abrirEscolherEquipe()">Voltar</button>`);
+}
+async function salvarEquipePublica(){
+  const nome=val('novaEqNome'),cidade=val('novaEqCidade'),uf=val('novaEqUf').toUpperCase();
+  if(nome.length<3)return toast('Informe o nome completo da equipe');
+  if(uf&&!/^[A-Z]{2}$/.test(uf))return toast('Use a sigla do estado com 2 letras');
+  const b=document.getElementById('btnSalvarTime');if(b){b.disabled=true;b.textContent='Salvando…'}
+  const t={id:S.u.id,dono:S.u.id,nome:nome.trim(),cidade:cidade.trim(),uf,ativo:true,criadoEm:Date.now()};
+  if(!await DB.set(kTime(S.u.id),t)){if(b){b.disabled=false;b.textContent='Registrar equipe'}return toast('Não consegui registrar a equipe. Tente novamente.');}
+  if(!FB)await transacao('public_times',xs=>{xs=xs||[];if(!xs.includes(S.u.id))xs.push(S.u.id);return xs});
+  const atualizado={...S.u,afiliacao:'time:'+S.u.id,afiliacaoNome:t.nome};
+  if(!await DB.set(kUser(S.u.email),atualizado))return toast('A equipe foi registrada, mas não consegui vinculá-la ao seu perfil. Escolha-a na lista.');
+  S.u=atualizado;S.equipesDisp=null;fecharSheet();toast('Equipe registrada e adicionada ao seu perfil');render();
+}
+async function abrirEscolherTecnico(){
+  sheet('<h2>Escolher técnico</h2><div class="small muted">Carregando técnicos disponíveis…</div>');
+  if(S.equipesDisp==null)await carregarEquipesDisp();
+  const ops=(S.equipesDisp||[]).filter(e=>e.slug&&e.tecnicoEmail);
+  sheet(`<h2>Escolher técnico</h2>
+    <p class="small muted" style="margin:6px 0 10px">Escolha o grupo em que seu técnico trabalha. Sua equipe do perfil não será alterada.</p>
+    ${ops.length?`<div style="max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:12px">${ops.map(e=>`<button class="lst" onclick="pedirTecnico('${esc(e.slug)}')"><span class="grow" style="text-align:left"><b>${esc(e.nome)}</b><span class="xs muted" style="display:block">Técnico cadastrado no app</span></span><span class="tag o">solicitar</span></button>`).join('')}</div>`
+      :'<div class="empty"><div class="big">Nenhum técnico disponível ainda</div><p class="small">Peça ao seu técnico para criar a conta e ser aprovado pelo administrador. Depois ele aparecerá aqui.</p></div>'}
+    <button class="ghost full" style="margin-top:12px" onclick="abrirVinculos()">Voltar</button>`);
+}
+async function pedirTecnico(sg){
+  const eq=await DB.get(kEq(sg));if(!eq||!eq.tecnicoEmail)return toast('Este técnico ainda não está disponível. Atualize a lista.');
+  const tinhaAf=Object.prototype.hasOwnProperty.call(S.u,'afiliacao');
+  const af=tinhaAf?S.u.afiliacao:(S.u.equipe?'eq:'+S.u.equipe:null), afNome=tinhaAf?S.u.afiliacaoNome:(S.u.equipeNome||null);
+  if(S.u.equipe&&S.u.equipe!==sg&&S.u.aprovado!==false){
+    const us=(await DB.get(kEqUsers(S.u.equipe))||[]).filter(e=>e!==S.u.email);await DB.set(kEqUsers(S.u.equipe),us);
+  }
+  const atualizado={...S.u,afiliacao:af||null,afiliacaoNome:afNome||null,equipe:sg,equipeNome:eq.nome,aprovado:false};
+  if(!await DB.set(kUser(S.u.email),atualizado))return toast('Não consegui enviar o pedido. Confira a conexão e tente novamente.');
+  S.u=atualizado;S.eq=eq;await carregarDados();fecharSheet();toast('Pedido enviado. Você pode continuar usando o app enquanto aguarda.');render();
 }
 async function mudarNivel(id,n){
   const a=S.elenco.find(x=>x.id===id); if(!a)return;
