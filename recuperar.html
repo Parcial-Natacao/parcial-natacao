@@ -205,6 +205,38 @@ function retrato(o){
     ehUsuario:'perfil' in o
   };
 }
+/* ── DE QUEM É CADA CÓPIA ───────────────────────────────────────────────────
+   Sem isto a página mentia por omissão: ela contava QUALQUER cópia com dados
+   de Saúde, inclusive as contas de demonstração que o modo local semeia
+   (@a3swim.com, pro_<id curto>), e anunciava "encontrei cópias com dados de
+   Saúde" para um usuário cujos dados reais não estavam ali. Dar falsa
+   esperança a quem acabou de perder dados é pior do que não achar nada.
+   A identificação não usa o Firebase (a página não pode carregá-lo): sai da
+   sessão guardada em localStorage e do cadastro u_<email> que esteja no
+   próprio cache, de onde vem o uid. */
+let DONO = {email:null, uid:null};
+function identificarDono(achados){
+  try{
+    const s = localStorage.getItem('parcial_sessao');
+    if(s) DONO.email = (JSON.parse(s)||{}).email || null;
+  }catch(_){}
+  if(!DONO.email) return;
+  const alvo = 'u_' + String(DONO.email).toLowerCase();
+  for(const a of achados){
+    if(String(a.docId||'').toLowerCase() === alvo && a.dados && a.dados.id){
+      DONO.uid = a.dados.id; return;
+    }
+  }
+}
+function ehMeu(a){
+  const id = String(a.docId||'');
+  if(DONO.uid && id.includes(DONO.uid)) return true;
+  if(DONO.email && id.toLowerCase() === 'u_'+String(DONO.email).toLowerCase()) return true;
+  return false;
+}
+/* as contas semeadas pelo modo de demonstração não são dados de ninguém */
+const ehDemo = a => /@a3swim\.com/i.test(String(a.docId||'')) ||
+  (/^localStorage/.test(String(a.onde||'')) && !ehMeu(a));
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const brData = d => d ? d.toLocaleString('pt-BR') : '—';
 
@@ -274,7 +306,10 @@ async function procurar(){
     const ant = vistos.get(id);
     if(!ant || peso > ant.peso) vistos.set(id,{...a,retrato:r,peso});
   }
-  ACHADOS = [...vistos.values()].sort((x,y)=>y.peso-x.peso);
+  ACHADOS = [...vistos.values()];
+  identificarDono(ACHADOS);
+  /* as minhas primeiro, e as de demonstração por último: a ordem é a resposta */
+  ACHADOS.sort((x,y)=>(ehMeu(y)-ehMeu(x))||(ehDemo(x)-ehDemo(y))||(y.peso-x.peso));
 
   btn.disabled = false; btn.textContent = 'Procurar de novo';
   desenhar(log);
@@ -282,7 +317,11 @@ async function procurar(){
 
 function desenhar(log){
   const saida = document.getElementById('saida');
-  const comSaude = ACHADOS.filter(a=>a.retrato.dias>0 || a.retrato.exames>0 || a.retrato.bioimp>0);
+  /* só conta o que é DO USUÁRIO: cópia de demonstração ou de outra conta com
+     dados de Saúde não é resgate nenhum, e anunciá-la como tal é cruel */
+  const temSaude = a => a.retrato.dias>0 || a.retrato.exames>0 || a.retrato.bioimp>0 || a.retrato.seco>0;
+  const comSaude = ACHADOS.filter(a=>ehMeu(a) && temSaude(a));
+  const saudeDeOutros = ACHADOS.filter(a=>!ehMeu(a) && temSaude(a));
 
   if(!ACHADOS.length){
     saida.innerHTML = `<div class="cartao"><b>Nenhuma cópia encontrada neste navegador.</b>
@@ -297,8 +336,10 @@ function desenhar(log){
     return `<div class="achado">
       <h3>${esc(a.docId||(r.ehPro?'Dados pessoais (pro_)':r.ehUsuario?'Cadastro de conta':'Documento do app'))}</h3>
       <div class="xs muted">${esc(a.onde)} · cópia de ${brData(a.data)}</div>
-      ${a.docId?`<div class="xs muted">Confira que este é o <b>seu</b> documento antes de restaurar — restaurar o de outra pessoa repetiria o problema.</div>`:
-                `<div class="xs" style="color:var(--alerta)">Não identifiquei a qual documento esta cópia pertence. Baixe e me mostre antes de restaurar.</div>`}
+      ${ehMeu(a) ? `<div class="xs" style="color:var(--ok)"><b>Esta é sua.</b></div>`
+        : ehDemo(a) ? `<div class="xs muted">Dados de <b>demonstração</b> (contas de exemplo do modo local). Não são seus — restaurar isto não traz nada de volta.</div>`
+        : DONO.uid ? `<div class="xs muted">Documento de <b>outra conta</b>. Não restaure.</div>`
+        : `<div class="xs" style="color:var(--alerta)">Não consegui dizer de quem é esta cópia (não achei a sua sessão neste navegador). Confira o identificador acima antes de restaurar.</div>`}
       <table>
         ${linha('Dias na série de Saúde', r.dias, r.de?`${r.de} a ${r.ate}`:'')}
         ${linha('— com dados do relógio', r.comRelogio, 'reimportável do export do Garmin')}
@@ -315,8 +356,9 @@ function desenhar(log){
 
   saida.innerHTML = `
     ${comSaude.length
-      ? `<div class="bom"><b>Encontrei ${comSaude.length} cópia(s) com dados de Saúde.</b> Confira as datas e os números abaixo: se forem os seus, baixe o arquivo <b>antes de abrir o app neste aparelho</b>.</div>`
-      : `<div class="nota"><b>Encontrei cópias, mas nenhuma com dados de Saúde.</b> Provavelmente são da versão já sobrescrita. Vale tentar em outro aparelho.</div>`}
+      ? `<div class="bom"><b>Encontrei ${comSaude.length} cópia(s) SUA(S) com dados de Saúde ou de fora d'água.</b> Confira as datas e os números abaixo e baixe o arquivo <b>antes de abrir o app neste aparelho</b>.</div>`
+      : `<div class="nota"><b>Nenhuma cópia sua com dados de Saúde ou de fora d'água.</b> ${DONO.email?`Identifiquei a sua conta como <b>${esc(DONO.email)}</b>${DONO.uid?'':' (mas não achei o seu cadastro no cache, então a identificação pode estar incompleta)'}. `:'Não achei a sua sessão neste navegador, então identifiquei as cópias só pelo identificador do documento. '}As cópias deste aparelho já são a versão sobrescrita. Vale tentar nos outros aparelhos onde você usou o app.
+         ${saudeDeOutros.length?`<div class="xs" style="margin-top:6px">Há ${saudeDeOutros.length} cópia(s) com dados de Saúde que <b>não são suas</b> (demonstração ou outra conta). Elas aparecem abaixo marcadas, e restaurá-las não traria nada seu de volta.</div>`:''}</div>`}
     ${blocos}
     <div class="cartao"><b>Como restaurar</b>
       <ol class="xs">
