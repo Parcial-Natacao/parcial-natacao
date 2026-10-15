@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v157';
+const VER='v158';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4387,6 +4387,61 @@ teste('abmn','revezamento continua fora e a conta fecha',a=>{
   const h=parseABMNHistorico(_ABMN_H);
   a.eq(h.length,4,'quatro provas individuais');
   a.ok(!h.some(x=>/4X/i.test(x.prova||'')),'nenhum revezamento');});
+/* ── BIOIMPEDÂNCIA InBody (v158) ────────────────────────────────────────────
+   Trechos reais do laudo, com o espaçamento que o pdf.js entrega. Nele os
+   rótulos são IMAGENS: o texto traz os números sem dizer o que são, e o
+   parser por nome de marcador não achava nada. Os dois laudos do Bruno
+   quebram as linhas em pontos diferentes, então o teste traz os dois. */
+const _INBODY_26=`[InBody120] ID Altura Idade Sexo Data / Hora 120826-1 190cm 42 12.08.2026. 16:15
+ (L) ( 44,7~54,6 ) 67,6
+ (kg) 18,4 ( 12,0~14,6 ) (kg) 6,24 ( 4,13~5,05 ) (kg) ( 9,5~19,1 ) 3,8
+ kg 96,0 (kg) 96,0 ( 67,5~91,3 ) 0,0 kg
+ 53,7 34,3~41,9 % 55 70 85 100 115 130 145 160 175 190 205
+ kg (kg) 92,2 60,8~74,3 96,0 kcal 1956~2308 2362
+ (kg) 0,87 0,80~0,90 53,7 1 1~9
+ 10,0 15,0 18,5 22,0 25,0 30,0 35,0 40,0 45,0 50,0 55,0 26,6
+ 0,0 5,0 10,0 15,0 20,0 25,0 30,0 35,0 40,0 45,0 50,0 3,9
+ Ver.LookinBody120.5.0.0.0`;
+const _INBODY_25=`[InBody120] ID Altura Idade Sexo Data / Hora 250225-1 190cm 42 16.12.2025. 14:20
+ (L) 70,4 ( 44,7~54,6 ) 108
+ (kg) 19,3 ( 12,0~14,6 ) (kg) ( 4,13~5,05 ) 6,51 (kg) ( 9,5~19,1 ) 8,4
+ kg 104,6 (kg) 104,6 ( 67,5~91,3 ) kg 0,0
+ kg 34,3~41,9 56,3 % 55 70 85 100 115 130 145 160 175 190 205
+ kg 60,8~74,3 (kg) 96,2 104,6 kcal 2098~2482 2448
+ (kg) 0,92 0,80~0,90 56,3 1~9 3
+ 10,0 15,0 18,5 22,0 25,0 30,0 35,0 40,0 45,0 50,0 55,0 29,0
+ 0,0 5,0 10,0 15,0 20,0 25,0 30,0 35,0 40,0 45,0 50,0 8,0
+ Ver.LookinBody120.5.0.0.0`;
+teste('inbody','lê o laudo inteiro de 2026',a=>{
+  const b=parseInBody(_INBODY_26);
+  a.eq(b.peso,96,'peso');            a.eq(b.gordura,3.9,'% de gordura');
+  a.eq(b.musculo,53.7,'massa muscular, não a massa livre de gordura (92,2)');
+  a.eq(b.visceral,1,'gordura visceral'); a.eq(b.tmb,2362,'TMB');
+  a.eq(b.altura,190,'altura');       a.eq(b.data,'2026-08-12','data do exame');
+  a.eq(b.agua,70.4,'água em % do peso (67,6 L de 96 kg)');
+  a.eq(b.ossea,null,'massa óssea fica vazia: o aparelho dá minerais totais');});
+teste('inbody','lê o laudo de 2025, que quebra as linhas em outros pontos',a=>{
+  const b=parseInBody(_INBODY_25);
+  a.eq(b.peso,104.6,'peso');         a.eq(b.gordura,8,'% de gordura');
+  a.eq(b.musculo,56.3,'massa muscular com o valor DEPOIS da faixa');
+  a.eq(b.visceral,3,'visceral com o valor depois de 1~9');
+  a.eq(b.tmb,2448,'TMB');            a.eq(b.data,'2025-12-16','data');});
+teste('inbody','o peso só é aceito se bater com IMC × altura²',a=>{
+  /* sem essa conferência o parser pegaria a proteína (18,4), que também
+     aparece como "(kg) valor (faixa)" e vem antes na folha */
+  const b=parseInBody(_INBODY_26);
+  a.eq(b.peso,96,'escolheu o peso entre os candidatos');
+  const semImc=parseInBody(_INBODY_26.replace('55,0 26,6','55,0'));
+  a.ok(semImc.peso==null||semImc.peso===96,'sem IMC não inventa um peso errado');});
+teste('inbody','folha de acompanhamento não vira medida',a=>{
+  const h='Ver.LookinBody120.5.0.0.0 190cm * Total: Todos os resultados dos exames 25.02.2025. 103,3 104,6 56,3 8,4';
+  const b=parseInBody(h);
+  a.ok(b.historico,'reconhecida como acompanhamento');
+  a.eq(b.peso,null,'nenhum peso');
+  a.eq(b.data,null,'e nem a data, que seria a da PRIMEIRA avaliação da série');});
+teste('inbody','PDF que não é InBody não é tratado como tal',a=>{
+  a.eq(parseInBody('Laudo Sabin ferritina RESULTADO: 257,5'),null,'devolve null e o parser antigo assume');});
+
 /* ── DE QUEM É O CURRÍCULO (v157) ───────────────────────────────────────────
    O cartão de envio não dizia de quem era a ficha aberta, e quem usa o app
    como atleta E administrador troca de ficha o tempo todo. Bastou um PDF
@@ -9077,6 +9132,78 @@ function flagsBio(b){
   if(n(b.agua)&&b.agua<50)f.push({t:'',txt:`Água corporal <b>${b.agua}%</b> — abaixo do usual; atenção à hidratação e à massa magra.`});
   return f;
 }
+/* ── InBody / LookinBody ───────────────────────────────────────────────────
+   Nestes laudos os RÓTULOS são imagens. O texto do PDF traz os números, mas
+   sem dizer o que cada um é — então `parseBio`, que procura por nome de
+   marcador ("peso", "gordura"), não acha absolutamente nada. Era por isso que
+   "a bioimpedância em PDF não era lida": o app achava que o arquivo estava
+   ilegível quando na verdade estava cheio de dados.
+
+   A âncora aqui é outra: cada valor é identificado pela VIZINHANÇA, que é
+   estável entre laudos — a unidade (kcal), a faixa de referência (1~9), a
+   régua do gráfico (10,0 15,0 18,5 … 55,0). E o que dá para conferir por
+   aritmética é conferido: o peso só é aceito se bater com IMC × altura², a
+   massa muscular só se estiver na proporção fisiológica do peso.
+
+   O que não dá para identificar com segurança fica EM BRANCO. O InBody120 dá
+   minerais totais, não massa óssea; converter um no outro seria inventar, e
+   num dado de saúde um número errado é pior do que um campo vazio. */
+function parseInBody(txt){
+  const t=String(txt||'').replace(/\s+/g,' ');
+  if(!/InBody|LookinBody/i.test(t))return null;
+  const n=s=>s==null?null:parseFloat(String(s).replace(',','.'));
+  const um=(re,g)=>{const m=t.match(re); return m?n(m[g||1]):null;};
+
+  const altura=um(/(\d{2,3})\s*cm/);
+  /* IMC e % de gordura vêm logo depois das réguas dos gráficos, que são as
+     mesmas em todo laudo do aparelho */
+  const imc=um(/18,5\s+22,0\s+25,0[\d,\s]*?55,0\s+(\d{1,3},\d)/);
+  const gordura=um(/0,0\s+5,0\s+10,0\s+15,0[\d,\s]*?50,0\s+(\d{1,3},\d)/);
+  const tmb=um(/kcal\s*[\d.,]+~[\d.,]+\s*(\d{3,5})/)??um(/(\d{3,5})\s*kcal/);
+  /* a faixa da gordura visceral é sempre 1~9; o valor cai antes ou depois */
+  const visceral=um(/(\d{1,2})\s+1~9/)??um(/1~9\s+(\d{1,2})/);
+
+  /* PESO: a folha tem vários "(kg) valor (faixa)" — proteína, minerais, peso.
+     Em vez de adivinhar pela ordem, escolhe o que bate com IMC × altura². */
+  const esperado=(imc!=null&&altura)?imc*Math.pow(altura/100,2):null;
+  const cands=[...t.matchAll(/\(kg\)\s*(\d{2,3},\d)\s*\(/g)].map(m=>n(m[1]));
+  let peso=null;
+  if(cands.length){
+    peso=esperado!=null
+      ? cands.reduce((a,b)=>Math.abs(b-esperado)<Math.abs(a-esperado)?b:a)
+      : Math.max(...cands);
+    if(esperado!=null&&Math.abs(peso-esperado)>2)peso=null;   /* não confere */
+  }
+
+  /* MASSA MUSCULAR ESQUELÉTICA: valor colado numa faixa de referência. A
+     folha traz duas assim (muscular e massa livre de gordura); a muscular é
+     a que fica entre 35% e 65% do peso — a livre de gordura passa de 85%. */
+  let musculo=null;
+  if(peso){
+    const c=[];
+    for(const m of t.matchAll(/(\d{2,3},\d)\s+\d{2,3},\d+~\d{2,3},\d+/g))c.push(n(m[1]));
+    for(const m of t.matchAll(/\d{2,3},\d+~\d{2,3},\d+\s+(\d{2,3},\d)/g))c.push(n(m[1]));
+    musculo=c.find(v=>v>=peso*0.35&&v<=peso*0.65)??null;
+  }
+
+  /* ÁGUA: o aparelho dá litros; o app guarda % do peso */
+  let agua=null;
+  const mL=t.match(/\(L\)\s*(\d{2,3},\d)?\s*\(\s*[\d,]+~[\d,]+\s*\)\s*(\d{2,3},\d)?/);
+  const tbw=mL?(mL[1]!=null?n(mL[1]):(mL[2]!=null?n(mL[2]):null)):null;
+  if(tbw!=null&&peso)agua=+(tbw/peso*100).toFixed(1);
+
+  const md=t.match(/(\d{2})\.(\d{2})\.(\d{4})\./);   /* 12.08.2026. */
+  /* A folha de ACOMPANHAMENTO é outro documento: só gráficos de tendência,
+     com os números soltos e sem rótulo. Não dá para ler medida nenhuma dela
+     com segurança — e a data que aparece é a da PRIMEIRA avaliação da série,
+     que preencher seria pior do que deixar vazio. */
+  const historico=/Todos os resultados dos exames|Recente:\s*At[ée]/i.test(t)
+    || (peso==null&&gordura==null&&tmb==null);
+  return {peso,gordura,musculo,agua,visceral,ossea:null,tmb,
+          altura:historico?null:altura,
+          data:historico?null:(md?`${md[3]}-${md[2]}-${md[1]}`:null),
+          historico,fonte:'InBody'};
+}
 function parseBio(txt){
   const t=txt.replace(/\s+/g,' ');
   const cap=(nomes)=>{ for(const nome of nomes){ const m=t.match(new RegExp(nome+'[^0-9]{0,30}?(\\d{1,4}(?:[.,]\\d{1,2})?)','i')); if(m){const v=parseFloat(m[1].replace(',','.')); if(!isNaN(v))return v;} } return null; };
@@ -9091,14 +9218,23 @@ async function importarBioPDF(inp){
   let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
   const semTexto=(txt||'').replace(/\s/g,'').length<40;
   if(semTexto){ abrirNovaBio(); return toast('Este PDF é uma imagem (sem texto) — lance os valores à mão.'); }
-  const b=parseBio(txt);
-  const achou=Object.values(b).filter(v=>v!=null).length;
+  /* o laudo do InBody vem primeiro: nele o parser por nome não acha nada,
+     porque os rótulos do aparelho são imagens */
+  const ib=parseInBody(txt);
+  const b=ib||parseBio(txt);
+  const campos=['peso','gordura','musculo','agua','visceral','ossea','tmb'];
+  const achou=campos.filter(k=>b[k]!=null).length;
   abrirNovaBio();
   const set=(id,v)=>{const el=document.getElementById(id); if(el&&v!=null)el.value=v;};
-  document.getElementById('biData').value=dataDoExame(txt);
+  document.getElementById('biData').value=(ib&&ib.data)||dataDoExame(txt);
   set('biPeso',b.peso);set('biGord',b.gordura);set('biMusc',b.musculo);set('biAgua',b.agua);set('biVisc',b.visceral);set('biOssea',b.ossea);set('biTmb',b.tmb);
-  document.getElementById('biObs').value=achou?'importado de PDF — confira':'';
-  toast(achou?`${achou} valor(es) lido(s). Confira e salve.`:'Não reconheci valores — preencha à mão.');
+  if(ib)set('biAltura',ib.altura);
+  document.getElementById('biObs').value=achou?(ib?'importado do InBody — confira':'importado de PDF — confira'):'';
+  if(ib&&ib.historico&&!achou)
+    return alerta('Esta é a folha de acompanhamento',
+      'Este PDF é o <b>acompanhamento</b> do InBody: só os gráficos de evolução, com os números soltos e sem rótulo. Não dá para ler uma medida dele com segurança.<br><br>Importe a folha de <b>uma avaliação</b> — a que tem peso, massa muscular e % de gordura com as faixas de referência ao lado. Essa o app lê inteira.');
+  toast(achou?`${achou} valor(es) lido(s)${ib?' do InBody':''}. Confira e salve.`
+             :'Não reconheci valores — preencha à mão.');
 }
 function cardHistoricoBio(pro){
   const bio=[...(pro.bioimp||[])].sort((a,b)=>a.data.localeCompare(b.data));
