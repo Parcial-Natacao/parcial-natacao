@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v150';
+const VER='v151';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1469,6 +1469,14 @@ function guardarChapeu(u,atleta){
 /* troca de chapéu zera o que estava aberto: treino, competição, atleta
    selecionado. Sem isso a tela nova herda a navegação da anterior. */
 function _limparContexto(){
+  /* ⚠️ _limparLaudo() PRIMEIRO, e não é detalhe: quando o técnico (ou o PRO
+     em gestão) está vendo o relatório/marcas de um atleta, S.pro APONTA PARA
+     OS DADOS DAQUELE ATLETA. Zerar S.laudoAtleta sem devolver S.pro deixava
+     o app convencido de que os dados do outro eram os do próprio usuário —
+     na vista de atleta dele, com permissão de escrita no pro_ dele.
+     Era assim que as marcas de um atleta apareciam para outro, e era assim
+     que um currículo ABMN importado em seguida se somava ao do colega. */
+  _limparLaudo();
   S.aba='treinos'; S.sub=null; S.provaSel=null; S.atletaSel=null;
   S.treino=null; S.comp=null; S.laudoAtleta=null; S.pilha=[];
 }
@@ -1667,6 +1675,20 @@ function ligarSincronia(){
 }
 async function salvarPro(){
   if(!(S.u&&temPro()))return;
+  /* ── TRAVA CONTRA GRAVAR O ATLETA ERRADO ─────────────────────────────────
+     S.pro é o único objeto de dados pessoais do app, e no modo espelho ele
+     aponta para OUTRO atleta. Qualquer salvarPro() nessa janela escrevia os
+     dados do outro dentro de kPro(S.u.id) — contaminação permanente, e com
+     cópia no kPerf, onde o técnico também passava a ver.
+     A trava fica AQUI, e não em cada um dos ~24 pontos que chamam esta
+     função, porque um ponto novo esquecido traria o bug de volta. E ela olha
+     a MARCA NO DADO (_espelho), não o estado de navegação: se um caminho
+     futuro zerar S.laudoAtleta sem devolver S.pro, continua travado. */
+  if(S.laudoAtleta||(S.pro&&S.pro._espelho)){
+    console.warn('salvarPro bloqueado: S.pro é o espelho de',S.laudoAtleta||S.pro._espelho);
+    toast('Não gravei: esta tela é a do atleta, não a sua.');
+    return false;
+  }
   /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
      senão o formulário se repreenche sozinho no render seguinte. */
   limparRascunhos();
@@ -3506,7 +3528,7 @@ async function assumirEquipe(sg,nome){
   S.equipesDevList=null; S.equipesDisp=null; S.aba='treinos';
   toast('Visualizando '+nome+' como administrador'); render();
 }
-async function sairContextoAdmin(){if(!S.adminOrig)return;Object.assign(S.u,S.adminOrig);S.adminOrig=null;S.gestao=false;await carregarDados();S.aba='equipes';render();toast('Contexto administrativo encerrado')}
+async function sairContextoAdmin(){if(!S.adminOrig)return;_limparLaudo();Object.assign(S.u,S.adminOrig);S.adminOrig=null;S.gestao=false;await carregarDados();S.aba='equipes';render();toast('Contexto administrativo encerrado')}
 /* DEV: varre TODO o banco e mostra onde estão os treinos (por equipe), inclusive os
    que têm os SEUS tempos, e usuários. Recupera índices perdidos. */
 async function abrirDiagnostico(){
@@ -4065,6 +4087,63 @@ const _ABMN=[
  '2º 10ª 50 LIVRE MASC 40 + TNT SP 00:24.40 0,00 107,00 14/09/2025',
  '1º 12ª 50 LIVRE MASC 35 + TNT SP 00:24.63 0,00 105,00 10/12/2023'
 ].join('\n');
+/* ── HISTÓRICO: CABEÇALHO QUE COMEÇA COM NÚMERO (v151) ──────────────────────
+   Linhas reais do currículo do Renê. Na ABMN a maioria dos cabeçalhos de
+   competição começa com número — "75º", "73º", "46º", "6ª ETAPA" — e o leitor
+   os descartava, fazendo as provas seguintes herdarem o nome E A PISCINA da
+   competição anterior: os 100 livre de 50 m entravam como 25 m, e a prova
+   mais recente dele era descartada por ainda não haver piscina definida. */
+const _ABMN_H=[
+ 'Histórico por competição',
+ '75º CAMPEONATO BRASILEIRO MASTERS DE NATAÇÃO - 50 METROS',
+ 'CLUBE PAINEIRAS DO MORUMBY - SÃO PAULO/SP - BRA',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '1º 36ª 50 BORBOLETA MASC 40 + TNT SP 00:25.82 18,00 108,85 28/06/2026',
+ '1º 40ª 4X50 LIVRE MASC 160 + TNT SP A 01:36.06 36,00 101,20 28/06/2026',
+ 'OPEN PAULISTA DE MASTERS DE NATAÇÃO - PISCINA CURTA - 25 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '2º 10ª 100 BORBOLETA MASC 40 + TNT SP 00:58.32 0,00 547,00 19/10/2025',
+ '73º CAMPEONATO BRASILEIRO MASTERS DE NATAÇÃO - 50 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '3º 21ª 100 LIVRE MASC 40 + TNT SP 00:55.85 14,00 110,09 03/05/2025',
+ 'XV COPA BRASIL MASTERS DE NATAÇÃO - 25 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '1º 9ª 100 LIVRE MASC PRÉ- FUNDESPORT 00:51.05 RB 18,00 110,38 14/06/2008',
+ 'MASTER'
+].join('\n');
+teste('abmn','cabeçalho que começa com número é cabeçalho',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  const fly=h.find(x=>x.dist===50&&x.estilo==='borboleta');
+  a.ok(fly,'a prova do 75º Brasileiro não é mais descartada');
+  a.eq(fly.piscina,'LC50','e vem com a piscina do cabeçalho dela');
+  a.ok(/^75º/.test(fly.comp||''),'com o nome certo da competição');});
+teste('abmn','prova não herda a piscina da competição anterior',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  const c100=h.find(x=>x.dist===100&&x.estilo==='livre'&&x.faixa===40);
+  a.eq(c100.tempo,parseTempo('55.85'),'é o 100 livre do 73º Brasileiro');
+  a.eq(c100.piscina,'LC50','piscina longa — antes vinha como 25 m, do OPEN anterior');
+  const fly100=h.find(x=>x.dist===100&&x.estilo==='borboleta');
+  a.eq(fly100.piscina,'SC25','e o do OPEN continua curta');});
+teste('abmn','pré-master no histórico não desaparece',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  const pre=h.find(x=>x.tempo===parseTempo('51.05'));
+  a.ok(pre,'a linha com faixa PRÉ- é lida');
+  a.eq(pre.faixa,0,'entra como faixa 0, igual à tabela por faixa');
+  a.eq(pre.piscina,'SC25','e com a piscina da competição');});
+teste('abmn','revezamento continua fora e a conta fecha',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  a.eq(h.length,4,'quatro provas individuais');
+  a.ok(!h.some(x=>/4X/i.test(x.prova||'')),'nenhum revezamento');});
+teste('abmn','reimportar substitui o que veio da ABMN',a=>{
+  /* a deduplicação só evitava repetir; não desfazia. Sem isso, nenhuma
+     correção no leitor alcança quem já importou errado. */
+  const pro=_atleta({});
+  pro.resultados=[{chave:'abmn_errado',dist:50,estilo:'livre',piscina:'SC25',data:'2025-05-03',tempo:1},
+                  {chave:'lx1',dist:50,estilo:'peito',piscina:'SC25',data:'2026-01-01',tempo:31350}];
+  const r=aplicarABMN(pro,parseABMN(_ABMN));
+  a.eq(r.removidos,1,'o resultado antigo da ABMN saiu');
+  a.ok(!pro.resultados.some(x=>x.chave==='abmn_errado'),'não ficou resíduo');
+  a.ok(pro.resultados.some(x=>x.chave==='lx1'),'o que o atleta digitou fica');});
 teste('abmn','prova que abre em pré-master não contamina a anterior',a=>{
   const c=parseABMN(_ABMN);
   const p=c.itens.filter(x=>x.dist===50&&x.piscina==='SC25');
@@ -4131,6 +4210,71 @@ teste('admin','a sincronia traz o resto do cadastro mesmo no contexto assumido',
 teste('admin','sem resposta do banco, nada é sobrescrito',a=>{
   const atual={id:'A1',equipe:'nova'};
   a.eq(mesclaUsuarioSincronia(atual,null,{equipe:'a3'}),atual,'mantém o que estava');});
+
+/* ── ESPELHO: DADOS DE UM ATLETA NÃO VAZAM PARA OUTRO (v151) ────────────────
+   O bug mais grave da série: o técnico/PRO abria as marcas de um atleta
+   (S.pro passa a apontar para os dados DELE), trocava de chapéu, e o app
+   seguia com os dados do outro na vista de atleta — com permissão de gravar
+   no pro_ de quem estava olhando. Resultado: marcas de um aparecendo para
+   outro, e um currículo ABMN importado em seguida somando-se ao do colega. */
+function _espelhoDe(id,meu){
+  S.laudoAtleta=id; S._proBak=meu;
+  S.pro={_espelho:id,pbs:{'50 livre SC25':24120},
+    resultados:[{chave:'abmn_x',comp:'Dele',data:'2025-06-27',dist:50,estilo:'livre',piscina:'SC25',tempo:24120}]};
+}
+/* _limparContexto mexe na navegação; a suíte não guarda aba/pilha, então
+   quem o chama devolve o que estava aberto. */
+function _semMexerNaNav(fn){
+  const g={aba:S.aba,sub:S.sub,pilha:S.pilha,treino:S.treino,comp:S.comp,
+           provaSel:S.provaSel,atletaSel:S.atletaSel};
+  try{ fn(); } finally{ Object.assign(S,g); }
+}
+teste('espelho','trocar de chapéu devolve os meus dados, não os do atleta',a=>{
+  const meu={pbs:{'50 peito SC25':31350},resultados:[],marcaMinha:true};
+  _espelhoDe('outro',meu);
+  _semMexerNaNav(_limparContexto);         /* é o que alternarModoAtleta faz */
+  a.eq(S.laudoAtleta,null,'o espelho foi fechado');
+  a.ok(S.pro&&S.pro.marcaMinha===true,'S.pro voltou a ser o meu');
+  a.ok(!(S.pro&&S.pro._espelho),'sem resíduo de espelho no dado');});
+teste('espelho','sem backup, o espelho nunca é devolvido como se fosse meu',a=>{
+  _espelhoDe('outro',undefined);
+  _semMexerNaNav(_limparContexto);
+  a.ok(!(S.pro&&S.pro._espelho),'espelho descartado');
+  a.eq((S.pro&&S.pro.resultados||[]).length,0,'pro vazio — a sincronia recarrega o verdadeiro');
+  a.ok(S.pro&&S.pro.pbs&&typeof S.pro.pbs==='object','e com a forma certa, para nada quebrar no render');});
+teste('espelho','_limparLaudo age mesmo se laudoAtleta já foi zerado',a=>{
+  const meu={pbs:{},resultados:[],marcaMinha:true};
+  _espelhoDe('outro',meu);
+  S.laudoAtleta=null;                      /* o descuido que causou o bug */
+  _limparLaudo();
+  a.ok(S.pro&&S.pro.marcaMinha===true,'a marca no dado basta para desfazer');});
+teste('espelho','a trava de gravação olha a marca no dado',a=>{
+  /* salvarPro() é async e toca o banco: aqui travamos a CONDIÇÃO que ela usa,
+     que é o que precisa continuar valendo se alguém mexer na navegação. */
+  const bloqueia=(laudo,pro)=>!!(laudo||(pro&&pro._espelho));
+  a.ok(bloqueia('outro',{}),'bloqueia no modo espelho');
+  a.ok(bloqueia(null,{_espelho:'outro'}),'bloqueia só pela marca, sem laudoAtleta');
+  a.ok(!bloqueia(null,{pbs:{}}),'libera a gravação dos meus dados');});
+
+/* ── PROCEDÊNCIA DAS MARCAS (v151) ──────────────────────────────────────── */
+teste('procedência','cada resultado é classificado pela chave',a=>{
+  const pro={resultados:[
+    {chave:'abmn_50_livre_SC25_2025-06-27_24120',comp:'III Troféu',data:'2025-06-27'},
+    {chave:'abmn_50_peito_SC25_2014-03-16_32830',comp:'1ª Etapa',data:'2014-03-16'},
+    {chave:'mc_abc_p1',comp:'Minha Copa',data:'2026-05-16'},
+    {chave:'c7|50|peito|SC25',comp:'Copa A3',data:'2026-06-01'},
+    {chave:'lx93kz',comp:'Digitada',data:'2026-07-01'}]};
+  const inv=inventarioMarcas(pro);
+  a.eq(inv.length,4,'quatro procedências');
+  a.eq(inv[0].id,'abmn','ABMN primeiro');
+  a.eq(inv[0].n,2,'com os dois resultados dela');
+  a.eq(inv[0].de,'2014-03-16','e o intervalo de datas certo');
+  a.eq(inv[0].ate,'2025-06-27','idem');
+  a.eq(inv.find(b=>b.id==='eq').rot,'Competições da equipe','chave com | é da equipe');
+  a.eq(inv.find(b=>b.id==='mao').n,1,'o resto é digitado à mão');});
+teste('procedência','histórico vazio não inventa bloco',a=>{
+  a.eq(inventarioMarcas({resultados:[]}).length,0,'nada a mostrar');
+  a.eq(inventarioMarcas(null).length,0,'nem sem pro');});
 
 /* ── CONFIRMAÇÃO DE E-MAIL (v150) ────────────────────────────────────────────
    Um cadastro real ficou preso aqui: o envio falhou, o aviso era um toast de
@@ -4980,7 +5124,10 @@ async function abrirLaudoAtleta(id){
     ? {score:snap.prontidao.media,dias:snap.prontidao.n||0,fonte:'check-in'}
     : ((snap&&snap.prontidaoGar&&snap.prontidaoGar.score!=null)
         ? {score:snap.prontidaoGar.score,dias:snap.prontidaoGar.dias||0,fonte:'Garmin'} : null);
-  S.pro={pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
+  /* _espelho: a identidade do dono viaja DENTRO do objeto. É o que permite a
+     salvarPro() recusar a gravação mesmo que alguém zere S.laudoAtleta sem
+     devolver S.pro — foi exatamente esse descuido que misturou dois atletas. */
+  S.pro={_espelho:id,pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
     alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:ehAdmin()?((snap&&snap.garmin)||[]):[],exames:ehAdmin()?((snap&&snap.exames)||[]):[],_pront:_p};
   ESF=null; push(); render(); window.scrollTo(0,0);
 }
@@ -4991,8 +5138,14 @@ async function abrirMarcasAtleta(id){
   if(S.laudoAtleta){ S.laudoVista='marcas'; render(); window.scrollTo(0,0); }
 }
 function _limparLaudo(){
-  if(!S.laudoAtleta)return;
-  S.pro=S._proBak; S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; S.laudoVista=null; ESF=null;
+  /* a condição olha os DOIS: se S.laudoAtleta já foi zerado por outro caminho
+     mas S.pro continua sendo o espelho, é aqui que o estrago se desfaz. */
+  if(!S.laudoAtleta&&!(S.pro&&S.pro._espelho))return;
+  /* sem backup (espelho que vazou por um caminho que não passou por aqui),
+     devolve um pro VAZIO em vez de null: a sincronia recarrega o verdadeiro
+     em segundos, e nada quebra no render até lá. Nunca devolver o espelho. */
+  S.pro=S._proBak||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; S.laudoVista=null; ESF=null;
 }
 function voltarLaudo(){ _limparLaudo(); voltar(); }
 /* nome do sujeito do relatório (atleta quando o técnico está vendo; senão o próprio usuário) */
@@ -6366,6 +6519,8 @@ function telaMarcas(){
   ${acc('mk_alvos','Provas-alvo','provas foco da projeção',cardAlvos(pro)||'<div class="small muted">Sem provas-alvo definidas.</div>')}
   <div class="eyebrow" style="margin:16px 4px 4px">histórico de competições · por prova</div>
   ${histProvas||'<div class="card"><div class="small muted">Nenhum resultado ainda. Use + Tempo (com a competição) ou o técnico lança nas competições.</div></div>'}
+  ${espelho?'':`<div class="row noprint" style="margin:14px 0 0"><div class="grow"></div>
+    <button class="sm ghost" onclick="abrirLimparMarcas()">Conferir procedência das marcas</button></div>`}
   <div style="height:20px"></div>`;
 }
 function abrirNovaMarca(){
@@ -6408,6 +6563,65 @@ async function salvarMarca(){
 }
 async function apagarPB(k){delete S.pro.pbs[k];await salvarPro();render()}
 async function apagarResultado(chave){ S.pro.resultados=(S.pro.resultados||[]).filter(r=>r.chave!==chave); await salvarPro(); render(); }
+
+/* ── PROCEDÊNCIA DAS MARCAS ────────────────────────────────────────────────
+   Na tela de Marcas, um tempo de outra pessoa é indistinguível de um seu: são
+   os dois "50 livre, 24.12, tal competição". Isso deixou de ser hipótese
+   quando o modo espelho gravou marcas de um atleta no pro_ de quem estava
+   olhando — e o dono não tinha como saber o que era dele nem como separar.
+   A chave de cada resultado diz de onde ele veio, e é só isso que este
+   inventário faz: traduzir a chave em procedência, para o atleta decidir.
+   Função pura, para poder ser testada sem tela e sem banco. */
+const ORIGEM_RES=[
+  {id:'abmn',rot:'Currículo ABMN',          teste:c=>/^abmn_/.test(c)},
+  {id:'mc',  rot:'Competições que você lançou',teste:c=>/^mc_/.test(c)},
+  {id:'eq',  rot:'Competições da equipe',    teste:c=>c.includes('|')},
+  {id:'mao', rot:'Digitado em + Tempo',      teste:()=>true}];
+function inventarioMarcas(pro){
+  const g={};
+  for(const r of (pro&&pro.resultados)||[]){
+    const o=ORIGEM_RES.find(x=>x.teste(String(r.chave||'')));
+    const b=g[o.id]=g[o.id]||{rot:o.rot,n:0,comps:new Set(),de:null,ate:null};
+    b.n++;
+    if(r.comp)b.comps.add(r.comp);
+    if(r.data){ if(!b.de||r.data<b.de)b.de=r.data; if(!b.ate||r.data>b.ate)b.ate=r.data; }
+  }
+  return ORIGEM_RES.filter(o=>g[o.id])
+    .map(o=>({id:o.id,rot:g[o.id].rot,n:g[o.id].n,de:g[o.id].de,ate:g[o.id].ate,
+              comps:[...g[o.id].comps].sort()}));
+}
+function abrirLimparMarcas(){
+  const inv=inventarioMarcas(S.pro), nP=Object.keys((S.pro&&S.pro.pbs)||{}).length;
+  const br=d=>d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'—';
+  const blocos=inv.map(b=>`<div class="xs" style="padding:7px 0;border-top:1px solid var(--line)">
+      <div class="row"><b class="grow">${esc(b.rot)}</b><b>${b.n}</b></div>
+      <div class="muted">${br(b.de)} a ${br(b.ate)} · ${b.comps.length} competição(ões)</div>
+      ${b.comps.length?`<div class="muted" style="margin-top:3px">${b.comps.slice(0,6).map(esc).join(' · ')}${b.comps.length>6?' …':''}</div>`:''}
+      ${b.id==='abmn'?`<button class="sm ghost full" style="margin-top:6px" onclick="apagarMarcasOrigem('abmn')">Apagar estes ${b.n}</button>`:''}
+    </div>`).join('');
+  sheet(`<h2>Conferir minhas marcas</h2>
+    <p class="small muted" style="margin:6px 0 10px">De onde veio cada resultado do seu histórico. Se você vê aqui competições que não são suas, é isto que separa.</p>
+    ${blocos||'<div class="small muted">Nenhum resultado no histórico.</div>'}
+    <div class="sep"></div>
+    <div class="xs muted">Melhores tempos (PBs) guardados: <b>${nP}</b>.</div>
+    <div class="note warn" style="margin:10px 0"><b>Zerar apaga os PBs e todo o histórico de competições.</b> Os dados de Saúde (check-in, Garmin, exames, bioimpedância) e os treinos não são tocados. Depois de zerar, importe o seu currículo da ABMN de novo: ele reconstrói os dois.</div>
+    <button class="ghost full" onclick="zerarMarcas()">Zerar marcas (PBs e histórico)</button>
+    <button class="primary full" style="margin-top:8px" onclick="fecharSheet()">Fechar</button>`);
+}
+async function apagarMarcasOrigem(id){
+  const o=ORIGEM_RES.find(x=>x.id===id); if(!o||!S.pro)return;
+  const antes=(S.pro.resultados||[]).length;
+  S.pro.resultados=(S.pro.resultados||[]).filter(r=>!o.teste(String(r.chave||'')));
+  const n=antes-S.pro.resultados.length;
+  if(await salvarPro()===false)return;
+  fecharSheet(); toast(`${n} resultado(s) removido(s) · ${esc(o.rot)}`); render();
+}
+async function zerarMarcas(){
+  if(!S.pro)return;
+  S.pro.pbs={}; S.pro.resultados=[];
+  if(await salvarPro()===false)return;
+  fecharSheet(); toast('Marcas zeradas. Importe o seu currículo da ABMN para reconstruir.'); render();
+}
 
 /* ---------- leitura de PDF no navegador (pdf.js sob demanda) ---------- */
 let _pdfjs=null;
@@ -6549,18 +6763,34 @@ function parseABMNHistorico(txt){
   let comp=null, pool=null;
   for(const bruto of t.slice(i).split('\n')){
     const l=bruto.trim(); if(!l)continue;
-    /* cabeçalho de competição: "NOME ... - 25 METROS" | "- 50 METROS" */
+    /* cabeçalho de competição: "NOME ... - 25 METROS" | "- 50 METROS"
+       ⚠️ O guarda antigo era `!/^\d/` e descartava TODO cabeçalho que começa
+       com número — que na ABMN é a maioria: "75º CAMPEONATO BRASILEIRO",
+       "46º", "6ª ETAPA", "2011 PANAMERICAN", "15º CAMPEONATO MUNDIAL".
+       Sem trocar o cabeçalho, as provas seguintes herdavam o nome E A
+       PISCINA da competição anterior. No currículo do Renê isso misturava
+       quatro competições debaixo de "III TROFÉU BRASIL" e marcava como
+       25 m os 100 livre de 55.85 nadados em piscina de 50 no 73º
+       Brasileiro — e a prova mais recente dele (50 borboleta do 75º
+       Brasileiro) era simplesmente descartada, porque ainda não havia
+       piscina definida quando ela apareceu.
+       O discriminador certo não é o primeiro caractere: linha de RESULTADO
+       sempre termina em data, cabeçalho NUNCA tem data. */
     const mc=l.match(/^(.+?)\s*[-–]\s*(25|50)\s*METROS\s*$/i);
-    if(mc&&!/^\d/.test(l)){ comp=mc[1].replace(/\s+/g,' ').trim().slice(0,90); pool=mc[2]==='50'?'LC50':'SC25'; continue; }
+    if(mc&&!/\d{2}\/\d{2}\/\d{4}/.test(l)){ comp=mc[1].replace(/\s+/g,' ').trim().slice(0,90); pool=mc[2]==='50'?'LC50':'SC25'; continue; }
     if(!pool)continue;
     if(/revez/i.test(l)||/\b\d\s*[xX]\s*\d{2,}\b/.test(l))continue;   /* revezamento fora */
-    const m=l.match(/^\s*(?:\d+[ºªo]|N\/?C|DQL|DNS)\s+\d+[ºªa]\s+(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(?:MASC|FEM)\s+(\d{2,3})\s*\+\s+.*?(\d{2}:\d{2}\.\d{2})\s+.*?(\d{2}\/\d{2}\/\d{4})\s*$/i);
+    /* a faixa também pode ser PRÉ-MASTER, e aí vem sem o "+" e com a palavra
+       MASTER quebrada para a linha seguinte. Entra como faixa 0, igual à
+       tabela de melhores por faixa — fica no histórico e sai do recorte da
+       faixa atual. Antes, essas sete provas do Renê desapareciam. */
+    const m=l.match(/^\s*(?:\d+[ºªo]|N\/?C|DQL|DNS)\s+\d+[ºªa]\s+(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(?:MASC|FEM)\s+(PR[ÉE]-?|\d{2,3}\s*\+)\s+.*?(\d{2}:\d{2}\.\d{2})\s+.*?(\d{2}\/\d{2}\/\d{4})\s*$/i);
     if(!m)continue;
     const tempo=parseTempo(m[4].replace(/^00:/,''));   /* 00:25.82 → 25.82 */
     if(!tempo)continue;
     const d=m[5].split('/');
     out.push({dist:+m[1],estilo:ESTIL[m[2].toUpperCase()]||'livre',piscina:pool,
-      faixa:+m[3],tempo,comp,data:`${d[2]}-${d[1]}-${d[0]}`,
+      faixa:/PR[ÉE]/i.test(m[3])?0:parseInt(m[3],10),tempo,comp,data:`${d[2]}-${d[1]}-${d[0]}`,
       prova:`${+m[1]}m ${ESTIL[m[2].toUpperCase()]||'livre'}`,parciais:[],inscricao:null});
   }
   return out;
@@ -6588,6 +6818,16 @@ function aplicarABMN(pro,cur){
   if(cur.matricula)pro.matricula=cur.matricula;
   /* o PB da vida inteira fica à parte: é vitrine, não entra no modelo */
   if(cur.alltime&&Object.keys(cur.alltime).length)pro.pbAllTime=cur.alltime;
+  /* ── RE-IMPORTAR SUBSTITUI O QUE VEIO DA ABMN ────────────────────────────
+     A deduplicação sozinha só evita repetir; ela não desfaz. Então uma
+     correção no leitor não limpava o que a versão anterior tinha gravado
+     errado — os resultados com piscina trocada ficariam no histórico para
+     sempre, lado a lado com os certos, e o atleta não teria como removê-los.
+     Saem só as chaves 'abmn_' (é esta função que as cria): competição,
+     treino e marco digitados pelo atleta não são tocados. */
+  const antes=pro.resultados.length;
+  pro.resultados=pro.resultados.filter(r=>!/^abmn_/.test(r.chave||''));
+  const removidos=antes-pro.resultados.length;
   const existe=new Set(pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
   let add=0;
   /* O HISTÓRICO por competição entra junto com as melhores por faixa. É ele
@@ -6607,7 +6847,7 @@ function aplicarABMN(pro,cur){
     const r=melhores[pk];
     if(pro.pbs[pk]!==r.tempo){ pro.pbs[pk]=r.tempo; ajust++; }
   }
-  return {add,ajust,faixa:cur.faixaAtual,provas:Object.keys(melhores).length,
+  return {add,ajust,removidos,faixa:cur.faixaAtual,provas:Object.keys(melhores).length,
           historico:(cur.historico||[]).length,
           naFaixa:(cur.historico||[]).filter(r=>r.faixa===cur.faixaAtual).length,
           allTime:Object.keys(cur.alltime||{}).length};
@@ -6659,7 +6899,8 @@ async function importarABMN(inp){
      sucesso (deduplicação) ou falha. Pior: escondia o que de fato aconteceu,
      que é o recálculo dos melhores tempos pela FAIXA ATUAL. */
   const p=[`${cur.itens.length} tempo(s) lido(s) do currículo`];
-  p.push(r.add?`${r.add} novo(s)`:'nenhum novo — já estavam aqui');
+  p.push(r.add?`${r.add} no histórico`:'nenhum resultado no histórico');
+  if(r.removidos)p.push(`substituiu ${r.removidos} importado(s) antes`);
   if(r.faixa)p.push(`melhores tempos pela sua faixa (${r.faixa}+)`);
   if(r.ajust)p.push(`${r.ajust} marca(s) atualizada(s)`);
   toast(p.join(' · '));
