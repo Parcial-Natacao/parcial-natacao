@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v156';
+const VER='v157';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4387,6 +4387,25 @@ teste('abmn','revezamento continua fora e a conta fecha',a=>{
   const h=parseABMNHistorico(_ABMN_H);
   a.eq(h.length,4,'quatro provas individuais');
   a.ok(!h.some(x=>/4X/i.test(x.prova||'')),'nenhum revezamento');});
+/* ── DE QUEM É O CURRÍCULO (v157) ───────────────────────────────────────────
+   O cartão de envio não dizia de quem era a ficha aberta, e quem usa o app
+   como atleta E administrador troca de ficha o tempo todo. Bastou um PDF
+   errado para as marcas de um entrarem no perfil de outro. */
+teste('currículo','lê o nome do atleta no cabeçalho',a=>{
+  const txt=['Associação Brasileira Masters de Natação','Currículo On-Line',
+    'RENE DE ALMEIDA LEITE (CENTRO NUTRICIONAL RL, BARRETOS) (1984)',
+    'Matrícula ABMN: 7567 - Faixa em 2026: 40 +'].join('\n');
+  a.eq(nomeDoCurriculo(txt),'RENE DE ALMEIDA LEITE','nome sem a equipe nem o ano');
+  a.eq(parseABMN(_ABMN).atleta,null,'sem cabeçalho, não inventa nome');});
+teste('currículo','nome de registro casa com o nome da ficha',a=>{
+  a.ok(mesmoAtleta('RENE DE ALMEIDA LEITE','Renê de Almeida Leite'),'acento não atrapalha');
+  a.ok(mesmoAtleta('RENE DE ALMEIDA LEITE','Rene Leite'),'nome curto na ficha ainda casa');
+  a.ok(mesmoAtleta('BRUNO BARBATO','Bruno Barbato'),'igual casa');});
+teste('currículo','atleta diferente é acusado',a=>{
+  a.eq(mesmoAtleta('RENE DE ALMEIDA LEITE','Bruno Barbato'),false,'pessoas diferentes');
+  a.eq(mesmoAtleta('MARCOS SERGIO TIAEN','Alexandre Maluf Barcelos'),false,'idem');
+  a.eq(mesmoAtleta(null,'Bruno Barbato'),null,'sem nome no PDF, não afirma nem nega');
+  a.eq(mesmoAtleta('RENE','Bruno'),false,'um token só de cada lado ainda decide');});
 teste('abmn','reimportar substitui o que veio da ABMN',a=>{
   /* a deduplicação só evitava repetir; não desfazia. Sem isso, nenhuma
      correção no leitor alcança quem já importou errado. */
@@ -7183,8 +7202,36 @@ function parseABMN(txt){
           comp:m[5].replace(/\s+/g,' ').trim().slice(0,90)};
     }
   }
-  return {faixaAtual,matricula:mM?mM[1]:null,itens,alltime,
+  return {faixaAtual,matricula:mM?mM[1]:null,atleta:nomeDoCurriculo(t),itens,alltime,
           historico:parseABMNHistorico(t)};
+}
+/* ── DE QUEM É ESTE CURRÍCULO ───────────────────────────────────────────────
+   O cabeçalho do Currículo On-Line traz o nome do atleta na linha logo acima
+   da matrícula: "NOME COMPLETO (EQUIPE, CIDADE) (ANO)". Ler esse nome é o que
+   permite ao app conferir se o PDF é de quem se pensa — em vez de aceitar
+   qualquer arquivo e só descobrir o engano quando as marcas de um aparecem
+   no perfil de outro, que foi o que aconteceu. */
+function nomeDoCurriculo(txt){
+  const linhas=String(txt||'').replace(/\r/g,'').split('\n');
+  const i=linhas.findIndex(l=>/Matr[íi]cula\s+ABMN\s*:/i.test(l));
+  if(i<1)return null;
+  for(let k=i-1;k>=Math.max(0,i-4);k--){
+    const l=linhas[k].trim();
+    if(!l||/Curr[íi]culo|Associa[çc][ãa]o|Swim\s*It\s*Up/i.test(l))continue;
+    const m=l.match(/^([^(]{5,})\s*(?:\(|$)/);
+    if(m)return m[1].replace(/\s+/g,' ').trim();
+  }
+  return null;
+}
+/* mesmo nome? Compara os TOKENS, porque a ficha costuma ter o nome social
+   ("Renê") e o currículo o nome de registro ("RENE DE ALMEIDA LEITE"). Um
+   contém o outro quando é a mesma pessoa. */
+function mesmoAtleta(nomeA,nomeB){
+  const a=normNome(nomeA).split(' ').filter(x=>x.length>=3);
+  const b=normNome(nomeB).split(' ').filter(x=>x.length>=3);
+  if(!a.length||!b.length)return null;                 /* não dá para afirmar */
+  const comuns=a.filter(x=>b.includes(x)).length;
+  return comuns>=Math.min(2,Math.min(a.length,b.length));
 }
 /* ── HISTÓRICO POR COMPETIÇÃO ──────────────────────────────────────────────
    É a seção que torna possível um gráfico de evolução DENTRO da faixa atual.
@@ -7309,11 +7356,46 @@ async function importarABMNAtleta(inp,atletaId){
   let txt; try{ txt=await pdfTexto(f); }catch(e){ return diz('Não consegui ler: '+esc(e.message),'muted'); }
   const cur=parseABMN(txt);
   if(!cur.itens.length)return diz('Nenhum tempo por faixa encontrado. Confira se é o Currículo On-Line da ABMN.','muted');
-  const ok=await DB.set(kAbmn(S.u.equipe,atletaId),{em:Date.now(),por:S.u.nome,cur});
-  if(!ok)return diz('Falha ao enviar.','muted');
+  diz('');
+  /* NÃO grava direto. Quem usa o app como atleta E administrador troca de
+     ficha o tempo todo, e o cartão de envio não dizia de quem era a ficha
+     aberta — bastava um PDF errado para as marcas de um entrarem no perfil
+     de outro, sem nada no caminho para avisar. */
+  confirmarEnvioABMN(cur,a);
+}
+/* ── CONFIRMAÇÃO COM NOME ───────────────────────────────────────────────────
+   Mostra lado a lado DE QUEM é o PDF e PARA QUEM ele vai. Quando o app
+   consegue comparar os dois nomes e eles não batem, o aviso é vermelho e o
+   botão passa a dizer o que vai acontecer de fato. */
+function confirmarEnvioABMN(cur,a){
+  S.abmnPend={cur,atletaId:a.id};
+  const bate=cur.atleta?mesmoAtleta(cur.atleta,a.nome):null;
+  sheet(`<h2>Confirmar envio do currículo</h2>
+    <div class="card" style="padding:4px 12px">
+      <div class="row" style="padding:8px 0"><span class="grow muted">O PDF é de</span>
+        <b style="text-align:right">${esc(cur.atleta||'— não identificado —')}</b></div>
+      <div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><span class="grow muted">Vai para a ficha de</span>
+        <b style="text-align:right">${esc(a.nome)}</b></div>
+      ${cur.matricula?`<div class="row xs muted" style="padding:8px 0;border-top:1px solid var(--line)"><span class="grow">Matrícula no PDF</span><span>${esc(cur.matricula)}</span></div>`:''}
+    </div>
+    ${bate===false?`<div class="note warn" style="margin:12px 0"><b>Os nomes não batem.</b> Este currículo é de outra pessoa. Se você seguir, os tempos de <b>${esc(cur.atleta)}</b> vão entrar nas marcas de <b>${esc(a.nome)}</b> — e separar depois dá trabalho.</div>`
+      :bate===null?`<div class="note" style="margin:12px 0">Não consegui ler o nome no PDF para conferir. <b>Confirme você mesmo</b> que este currículo é de ${esc(prim(a.nome))}.</div>`
+      :`<div class="note ok" style="margin:12px 0">Nomes conferem.</div>`}
+    <div class="xs muted" style="margin-bottom:10px">${cur.itens.length} tempo(s)${cur.faixaAtual?` · faixa ${cur.faixaAtual}+`:''}${cur.historico&&cur.historico.length?` · ${cur.historico.length} resultado(s) de competição`:''}.</div>
+    <button class="${bate===false?'':'primary '}full" onclick="enviarABMNConfirmado()">${bate===false?`Enviar mesmo assim para ${esc(prim(a.nome))}`:`Enviar para ${esc(prim(a.nome))}`}</button>
+    <button class="ghost full" style="margin-top:8px" onclick="S.abmnPend=null;fecharSheet()">Cancelar</button>`);
+}
+async function enviarABMNConfirmado(){
+  const p=S.abmnPend; if(!p)return;
+  const a=S.elenco.find(x=>x.id===p.atletaId); if(!a)return;
+  const st=()=>document.getElementById('abmnAtSt');
+  const ok=await DB.set(kAbmn(S.u.equipe,p.atletaId),{em:Date.now(),por:S.u.nome,cur:p.cur});
+  S.abmnPend=null; fecharSheet();
+  if(!ok){ const e=st(); if(e){e.className='xs muted';e.innerHTML='Falha ao enviar.';} return toast('Falha ao enviar'); }
   a.abmnEm=Date.now(); await DB.set(kUser(a.email),a);
-  diz(`<b>${cur.itens.length} tempo(s) enviados</b>${cur.faixaAtual?` · faixa ${cur.faixaAtual}+`:''}. Entram nas marcas de ${esc(prim(a.nome))} quando ele abrir o app.`,'muted');
-  toast('Currículo enviado ao atleta');
+  const e=st(); if(e){e.className='xs muted';
+    e.innerHTML=`<b>${p.cur.itens.length} tempo(s) enviados</b>${p.cur.faixaAtual?` · faixa ${p.cur.faixaAtual}+`:''}. Entram nas marcas de ${esc(prim(a.nome))} quando ele abrir o app.`;}
+  toast('Currículo enviado a '+prim(a.nome));
 }
 /* lado do atleta: incorpora o que o técnico deixou, uma única vez */
 async function receberABMNdoTecnico(){
@@ -7332,9 +7414,31 @@ async function importarABMN(inp){
   let txt; try{ txt=await pdfTexto(f); }catch(e){ return toast('Não consegui ler: '+e.message); }
   const cur=parseABMN(txt);
   if(!cur.itens.length)return toast('Nenhum tempo por faixa encontrado neste PDF. Confira se é o Currículo On-Line da ABMN.');
+  /* mesma conferência da ficha, do lado de cá: quem administra a equipe tem
+     o PDF dos outros atletas na mesma pasta de downloads que o seu. */
+  if(cur.atleta&&mesmoAtleta(cur.atleta,S.u.nome)===false){
+    S.abmnPend={cur,proprio:true};
+    return sheet(`<h2>Este currículo não parece ser o seu</h2>
+      <div class="card" style="padding:4px 12px">
+        <div class="row" style="padding:8px 0"><span class="grow muted">O PDF é de</span><b style="text-align:right">${esc(cur.atleta)}</b></div>
+        <div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><span class="grow muted">Você é</span><b style="text-align:right">${esc(S.u.nome)}</b></div>
+      </div>
+      <div class="note warn" style="margin:12px 0"><b>Se você seguir, os tempos de ${esc(cur.atleta)} entram nas SUAS marcas</b> e passam a valer como se fossem seus — inclusive no relatório e nas projeções.
+        <div class="xs" style="margin-top:4px">Para enviar o currículo de outro atleta, use a ficha dele em Gestão de equipe.</div></div>
+      <button class="full" onclick="aplicarABMNProprio()">Importar assim mesmo</button>
+      <button class="primary full" style="margin-top:8px" onclick="S.abmnPend=null;fecharSheet()">Cancelar</button>`);
+  }
+  S.abmnPend={cur,proprio:true};
+  await aplicarABMNProprio();
+}
+async function aplicarABMNProprio(){
+  /* `pend`, e não `p`: a cauda desta função (a mensagem do fim) já usa `p`
+     como as partes do texto — era a mesma função antes de eu separá-la. */
+  const pend=S.abmnPend; if(!pend||!pend.proprio)return;
+  const cur=pend.cur; S.abmnPend=null; fecharSheet();
   S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   const r=aplicarABMN(S.pro,cur);
-  await salvarPro();
+  if(await salvarPro()===false)return;
   /* A mensagem antiga dizia só "0 resultado(s) importado(s)" quando o currículo
      já tinha sido importado — e o usuário não tinha como saber se aquilo era
      sucesso (deduplicação) ou falha. Pior: escondia o que de fato aconteceu,
