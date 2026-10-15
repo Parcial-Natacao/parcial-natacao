@@ -26,6 +26,17 @@ rules_version = '2';
 //   JSON dentro de string. Por isso `dono`, `donoEmail`, `equipe`, `perfil` e
 //   `aprovado` existem como campos reais (ver camposSeguranca no index.html).
 //
+// ⚠️ `dono` DE UM pro_ VEM DO CONTEÚDO, NÃO DA CHAVE  (v159)
+//   Em 14/10/2026 os dados de um atleta foram gravados dentro do pro_ de
+//   outro. As regras abaixo já exigiam `dono == request.auth.uid` — e deixaram
+//   passar, porque o `dono` era tirado da CHAVE: gravar no próprio pro_
+//   satisfazia a regra, qualquer que fosse o conteúdo.
+//   Agora camposSeguranca lê `_dono` de DENTRO do objeto. Um documento com os
+//   dados de outro atleta chega ao servidor declarando o dono errado, e estas
+//   mesmas regras o recusam — mesmo que o app esteja desatualizado ou adulterado.
+//   NÃO volte a derivar `dono` da chave: é isso que sustenta a garantia.
+//   (As versões diárias usam pro_<uid>_bk<N>, mesmo prefixo e mesmas regras.)
+//
 // APROVAÇÃO
 //   Ninguém nasce aprovado. Entrar numa equipe deixa o cadastro PENDENTE; o
 //   técnico libera o atleta e o administrador libera o técnico. Equipes novas
