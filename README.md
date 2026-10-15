@@ -5,7 +5,7 @@ treinos, registro de tempos e parciais, competições, marcas, carga/fadiga e
 relatório de performance. **Um arquivo, sem build, sem dependências
 instaladas.**
 
-**Versão atual:** v147 (o número aparece no cabeçalho do app e em `const VER`)
+**Versão atual:** v159 (o número aparece no cabeçalho do app e em `const VER`)
 **Autor do conteúdo técnico:** Bruno Barbato (atleta e engenheiro)
 **Contexto:** equipe de natação masters, Campo Grande — MS
 
@@ -36,8 +36,9 @@ python -m http.server 8000
 ```
 
 > ⚠️ O GitHub Pages serve o `index.html` com `Cache-Control: max-age=600`, e o
-> app **não tem service worker**. Depois de publicar, o navegador pode entregar
-> a versão antiga por até 10 minutos. Por isso o app verifica sozinho se há
+> app tem service worker e pode manter a versão instalada em cache. Depois de
+> publicar, o navegador ainda pode entregar a versão anterior por alguns minutos.
+> Por isso o app verifica sozinho se há
 > versão nova e oferece o botão **Atualizar** (Conta › Atualizar app), que
 > limpa o cache e recarrega da fonte.
 
@@ -62,6 +63,7 @@ topo do `<script>` — trocar de banco significa reescrever só esse objeto.
 | `u_<email>` | conta do usuário (perfil, afiliação pública opcional, vínculo técnico/equipe operacional, aprovação, dados cadastrais) |
 | `time_<uid>` | equipe pública criada por usuário; uma por conta, sem poderes de gestão |
 | `pro_<uid>` | dados privados do atleta: marcas, Garmin, exames, fora d'água |
+| `pt_<uid>_idx` / `pt_<uid>_<id>` | índice e treinos de piscina pessoais do atleta PRO |
 | `eq_<slug>` | equipe; `_users`, `_libs`, `_tridx`, `_cidx` complementam |
 | `eq_<slug>_tr_<id>` | treino, com os registros de cada atleta |
 | `eq_<slug>_cmp_<id>` | competição |
@@ -132,18 +134,15 @@ documentos específicos, nunca a coleção toda.
    Storage continua pendente.
 3. **Sanitização/XSS** — há interpolação de conteúdo em HTML sem validação
    suficiente.
-4. **Código PRO no cliente** (`CODIGO_PRO`) — visível no navegador; só faz
-   sentido enquanto não houver cobrança.
-5. **Ciclo de vida da conta** — e-mail não é verificado antes da sessão; não há
-   exclusão completa nem política de retenção.
-6. **Sem transações** — edições gravam o documento inteiro; escritas
+4. **Ciclo de vida da conta** — a confirmação de e-mail depende da entrega do
+   Firebase; o app registra sucesso/erro do pedido, mas não controla spam ou
+   bloqueio do provedor.
+5. **Sem transações** — edições gravam o documento inteiro; escritas
    concorrentes podem se sobrescrever.
-7. **Sem manifest e sem service worker** — não é PWA completa (não instala nem
-   funciona offline de verdade).
-8. **Sem suíte automatizada de testes** — a validação é manual. Os casos que
-   precisam passar estão em [`firebase/TESTES-DE-REGRAS.md`](firebase/TESTES-DE-REGRAS.md),
-   com um caminho sem instalar nada (Rules Playground) e o esqueleto da suíte.
-9. **CSP com `'unsafe-inline'`** — o app é um arquivo único com handlers
+6. **Cobertura automatizada parcial** — as regras do Firestore têm suíte no
+   emulador e o app tem testes internos, mas os fluxos completos de navegador
+   ainda precisam de QA manual antes de publicar.
+7. **CSP com `'unsafe-inline'`** — o app é um arquivo único com handlers
    inline, então a CSP não bloqueia script injetado no próprio HTML. Quem
    cobre esse lado é `esc()` e `urlSegura()`. Resolver de vez exigiria tirar
    os `onclick` do HTML.

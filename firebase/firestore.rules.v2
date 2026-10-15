@@ -50,29 +50,28 @@ service cloud.firestore {
       function meuDoc()    { return get(/databases/$(database)/documents/kv/$(minhaChaveU())).data; }
       function aprovado()  { return temMeuDoc() && meuDoc().aprovado == true; }
       function minhaEq()   { return temMeuDoc() ? meuDoc().equipe : null; }
-      // Quem administra a equipe. ATENÇÃO: no app isso não é só o perfil
-      // 'tecnico' — um atleta PRO com "Gestão de equipe" ativada faz o mesmo
-      // papel (ehGestor() no index.html). A gestão é um botão no cliente, que a
-      // regra não enxerga; o que dá para exigir é perfil PRO, aprovado e da
-      // MESMA equipe. Sem isso, o PRO em gestão perde a equipe inteira.
+      // Quem administra a equipe. PRO é atleta competitivo, não gestor: só o
+      // técnico aprovado da própria equipe recebe estes poderes. O administrador
+      // global continua coberto separadamente por ehAdmin().
       function gestorDe(eq) {
         return aprovado() && eq != null && meuDoc().equipe == eq
-          && ( meuDoc().perfil == 'tecnico' || meuDoc().perfil == 'pro' );
+          && meuDoc().perfil == 'tecnico';
       }
       function tecnicoDe(eq) { return gestorDe(eq); }
-      // Dono legado da equipe. Mantido para administrar equipes já existentes,
-      // mas não concede criação de equipe nem auto-aprovação de cadastro.
-      function souDonoDaEquipe(eq) {
-        return eq != null
-          && exists(/databases/$(database)/documents/kv/$('eq_' + eq))
-          && get(/databases/$(database)/documents/kv/$('eq_' + eq)).data.donoEmail == meuEmail();
-      }
       // Administrador global. O e-mail vem do token assinado pelo Firebase Auth;
       // alterar HTML ou dados do perfil no cliente não concede este acesso.
       function ehAdmin() { return logado() && meuEmail() == 'barbato.bruno@gmail.com'; }
       function ehDev() { return ehAdmin(); }
 
       function ehPro() { return chave.matches('pro_.*'); }
+      function ehMeuPro() { return logado() && chave == 'pro_' + meuUid(); }
+      function ehTreinoPessoal() { return chave.matches('pt_.*'); }
+      function ehMinhaChaveTreinoPessoal() {
+        return logado() && chave.matches('pt_' + meuUid() + '_.*');
+      }
+      function ehMeuTreinoPessoal() {
+        return ehMinhaChaveTreinoPessoal() && resource.data.dono == meuUid();
+      }
       function ehU()   { return chave.matches('u_.*'); }
       function ehEq()  { return chave.matches('eq_.*'); }
       // Afiliação pública criada por atleta. É separada de `eq_`: não contém
@@ -81,7 +80,7 @@ service cloud.firestore {
       function ehTime() { return chave.matches('time_.*'); }
       function ehMeuTime() { return logado() && chave == 'time_' + meuUid(); }
       function ehTimePublico() { return resource.data.get('categoria', null) == 'time'; }
-      function ehOutro() { return !ehPro() && !ehU() && !ehEq() && !ehTime(); }
+      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
@@ -113,6 +112,7 @@ service cloud.firestore {
         ( ehTimePublico() && logado() )
         // dados privados do atleta: dono; o administrador global é a exceção
         || ( ehPro() && logado() && resource.data.dono == meuUid() )
+        || ( ehTreinoPessoal() && ehMeuTreinoPessoal() )
         // cadastro: o próprio, o técnico aprovado da equipe dele, ou o dev
         || ( ehU() && ( ehMeuU() || ehDev() || tecnicoDe(resource.data.equipe) ) )
         // consultas de gestores filtradas por equipe + perfil (atleta/PRO)
@@ -129,7 +129,9 @@ service cloud.firestore {
       // ──────────────────────── CRIAÇÃO ─────────────────────────
       allow create: if
         ehAdmin() ||
-        ( ehPro() && logado() && request.resource.data.dono == meuUid() )
+        ( ehPro() && ehMeuPro() && request.resource.data.dono == meuUid() )
+        || ( ehTreinoPessoal() && ehMinhaChaveTreinoPessoal()
+                                  && request.resource.data.dono == meuUid() )
         // cadastro: só o meu, e SEMPRE pendente (bloqueia autopromoção)
         || ( ehU() && ehMeuU()
              && request.resource.data.dono == meuUid()
@@ -150,8 +152,10 @@ service cloud.firestore {
       // ─────────────────────── ATUALIZAÇÃO ──────────────────────
       allow update: if
         ehAdmin() ||
-        ( ehPro() && logado() && resource.data.dono == meuUid()
+        ( ehPro() && ehMeuPro() && resource.data.dono == meuUid()
                               && request.resource.data.dono == meuUid() )
+        || ( ehTreinoPessoal() && ehMeuTreinoPessoal()
+                                  && request.resource.data.dono == meuUid() )
         // o próprio cadastro: edita os dados, mas NÃO sobe o próprio privilégio.
         // `aprovado` só fica igual ou cai para false.
         || ( ehU() && ehMeuU() && naoMexeEm('dono') && naoMexeEm('perfil')
@@ -160,8 +164,8 @@ service cloud.firestore {
                   || request.resource.data.aprovado == false ) )
         // o dev libera técnicos (sem mexer em dono nem perfil)
         || ( ehU() && ehDev() && naoMexeEm('dono') && naoMexeEm('perfil') )
-        // o técnico aprova / inclui / exclui atletas da SUA equipe
-        || ( ehU() && resource.data.perfil == 'atleta' && naoMexeEm('dono') && naoMexeEm('perfil')
+        // o técnico aprova / inclui / exclui atletas comuns ou PRO da SUA equipe
+        || ( ehU() && resource.data.perfil in ['atleta', 'pro'] && naoMexeEm('dono') && naoMexeEm('perfil')
              && ( tecnicoDe(resource.data.equipe) || tecnicoDe(request.resource.data.equipe) ) )
         // minha lista de membros / meu snapshot de performance
         || ( ehEq() && aprovado() && ( meuPerf() || usersDaMinhaEq() ) )
@@ -170,7 +174,7 @@ service cloud.firestore {
              && naoMexeEm('equipe') )
         // demais documentos da equipe: só o técnico (ou o dono da equipe)
         || ( ehEq() && !ehEqAtleta() && naoMexeEm('equipe')
-             && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
+             && tecnicoDe(resource.data.equipe) )
         || ( ehTime() && ehMeuTime() && resource.data.dono == meuUid()
              && request.resource.data.dono == meuUid() && naoMexeEm('dono')
              && naoMexeEm('categoria') )
@@ -179,13 +183,14 @@ service cloud.firestore {
       // ───────────────────────── EXCLUSÃO ───────────────────────
       allow delete: if
         ehAdmin()
-        || ( ehPro() && logado() && resource.data.dono == meuUid() )
-        || ( ehU() && ( ehMeuU() || ehDev() || (resource.data.perfil == 'atleta' && tecnicoDe(resource.data.equipe)) ) )
+        || ( ehPro() && ehMeuPro() && resource.data.dono == meuUid() )
+        || ( ehTreinoPessoal() && ehMeuTreinoPessoal() )
+        || ( ehU() && ( ehMeuU() || ehDev() || (resource.data.perfil in ['atleta', 'pro'] && tecnicoDe(resource.data.equipe)) ) )
         // o próprio snapshot: sem isto, quem apaga a conta deixa para trás o
         // painel que o técnico enxerga (LGPD art. 18, e exigência das lojas).
         // É só o DELE: meuPerf() casa a chave com o uid do token.
         || ( ehEq() && meuPerf() )
-        || ( ehEq() && ( tecnicoDe(resource.data.equipe) || souDonoDaEquipe(resource.data.equipe) ) )
+        || ( ehEq() && tecnicoDe(resource.data.equipe) )
         || ( ehTime() && ehMeuTime() && resource.data.dono == meuUid() )
         || ( ehOutro() && ehAdmin() );
     }

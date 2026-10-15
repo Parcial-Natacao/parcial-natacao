@@ -8,9 +8,10 @@ Escrito para que outra sessão de trabalho retome o projeto sem contexto prévio
 ## 1. Para que serve
 
 Equipe de natação masters. O técnico monta os treinos e cronometra; os atletas
-recebem, lançam tempos e acompanham. Um dos atletas tem um perfil ampliado
-(PRO) com análise de desempenho cruzando treinos, competições e dados de
-relógio esportivo.
+recebem, lançam tempos e acompanham. Quem treina com objetivo competitivo
+escolhe o perfil ampliado (PRO), com análise de desempenho cruzando treinos,
+competições e dados de relógio esportivo. Ele pode treinar de forma independente
+ou vincular um técnico.
 
 O problema concreto que originou tudo: o técnico usa **planilha impressa** para
 anotar parciais em competição, e os tempos de treino se perdem em cadernos.
@@ -21,6 +22,7 @@ Não existe histórico consolidado para orientar carga.
 ## 2. Perfis
 
 ### 2.1 Atleta
+- Perfil simples para quem nada por saúde ou lazer.
 - Cadastro aberto; CPF é opcional. **Equipe/clube** e **técnico no app** são
   vínculos independentes e opcionais.
 - Sem equipe ou sem técnico, entra normalmente e registra os próprios treinos.
@@ -36,8 +38,9 @@ Não existe histórico consolidado para orientar carga.
 - Compartilha por WhatsApp.
 
 ### 2.2 Atleta PRO
-- Usa o código individual da equipe operacional. A equipe precisa ter sido
-  criada pelo administrador; não há mais código mestre global no fonte.
+- Perfil competitivo para quem acompanha o treino diariamente e registra os
+  tempos de todas as sessões. O cadastro é aberto, sem código; equipe/clube e
+  técnico são vínculos independentes e opcionais, como no atleta comum.
 - Tudo do atleta, mais:
   - **Marcas** — melhores tempos por prova e piscina; histórico de
     competições. Quando o técnico lança uma parcial completa numa prova, o
@@ -168,7 +171,7 @@ Armazenamento chave-valor. Prefixos:
 |---|---|
 | `u_<email>` | usuário: id, perfil, afiliação pública opcional, equipe operacional/técnico opcional, aprovação e dados cadastrais |
 | `time_<uid>` | equipe pública criada pelo atleta (nome, cidade, UF, dono); não contém treinos nem concede gestão |
-| `eq_<slug>` | equipe: slug, nome, tecnicoEmail, codigoPro |
+| `eq_<slug>` | equipe operacional: slug, nome, tecnicoEmail |
 | `eq_<slug>_users` | lista de e-mails |
 | `eq_<slug>_libs` | liberações: cpf, nome, nivel, usado, email |
 | `eq_<slug>_tridx` | índice de treinos: id, data, titulo, nivel, vol, para[], nAtletas |
@@ -176,6 +179,8 @@ Armazenamento chave-valor. Prefixos:
 | `eq_<slug>_cidx` | índice de competições |
 | `eq_<slug>_cmp_<id>` | competição: provas[] com inscritos[] e parciais[] |
 | `pro_<userId>` | dados PRO: pbs{}, garmin[], seco[], resultados[] |
+| `pt_<userId>_idx` | índice privado dos treinos de piscina criados pelo próprio PRO |
+| `pt_<userId>_<id>` | treino pessoal completo, com séries, tempos, RPE e duração |
 | `tok_<token>` | token de recuperação de senha, com expiração |
 | `sessao` | sessão local do aparelho (armazenamento pessoal) |
 

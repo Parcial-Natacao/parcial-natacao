@@ -43,7 +43,7 @@ service firebase.storage {
     function minhaEq()  { return temDoc() ? meuDoc().equipe : null; }
     function gestorDe(eq) {
       return aprovado() && eq != null && meuDoc().equipe == eq
-        && ( meuDoc().perfil == 'tecnico' || meuDoc().perfil == 'pro' );
+        && meuDoc().perfil == 'tecnico';
     }
 
     // Limites: o app já reduz a foto (760px) e recusa PDF acima de 500 KB,

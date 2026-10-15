@@ -80,16 +80,15 @@ Suba o `index.html` no GitHub Pages como você já fez com o Controle de OS
 
 ## Primeiro uso, na ordem certa
 
-1. **Você entra como Técnico** e cria a equipe (basta escolher o perfil
-   Técnico no cadastro e informar o nome da equipe). A equipe nasce nesse
-   momento.
-2. No **Elenco**, você libera os **CPFs** dos atletas e define o nível de cada
-   um. Sem CPF liberado, o atleta não consegue criar conta — é a trava da
-   equipe, de propósito.
-3. Cada **atleta** cria a conta com o próprio e-mail, senha e o CPF liberado.
-4. **Você, como PRO:** cadastre-se também no perfil **Atleta PRO** usando o
-   código mestre (`CODIGO_PRO` no topo do `index.html`, hoje
-   `BARBATO-PRO-2026`). O PRO não depende de liberação.
+1. O administrador cria a equipe operacional no painel de administração.
+2. O **técnico** cria a conta escolhendo essa equipe e aguarda a aprovação do
+   administrador antes de gerir atletas e treinos.
+3. Cada pessoa escolhe entre **Atleta** (saúde ou lazer) e **Atleta PRO**
+   (competição, acompanhamento diário, tempos completos e relatório). O
+   cadastro dos dois é aberto, sem código e com CPF opcional.
+4. Equipe/clube e técnico são opcionais. Quem pedir vínculo com um técnico
+   aguarda somente a aprovação desse vínculo; o restante do app continua
+   disponível. O PRO independente já pode registrar os próprios treinos.
 
 A partir daí, o que um lança o outro vê em segundos, no computador e no
 celular.
