@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v149';
+const VER='v150';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -632,10 +632,26 @@ async function trocarCodigoEquipe(){
   if(!ok)return toast('Não consegui trocar o código');
   S.eq=ok; toast('Código novo: '+novo); render();
 }
+/* O reenvio falhava calado em dois casos e o usuário ficava sem saber o que
+   fazer: sem sessão (`currentUser` nulo) e quando o Firebase estrangula o
+   reenvio por excesso de tentativas. Agora cada caso diz o que é e qual é a
+   saída. */
 async function reenviarConfirmacao(){
-  try{ await fauth.currentUser.sendEmailVerification();
-       toast('Enviei o link. Confira a caixa de entrada e o spam.'); }
-  catch(e){ toast('Não consegui enviar: '+(e.message||e)); }
+  if(!FB||!fauth)return alerta('Reenviar','Este modo não envia e-mail.');
+  if(!fauth.currentUser)
+    return alerta('Sessão expirada','Para reenviar o link eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro: o app volta direto para esta tela e o botão funciona.');
+  try{
+    await fauth.currentUser.sendEmailVerification();
+    S.envioFalhou=null;
+    alerta('Link enviado',`Mandei para <b>${esc(fauth.currentUser.email||'')}</b>. Procure também no <b>spam</b> e em <b>Promoções</b>. O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b> — vale liberar esse endereço se o seu provedor for rígido.`);
+  }catch(e){
+    const c=e&&e.code||'';
+    S.envioFalhou=c;
+    if(/too-many-requests/.test(c))
+      return alerta('Muitas tentativas','O Firebase bloqueou novos envios para esta conta por excesso de pedidos. <b>Espere cerca de uma hora</b> e tente de novo — enviar várias vezes seguidas atrasa, não acelera.');
+    alerta('Não consegui enviar',`${esc(traduzErroFB(c)||e.message||String(e))}<br><br>Se insistir, fale com o administrador: dá para conferir no painel se o endereço cadastrado está escrito certo.`);
+  }
+  render();
 }
 /* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
    Worker — veja backend/BACKEND-IA.md. Vazio = recurso desligado. */
@@ -1334,7 +1350,8 @@ async function cadastrarFB(dados){
   if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   let enviouConfirmacao=true;
-  try{ await cred.user.sendEmailVerification(); }catch(_){enviouConfirmacao=false}   /* confirma o e-mail por link */
+  try{ await cred.user.sendEmailVerification(); S.envioFalhou=null; }
+  catch(e){ enviouConfirmacao=false; S.envioFalhou=(e&&e.code)||'falhou'; }   /* confirma o e-mail por link */
   S.emailPendente=em; S.vista='verificar'; S.u=null; render();
   toast(enviouConfirmacao?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Use “Reenviar link”.');
 }
@@ -1350,7 +1367,7 @@ async function autenticarFB(email,senha){
   try{ await fauth.signInWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
   await fauth.currentUser.reload();
-  if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
+  if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.envioFalhou=null; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
   const u=await DB.get(kUser(em));
   if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Fale com o administrador para regularizar o acesso.'); }
   if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada. Fale com o administrador.'); }
@@ -1797,9 +1814,32 @@ async function enviarCadastro(){
   try{await cadastrar({perfil:S.perfilEscolhido,...CAD})}
   finally{CAD_ENVIANDO=false;const atual=document.getElementById('btnCriarConta');if(atual){atual.disabled=false;atual.textContent='Criar conta'}}
 }
-function telaVerificarEmail(){return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div><p class="muted">Enviamos um link para <b>${esc(S.emailPendente||fauth?.currentUser?.email||'seu e-mail')}</b>. Abra o link e volte aqui para liberar o acesso.</p><button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button><button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button><button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button></div>`}
-async function confirmarEmailAgora(){try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
-async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.vista='login';render()}
+function telaVerificarEmail(){
+  const em=S.emailPendente||fauth?.currentUser?.email||'seu e-mail';
+  return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div>
+  <p class="muted">Enviamos um link para <b>${esc(em)}</b>. Abra o link e volte aqui para liberar o acesso.</p>
+  ${S.envioFalhou?`<div class="note warn" style="text-align:left"><b>O envio falhou.</b> A sua conta foi criada, mas o e-mail não saiu${/too-many/.test(S.envioFalhou)?' porque houve pedidos demais seguidos — espere cerca de uma hora':''}. Use <b>Reenviar link</b>.</div>`:''}
+  <button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button>
+  <button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button>
+  <button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button>
+  ${/* A tela dizia "abra o link" e parava. Quem não recebe nada fica sem
+       próximo passo — e foi o que aconteceu. Estas três saídas cobrem as
+       causas reais, em ordem de frequência. */''}
+  <details class="xs" style="margin-top:14px;text-align:left"><summary class="muted" style="cursor:pointer">Não chegou nada?</summary>
+    <ol style="margin:8px 0 0;padding-left:18px;line-height:1.6">
+      <li><b>Confira o endereço acima.</b> Se tiver um erro de digitação, o link foi para uma caixa que não é sua. Toque em <b>Usar outra conta</b> e cadastre-se de novo com o endereço certo.</li>
+      <li><b>Procure no spam e em Promoções.</b> O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b>, e provedores rígidos barram esse tipo de endereço.</li>
+      <li><b>Teste se o seu provedor aceita e-mail nosso:</b> saia daqui, toque em <b>Esqueci minha senha</b> e peça o link. Se esse também não chegar, o problema é o provedor bloqueando — fale com o administrador, que consegue conferir o cadastro pelo painel.</li>
+    </ol></details>
+  </div>`}
+async function confirmarEmailAgora(){
+  /* Sem sessão esta função estourava e virava um "Não consegui verificar
+     agora" que não explicava nada. A sessão expira em ~1h, e quem espera o
+     e-mail chegar passa desse tempo com facilidade. */
+  if(FB&&fauth&&!fauth.currentUser)
+    return alerta('Sessão expirada','Para conferir a confirmação eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro — se o link já foi aberto, você entra direto.');
+  try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
+async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.envioFalhou=null;S.vista='login';render()}
 
 /* ---------- conta / ajustes ---------- */
 function abrirConta(){
@@ -4091,6 +4131,38 @@ teste('admin','a sincronia traz o resto do cadastro mesmo no contexto assumido',
 teste('admin','sem resposta do banco, nada é sobrescrito',a=>{
   const atual={id:'A1',equipe:'nova'};
   a.eq(mesclaUsuarioSincronia(atual,null,{equipe:'a3'}),atual,'mantém o que estava');});
+
+/* ── CONFIRMAÇÃO DE E-MAIL (v150) ────────────────────────────────────────────
+   Um cadastro real ficou preso aqui: o envio falhou, o aviso era um toast de
+   4 segundos e a tela não dizia o que fazer. Estes testes travam o contrário. */
+function _telaVerif(email,falha){
+  const g={emailPendente:S.emailPendente,envioFalhou:S.envioFalhou};
+  S.emailPendente=email; S.envioFalhou=falha;
+  const h=telaVerificarEmail();
+  S.emailPendente=g.emailPendente; S.envioFalhou=g.envioFalhou;
+  return h;
+}
+teste('confirmação','a tela mostra o endereço para onde o link foi',a=>{
+  const h=_telaVerif('amigo@provedor.com',null);
+  a.ok(h.includes('amigo@provedor.com'),'o e-mail cadastrado aparece na tela');
+  a.ok(!h.includes('O envio falhou'),'sem falha, sem alarme falso');});
+teste('confirmação','envio falhado vira aviso que não desaparece',a=>{
+  const h=_telaVerif('amigo@provedor.com','falhou');
+  a.ok(h.includes('O envio falhou'),'o aviso fica na tela, não é um toast');
+  a.ok(h.includes('Reenviar link'),'e aponta o botão que resolve');});
+teste('confirmação','excesso de pedidos é explicado como espera, não como erro',a=>{
+  const h=_telaVerif('amigo@provedor.com','auth/too-many-requests');
+  a.ok(/pedidos demais/.test(h),'diz que foram pedidos demais');
+  a.ok(/cerca de uma hora/.test(h),'e quanto esperar — reenviar de novo só atrasa');});
+teste('confirmação','a tela ensina as três saídas reais',a=>{
+  const h=_telaVerif('amigo@provedor.com',null);
+  a.ok(/Confira o endereço/.test(h),'1: erro de digitação no endereço');
+  a.ok(h.includes('noreply@parcial-cdb0e.firebaseapp.com'),'2: o remetente, para liberar no provedor');
+  a.ok(/Esqueci minha senha/.test(h),'3: o teste de entrega por outro e-mail');});
+teste('confirmação','sem endereço guardado a tela não mente',a=>{
+  const h=_telaVerif(null,null);
+  a.ok(h.includes('seu e-mail'),'usa um rótulo neutro em vez de inventar um endereço');
+  a.ok(h.includes('Usar outra conta'),'e ainda oferece recomeçar');});
 
 /* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
 function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
