@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v154';
+const VER='v155';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -766,6 +766,7 @@ const FB_CONFIG={
    Só leitura, e a conexão fecha na hora, para não travar uma eventual
    migração de esquema do próprio SDK. */
 let CAIXA_PRETA=null;
+const CAIXA_TODAS={};          /* todas as cópias de pro_ achadas, por id */
 const _CAIXA_PRONTA=(async()=>{
   try{
     if(typeof indexedDB==='undefined'||!FB_CONFIG.projectId)return;
@@ -796,7 +797,14 @@ const _CAIXA_PRONTA=(async()=>{
             if(typeof v!=='object')return;
             for(const k of Object.keys(v))cava(v[k],d+1); };
           cava(reg,0);
-          if(obj)CAIXA_PRETA={id,pro:obj,em:Date.now()};
+          /* ⚠️ GUARDAR TODAS, uma por documento. A versão anterior atribuía a
+             CAIXA_PRETA dentro do laço e ficava só com a ÚLTIMA encontrada —
+             e o cache de um administrador tem VÁRIOS pro_, porque abrir a
+             ficha de um atleta lê o pro_ dele. Se a última não fosse a do
+             próprio usuário, a conferência via `id !== pro_<meu uid>` não
+             fazia nada, em silêncio, justamente para quem mais precisava. */
+          if(obj&&(!CAIXA_TODAS[id]||JSON.stringify(obj).length>JSON.stringify(CAIXA_TODAS[id].pro).length))
+            CAIXA_TODAS[id]={id,pro:obj,em:Date.now()};
         }
       }
     } finally { db.close(); }
@@ -1685,7 +1693,10 @@ async function carregarDados(){
 async function conferirCaixaPreta(){
   if(!temDadosPessoais()||!S.pro)return;
   try{ await _CAIXA_PRONTA; }catch(_){}
-  if(!CAIXA_PRETA||CAIXA_PRETA.id!=='pro_'+S.u.id)return;   /* cópia de outra conta não serve */
+  /* escolhe A MINHA entre as cópias achadas — nunca a de outro atleta, que no
+     cache de um administrador está lado a lado com a minha */
+  CAIXA_PRETA=CAIXA_TODAS['pro_'+S.u.id]||null;
+  if(!CAIXA_PRETA)return;
   const faltando=[];
   for(const k of COLECOES_PRO){
     const cache=Array.isArray(CAIXA_PRETA.pro[k])?CAIXA_PRETA.pro[k].length:0;
@@ -2168,7 +2179,19 @@ function abrirModo(){
       <input type="file" accept=".json,application/json" onchange="importarBackup(this)"></div>
     ${EMREDE?`<div class="sep"></div><div class="eyebrow">perdeu algo?</div>
       <p class="xs muted" style="margin:6px 0 8px">O navegador guarda uma cópia do que já leu. Se um dado seu foi sobrescrito, a página de recuperação procura essa cópia — <b>no aparelho que não abriu o app desde então</b>.</p>
-      <a class="xs" href="./recuperar.html" target="_blank" rel="noopener">Abrir a página de recuperação</a>`:''}
+      ${/* diagnóstico sempre visível: a caixa-preta ficar calada foi o que mais
+            custou. Agora o usuário vê o que há no cache, mesmo que não sirva. */''}
+      <div class="xs muted" style="margin:0 0 8px">${(()=>{
+        const ids=Object.keys(CAIXA_TODAS);
+        if(!ids.length)return'<b>Cache deste aparelho:</b> nenhuma cópia de dados pessoais encontrada.';
+        const meu='pro_'+(S.u?S.u.id:'');
+        return`<b>Cache deste aparelho:</b> ${ids.length} cópia(s) — ${ids.map(i=>i===meu?'<b>a sua</b>':esc(i.slice(0,10))+'…').join(', ')}.`;
+      })()}</div>
+      ${/* SEM target="_blank": num app instalado no iPhone, abrir em nova aba
+            joga para o Safari, que tem armazenamento SEPARADO do app — a
+            página procuraria no lugar errado e não acharia nada. Navegando na
+            mesma janela, ela fica dentro do app e vê o cache certo. */''}
+      <a class="xs" href="./recuperar.html">Abrir a página de recuperação</a>`:''}
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 async function salvarTel(){
@@ -4540,6 +4563,19 @@ teste('caixa-preta','cópia de outra conta é ignorada',a=>{
      como técnico, e restaurá-la seria recriar a contaminação */
   const cache={garmin:[1,2,3,4],exames:[],bioimp:[],seco:[],resultados:[]};
   a.eq(_decideCaixa('pro_OUTRO','EU',cache,{garmin:[]}),null,'id diferente, nada a fazer');});
+teste('caixa-preta','escolhe A MINHA entre várias cópias no cache',a=>{
+  /* o cache de um administrador tem vários pro_, porque abrir a ficha de um
+     atleta lê o pro_ dele. A versão anterior ficava só com a ÚLTIMA do laço:
+     se não fosse a minha, a conferência não fazia nada, em silêncio. */
+  const todas={
+    'pro_OUTRO1':{id:'pro_OUTRO1',pro:{garmin:[1,2,3,4,5]}},
+    'pro_EU':    {id:'pro_EU',    pro:{garmin:[1,2,3,4],exames:[1,2,3]}},
+    'pro_OUTRO2':{id:'pro_OUTRO2',pro:{garmin:[1,2,3]}}};
+  const minha=todas['pro_'+'EU'];
+  a.ok(!!minha,'achou a minha mesmo não sendo a última');
+  const f=_decideCaixa(minha.id,'EU',minha.pro,{garmin:[],exames:[],bioimp:[],seco:[],resultados:[]});
+  a.eq(f.length,2,'e a comparação roda sobre ela');
+  a.eq(f[0].n,4,'com os números dela, não os do outro atleta');});
 teste('caixa-preta','servidor com dados não dispara nada',a=>{
   const cache={garmin:[1,2,3,4],exames:[],bioimp:[],seco:[],resultados:[]};
   a.eq(_decideCaixa('pro_EU','EU',cache,{garmin:[1,2,3],exames:[],bioimp:[],seco:[],resultados:[]}),null,

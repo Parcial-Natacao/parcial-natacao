@@ -267,7 +267,10 @@ async function procurar(){
   for(const a of ACHADOS){
     const r = retrato(a.dados);
     const peso = r.dias + r.resultados + r.exames + r.bioimp + r.pbs;
-    const id = (r.ehPro?'pro':'outro') + '|' + (a.dados.email||a.dados.matricula||a.chave||'');
+    /* a identidade do documento vem do docId, que é o único dado confiável:
+       dois atletas têm pro_ com a mesma forma e podem ter os mesmos campos,
+       então agrupar por conteúdo misturaria as cópias de pessoas diferentes */
+    const id = a.docId || ((r.ehPro?'pro':'outro') + '|' + (a.chave||''));
     const ant = vistos.get(id);
     if(!ant || peso > ant.peso) vistos.set(id,{...a,retrato:r,peso});
   }
