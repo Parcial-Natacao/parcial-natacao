@@ -744,6 +744,65 @@ const FB_CONFIG={
   messagingSenderId:'612432062815',
   appId:'1:612432062815:web:f4fca1e40b64ab823f2eea'
 };
+/* ── CAIXA-PRETA: o pro_ como estava ANTES da primeira sincronia ────────────
+   Por que isto existe, e por que roda aqui, antes de tudo:
+
+   A persistência offline guarda no navegador uma cópia de cada documento já
+   lido. Se o pro_ foi sobrescrito no servidor, essa cópia local AINDA é a
+   versão anterior — mas só até o aparelho sincronizar. Aí ela é substituída,
+   e a última chance de recuperar vai com ela.
+
+   A página recuperar.html resgata isso de fora do app. Só que ela não serve
+   para quem usa o app INSTALADO na tela de início do iPhone: ali o
+   armazenamento é isolado do Safari, e a página aberta no navegador não vê o
+   cache do app instalado. Para chegar nele é preciso abrir o app — que é
+   exatamente o que destrói a cópia.
+
+   Então o app tira a fotografia ele mesmo, no instante em que abre: lê o
+   cache ANTES de a sincronia acontecer. É uma corrida contra o SDK, e dá para
+   ganhar com folga, porque a sobrescrita dele depende de autenticar e ir à
+   rede. Se perdermos, não aparece nada — nunca atrapalha.
+
+   Só leitura, e a conexão fecha na hora, para não travar uma eventual
+   migração de esquema do próprio SDK. */
+let CAIXA_PRETA=null;
+const _CAIXA_PRONTA=(async()=>{
+  try{
+    if(typeof indexedDB==='undefined'||!FB_CONFIG.projectId)return;
+    const nome=`firestore/[DEFAULT]/${FB_CONFIG.projectId}/main`;
+    const db=await new Promise((res,rej)=>{
+      const r=indexedDB.open(nome);
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+      r.onblocked=()=>rej(new Error('bloqueado'));
+      setTimeout(()=>rej(new Error('tempo esgotado')),4000);
+    });
+    try{
+      const lojas=[...db.objectStoreNames].filter(n=>/^remoteDocuments/.test(n));
+      for(const loja of lojas){
+        const st=db.transaction(loja,'readonly').objectStore(loja);
+        const regs=await new Promise((res,rej)=>{const r=st.getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+        for(const reg of regs){
+          /* o app grava o documento inteiro como JSON num campo só, então o
+             payload aparece no cache como texto reconhecível — não dependemos
+             do formato interno do SDK, que muda de versão para versão. */
+          const txt=JSON.stringify(reg);
+          if(!/\\"pbs\\"|\\"garmin\\"/.test(txt))continue;
+          const id=(txt.match(/documents\\?\/[^/\\]+\\?\/(pro_[A-Za-z0-9_-]+)/)||[])[1];
+          if(!id)continue;
+          /* achado o documento certo, desce na estrutura até a string JSON */
+          let obj=null;
+          const cava=(v,d)=>{ if(obj||d>8||v==null)return;
+            if(typeof v==='string'){ if(v.length>20&&v[0]==='{'){ try{const o=JSON.parse(v); if(o&&('pbs'in o||'garmin'in o))obj=o;}catch(_){} } return; }
+            if(typeof v!=='object')return;
+            for(const k of Object.keys(v))cava(v[k],d+1); };
+          cava(reg,0);
+          if(obj)CAIXA_PRETA={id,pro:obj,em:Date.now()};
+        }
+      }
+    } finally { db.close(); }
+  }catch(_){ /* sem cache, sem IndexedDB, aba privada: segue a vida */ }
+})();
+
 let FB=null, fdb=null, fauth=null, fst=null;
 try{
   if(FB_CONFIG.apiKey && typeof firebase!=='undefined'){
@@ -1594,7 +1653,73 @@ async function carregarDados(){
   if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
   if(temPro()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
+  if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
+}
+/* ── A FOTOGRAFIA DO CACHE VALE MAIS QUE A DO SERVIDOR? ─────────────────────
+   Compara o que o servidor acabou de entregar com a cópia que estava no cache
+   antes da sincronia. Se o cache tinha uma coleção cheia e o servidor entrega
+   vazia, alguma gravação apagou — e o usuário é avisado ENQUANTO ainda dá para
+   desfazer, em vez de descobrir semanas depois.
+   Só acusa coleção que foi para ZERO: 40 dias virando 38 é uso normal. */
+async function conferirCaixaPreta(){
+  if(!temPro()||!S.pro)return;
+  try{ await _CAIXA_PRONTA; }catch(_){}
+  if(!CAIXA_PRETA||CAIXA_PRETA.id!=='pro_'+S.u.id)return;   /* cópia de outra conta não serve */
+  const faltando=[];
+  for(const k of COLECOES_PRO){
+    const cache=Array.isArray(CAIXA_PRETA.pro[k])?CAIXA_PRETA.pro[k].length:0;
+    const agora=Array.isArray(S.pro[k])?S.pro[k].length:0;
+    if(cache>=3&&agora===0)faltando.push({campo:k,n:cache});
+  }
+  S.caixaFalta=faltando.length?faltando:null;
+}
+function cardCaixaPreta(){
+  if(!S.caixaFalta)return'';
+  const l=S.caixaFalta.map(f=>`<b>${f.n}</b> em ${f.campo}`).join(', ');
+  return`<div class="note warn" style="margin:10px 0"><b>O que está no servidor tem menos do que a cópia guardada neste aparelho.</b>
+    <div class="xs" style="margin-top:4px">A cópia local tem ${l}, e o servidor devolveu vazio. Isso quase sempre é dado apagado por defeito.</div>
+    <button class="sm full" style="margin-top:8px" onclick="abrirCaixaPreta()">Ver e restaurar</button></div>`;
+}
+function abrirCaixaPreta(){
+  if(!S.caixaFalta)return;
+  const cp=CAIXA_PRETA.pro, CK=['sonoQ','energia','dor','estresse','humor'];
+  const g=Array.isArray(cp.garmin)?cp.garmin:[];
+  const relogio=g.filter(x=>x&&(x.hrv!=null||x.sono!=null||x.fc!=null)).length;
+  const ck=g.filter(x=>x&&CK.some(k=>x[k]!=null)).length;
+  const datas=g.map(x=>x&&x.data).filter(Boolean).sort();
+  sheet(`<h2>Restaurar do cache deste aparelho</h2>
+    <p class="small muted" style="margin:6px 0 10px">Esta é a cópia que o navegador tinha guardada antes de sincronizar. Vou repor <b>apenas as coleções que hoje estão vazias</b> — nada que você tem agora é sobrescrito.</p>
+    <div class="card" style="padding:4px 12px">
+      ${S.caixaFalta.map(f=>`<div class="row" style="padding:7px 0;border-top:1px solid var(--line)"><span class="grow">${esc(f.campo)}</span><b>${f.n}</b></div>`).join('')}
+    </div>
+    ${g.length?`<div class="note" style="margin:10px 0"><div class="xs"><b>Série de Saúde:</b> ${g.length} dia(s)${datas.length?` (${datas[0]} a ${datas[datas.length-1]})`:''} · ${relogio} com dados do relógio · <b>${ck} com check-in respondido</b>.</div>
+      <div class="xs muted" style="margin-top:4px">O do relógio você reimporta do export do Garmin. O check-in só existe nesta cópia.</div></div>`:''}
+    <button class="primary full" onclick="restaurarCaixaPreta()">Restaurar o que está vazio</button>
+    <button class="ghost full" style="margin-top:8px" onclick="baixarCaixaPreta()">Só baixar como arquivo</button>
+    <button class="ghost full" style="margin-top:8px" onclick="S.caixaFalta=null;fecharSheet();render()">Dispensar este aviso</button>`);
+}
+async function restaurarCaixaPreta(){
+  if(!S.caixaFalta||!CAIXA_PRETA)return;
+  let n=0;
+  for(const f of S.caixaFalta){
+    if(Array.isArray(CAIXA_PRETA.pro[f.campo])){ S.pro[f.campo]=CAIXA_PRETA.pro[f.campo]; n+=f.n; }
+  }
+  /* reposição é aditiva: a trava anti-apagamento não tem motivo para reclamar */
+  if(await salvarPro()===false)return;
+  S.caixaFalta=null; fecharSheet();
+  toast(`${n} registro(s) restaurado(s) do cache deste aparelho`); render();
+}
+function baixarCaixaPreta(){
+  if(!CAIXA_PRETA)return;
+  const pacote={app:APP_NOME,versao:'caixa-preta '+VER,em:new Date().toISOString(),
+    dados:{[CAIXA_PRETA.id]:CAIXA_PRETA.pro}};
+  try{
+    const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
+    const a=document.createElement('a'); a.href=url;
+    a.download=`meros360-cache-${hoje()}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Arquivo gerado');
+  }catch(e){ toast('Não consegui gerar o arquivo'); }
 }
 /* ── O CONTEXTO ADMINISTRATIVO SOBREVIVE À SINCRONIA ───────────────────────
    `assumirEquipe` reaponta S.u.equipe EM MEMÓRIA para a equipe que o
@@ -2151,7 +2276,9 @@ function renderInterno(){
     if(S.u.podeSaude)mapa.garmin=telaGarmin;
     if(S.u.podeRelatorio)mapa.relatorio=telaRelatorio; }
   if(ehDev())mapa.equipes=telaEquipes;   /* aba do desenvolvedor */
-  app.innerHTML=avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  /* cardCaixaPreta vem primeiro, e em todas as abas: perda de dado não espera
+     o usuário passar na aba certa — e a cópia que a repõe é perecível. */
+  app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
   _irAteHoje();
 }
 /* cor determinística por equipe (fundo suave) + destaque */
@@ -4344,6 +4471,42 @@ teste('trava','apagar um item por vez não vira alarme',a=>{
 teste('trava','sem censo (primeira gravação) nada é barrado',a=>{
   a.eq(perdasPro(null,{pbs:{},resultados:[]}).length,0,'conta nova grava à vontade');
   a.eq(perdasPro(undefined,null).length,0,'nem quebra sem pro');});
+
+/* ── CAIXA-PRETA (v153) ─────────────────────────────────────────────────────
+   A fotografia do cache antes da sincronia. Testo a DECISÃO: quando avisar,
+   quando calar, e que ela nunca confunda a cópia de outra conta com a minha —
+   restaurar o pro_ de outra pessoa seria repetir o bug na recuperação. */
+function _decideCaixa(cacheId,meuId,cache,agora){
+  if(!cache||cacheId!=='pro_'+meuId)return null;
+  const falta=[];
+  for(const k of COLECOES_PRO){
+    const c=Array.isArray(cache[k])?cache[k].length:0;
+    const a=Array.isArray(agora&&agora[k])?agora[k].length:0;
+    if(c>=3&&a===0)falta.push({campo:k,n:c});
+  }
+  return falta.length?falta:null;
+}
+teste('caixa-preta','cache cheio e servidor vazio vira aviso',a=>{
+  const cache={garmin:[1,2,3,4],exames:[1,2,3],bioimp:[],seco:[],resultados:[]};
+  const agora={garmin:[],exames:[],bioimp:[],seco:[],resultados:[]};
+  const f=_decideCaixa('pro_EU','EU',cache,agora);
+  a.eq(f.length,2,'duas coleções perdidas');
+  a.eq(f[0].campo,'garmin','a série de Saúde entre elas');
+  a.eq(f[0].n,4,'com a contagem do que dá para repor');});
+teste('caixa-preta','cópia de outra conta é ignorada',a=>{
+  /* a defesa que importa: a cópia no cache pode ser de um atleta que eu abri
+     como técnico, e restaurá-la seria recriar a contaminação */
+  const cache={garmin:[1,2,3,4],exames:[],bioimp:[],seco:[],resultados:[]};
+  a.eq(_decideCaixa('pro_OUTRO','EU',cache,{garmin:[]}),null,'id diferente, nada a fazer');});
+teste('caixa-preta','servidor com dados não dispara nada',a=>{
+  const cache={garmin:[1,2,3,4],exames:[],bioimp:[],seco:[],resultados:[]};
+  a.eq(_decideCaixa('pro_EU','EU',cache,{garmin:[1,2,3],exames:[],bioimp:[],seco:[],resultados:[]}),null,
+       '4→3 é uso normal, não perda');
+  a.eq(_decideCaixa('pro_EU','EU',null,{garmin:[]}),null,'sem cache, sem aviso');});
+teste('caixa-preta','coleção curta no cache não vira alarme',a=>{
+  const cache={garmin:[1,2],exames:[],bioimp:[],seco:[],resultados:[]};
+  a.eq(_decideCaixa('pro_EU','EU',cache,{garmin:[],exames:[],bioimp:[],seco:[],resultados:[]}),null,
+       '2 registros podem ter sido apagados de propósito');});
 
 /* ── PROCEDÊNCIA DAS MARCAS (v151) ──────────────────────────────────────── */
 teste('procedência','cada resultado é classificado pela chave',a=>{
