@@ -5,7 +5,7 @@ treinos, registro de tempos e parciais, competições, marcas, carga/fadiga e
 relatório de performance. **Um arquivo, sem build, sem dependências
 instaladas.**
 
-**Versão atual:** v79 (o número aparece no cabeçalho do app e em `const VER`)
+**Versão atual:** v147 (o número aparece no cabeçalho do app e em `const VER`)
 **Autor do conteúdo técnico:** Bruno Barbato (atleta e engenheiro)
 **Contexto:** equipe de natação masters, Campo Grande — MS
 
@@ -59,7 +59,8 @@ topo do `<script>` — trocar de banco significa reescrever só esse objeto.
 
 | Chave | Conteúdo |
 |---|---|
-| `u_<email>` | conta do usuário (perfil, equipe, aprovação, dados cadastrais) |
+| `u_<email>` | conta do usuário (perfil, afiliação pública opcional, vínculo técnico/equipe operacional, aprovação, dados cadastrais) |
+| `time_<uid>` | equipe pública criada por usuário; uma por conta, sem poderes de gestão |
 | `pro_<uid>` | dados privados do atleta: marcas, Garmin, exames, fora d'água |
 | `eq_<slug>` | equipe; `_users`, `_libs`, `_tridx`, `_cidx` complementam |
 | `eq_<slug>_tr_<id>` | treino, com os registros de cada atleta |
@@ -69,8 +70,9 @@ topo do `<script>` — trocar de banco significa reescrever só esse objeto.
 
 ### Campos espelhados — não remova
 
-Além do `v`, cada documento carrega `dono`, `donoEmail`, `equipe`, `perfil` e
-`aprovado` como **campos reais**. Eles existem porque as regras do Firestore
+Além do `v`, cada documento carrega `dono`, `donoEmail`, `equipe`, `perfil`,
+`aprovado` e, quando aplicável, `categoria` como **campos reais**, fora do JSON.
+Eles existem porque as regras do Firestore
 **não conseguem ler JSON dentro de uma string** — sem eles, nenhuma
 autorização por dono, equipe ou função é possível. São gravados por
 `camposSeguranca()` em toda escrita. Ver `ARQUITETURA.md` §8.

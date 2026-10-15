@@ -19,6 +19,10 @@ const perfil = ({ uid, email, equipe, tipo = 'atleta', aprovado = true }) => ({
   perfil: tipo,
   aprovado,
 });
+const timePublico = ({ uid, nome = 'Equipe Pública' }) => ({
+  v: JSON.stringify({ id: uid, dono: uid, nome, ativo: true }),
+  dono: uid, donoEmail: null, equipe: null, perfil: null, aprovado: null, categoria: 'time',
+});
 
 const dadosBase = {
   'u_atleta@x.com': perfil({ uid: 'UID_ATLETA', email: 'atleta@x.com', equipe: 'a3' }),
@@ -38,6 +42,7 @@ const dadosBase = {
   'eq_a3_perf_UID_OUTRO': { v: '{}', donoEmail: 'outro@x.com', equipe: 'a3' },
   'pro_UID_ATLETA': { v: '{}', dono: 'UID_ATLETA', donoEmail: 'atleta@x.com' },
   'pro_UID_OUTRO': { v: '{}', dono: 'UID_OUTRO', donoEmail: 'outro@x.com' },
+  'time_UID_OUTRO': timePublico({ uid: 'UID_OUTRO', nome: 'Equipe do Outro' }),
 };
 
 const banco = (uid, email) => env.authenticatedContext(uid, { email }).firestore();
@@ -182,5 +187,29 @@ describe('regras do PARCIAL', () => {
   test('24. técnico aprovado pode aprovar atleta pendente da própria equipe', async () => {
     const db = banco('UID_TECNICO', 'tecnico@x.com');
     await assertSucceeds(updateDoc(kv(db, 'u_pendente@x.com'), { aprovado: true }));
+  });
+
+  test('25. atleta cria uma afiliação pública sem virar gestor', async () => {
+    const db = banco('UID_ATLETA', 'atleta@x.com');
+    await assertSucceeds(setDoc(kv(db, 'time_UID_ATLETA'), timePublico({ uid: 'UID_ATLETA' })));
+    await assertFails(setDoc(kv(db, 'eq_time-golpe'), {
+      v: '{}', dono: null, donoEmail: 'atleta@x.com', equipe: 'time-golpe', perfil: null, aprovado: null,
+    }));
+  });
+
+  test('26. uma conta não cria equipe pública em nome de outra', async () => {
+    const db = banco('UID_ATLETA', 'atleta@x.com');
+    await assertFails(setDoc(kv(db, 'time_UID_FALSO'), timePublico({ uid: 'UID_FALSO' })));
+  });
+
+  test('27. equipes públicas podem ser listadas por qualquer usuário logado', async () => {
+    const db = banco('UID_PENDENTE', 'pendente@x.com');
+    const lista=query(collection(db, 'kv'),where('categoria','==','time'));
+    await assertSucceeds(getDocs(lista));
+  });
+
+  test('28. outro usuário não altera a equipe pública alheia', async () => {
+    const db = banco('UID_ATLETA', 'atleta@x.com');
+    await assertFails(updateDoc(kv(db, 'time_UID_OUTRO'), { v: JSON.stringify({ nome: 'Tomada' }) }));
   });
 });
