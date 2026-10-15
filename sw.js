@@ -23,12 +23,16 @@
    O nome do cache deriva dela; sem incrementar, o cache antigo continua sendo
    servido e o arquivo novo nunca chega. Aconteceu na v86: o ícone foi trocado,
    a VERSAO não, e o app seguiu mostrando o ícone velho. */
-const VERSAO = 'v149';
+const VERSAO = 'v154';
 const CACHE  = 'meros360-' + VERSAO;
 /* Os ícones têm NOME versionado (app-icone-*) em vez de `?v=`: para o ícone da
    tela de início o iOS às vezes ignora a query e guarda por caminho, e o ícone
    antigo continuava aparecendo mesmo com tudo certo no servidor. Trocar o nome
    do arquivo é o único jeito que funciona sempre. */
+/* recuperar.html NÃO entra no cache de propósito: ela lê o cache do Firestore
+   para resgatar dados sobrescritos, e precisa ser sempre a versão do servidor
+   — uma cópia velha dela atrapalharia exatamente quem mais precisa. Ela é
+   servida pela regra de documento (rede primeiro) como qualquer página. */
 const ESSENCIAIS = ['./', './index.html', './manifest.webmanifest', './privacidade.html',
                     './icone-m360-192.png', './icone-m360-512.png', './icone-m360-180.png',
                     './logo-m360.png', './logo-m360-claro.png'];

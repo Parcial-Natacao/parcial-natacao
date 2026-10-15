@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v149';
+const VER='v154';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -632,10 +632,26 @@ async function trocarCodigoEquipe(){
   if(!ok)return toast('Não consegui trocar o código');
   S.eq=ok; toast('Código novo: '+novo); render();
 }
+/* O reenvio falhava calado em dois casos e o usuário ficava sem saber o que
+   fazer: sem sessão (`currentUser` nulo) e quando o Firebase estrangula o
+   reenvio por excesso de tentativas. Agora cada caso diz o que é e qual é a
+   saída. */
 async function reenviarConfirmacao(){
-  try{ await fauth.currentUser.sendEmailVerification();
-       toast('Enviei o link. Confira a caixa de entrada e o spam.'); }
-  catch(e){ toast('Não consegui enviar: '+(e.message||e)); }
+  if(!FB||!fauth)return alerta('Reenviar','Este modo não envia e-mail.');
+  if(!fauth.currentUser)
+    return alerta('Sessão expirada','Para reenviar o link eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro: o app volta direto para esta tela e o botão funciona.');
+  try{
+    await fauth.currentUser.sendEmailVerification();
+    S.envioFalhou=null;
+    alerta('Link enviado',`Mandei para <b>${esc(fauth.currentUser.email||'')}</b>. Procure também no <b>spam</b> e em <b>Promoções</b>. O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b> — vale liberar esse endereço se o seu provedor for rígido.`);
+  }catch(e){
+    const c=e&&e.code||'';
+    S.envioFalhou=c;
+    if(/too-many-requests/.test(c))
+      return alerta('Muitas tentativas','O Firebase bloqueou novos envios para esta conta por excesso de pedidos. <b>Espere cerca de uma hora</b> e tente de novo — enviar várias vezes seguidas atrasa, não acelera.');
+    alerta('Não consegui enviar',`${esc(traduzErroFB(c)||e.message||String(e))}<br><br>Se insistir, fale com o administrador: dá para conferir no painel se o endereço cadastrado está escrito certo.`);
+  }
+  render();
 }
 /* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
    Worker — veja backend/BACKEND-IA.md. Vazio = recurso desligado. */
@@ -728,6 +744,65 @@ const FB_CONFIG={
   messagingSenderId:'612432062815',
   appId:'1:612432062815:web:f4fca1e40b64ab823f2eea'
 };
+/* ── CAIXA-PRETA: o pro_ como estava ANTES da primeira sincronia ────────────
+   Por que isto existe, e por que roda aqui, antes de tudo:
+
+   A persistência offline guarda no navegador uma cópia de cada documento já
+   lido. Se o pro_ foi sobrescrito no servidor, essa cópia local AINDA é a
+   versão anterior — mas só até o aparelho sincronizar. Aí ela é substituída,
+   e a última chance de recuperar vai com ela.
+
+   A página recuperar.html resgata isso de fora do app. Só que ela não serve
+   para quem usa o app INSTALADO na tela de início do iPhone: ali o
+   armazenamento é isolado do Safari, e a página aberta no navegador não vê o
+   cache do app instalado. Para chegar nele é preciso abrir o app — que é
+   exatamente o que destrói a cópia.
+
+   Então o app tira a fotografia ele mesmo, no instante em que abre: lê o
+   cache ANTES de a sincronia acontecer. É uma corrida contra o SDK, e dá para
+   ganhar com folga, porque a sobrescrita dele depende de autenticar e ir à
+   rede. Se perdermos, não aparece nada — nunca atrapalha.
+
+   Só leitura, e a conexão fecha na hora, para não travar uma eventual
+   migração de esquema do próprio SDK. */
+let CAIXA_PRETA=null;
+const _CAIXA_PRONTA=(async()=>{
+  try{
+    if(typeof indexedDB==='undefined'||!FB_CONFIG.projectId)return;
+    const nome=`firestore/[DEFAULT]/${FB_CONFIG.projectId}/main`;
+    const db=await new Promise((res,rej)=>{
+      const r=indexedDB.open(nome);
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+      r.onblocked=()=>rej(new Error('bloqueado'));
+      setTimeout(()=>rej(new Error('tempo esgotado')),4000);
+    });
+    try{
+      const lojas=[...db.objectStoreNames].filter(n=>/^remoteDocuments/.test(n));
+      for(const loja of lojas){
+        const st=db.transaction(loja,'readonly').objectStore(loja);
+        const regs=await new Promise((res,rej)=>{const r=st.getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+        for(const reg of regs){
+          /* o app grava o documento inteiro como JSON num campo só, então o
+             payload aparece no cache como texto reconhecível — não dependemos
+             do formato interno do SDK, que muda de versão para versão. */
+          const txt=JSON.stringify(reg);
+          if(!/\\"pbs\\"|\\"garmin\\"/.test(txt))continue;
+          const id=(txt.match(/documents\\?\/[^/\\]+\\?\/(pro_[A-Za-z0-9_-]+)/)||[])[1];
+          if(!id)continue;
+          /* achado o documento certo, desce na estrutura até a string JSON */
+          let obj=null;
+          const cava=(v,d)=>{ if(obj||d>8||v==null)return;
+            if(typeof v==='string'){ if(v.length>20&&v[0]==='{'){ try{const o=JSON.parse(v); if(o&&('pbs'in o||'garmin'in o))obj=o;}catch(_){} } return; }
+            if(typeof v!=='object')return;
+            for(const k of Object.keys(v))cava(v[k],d+1); };
+          cava(reg,0);
+          if(obj)CAIXA_PRETA={id,pro:obj,em:Date.now()};
+        }
+      }
+    } finally { db.close(); }
+  }catch(_){ /* sem cache, sem IndexedDB, aba privada: segue a vida */ }
+})();
+
 let FB=null, fdb=null, fauth=null, fst=null;
 try{
   if(FB_CONFIG.apiKey && typeof firebase!=='undefined'){
@@ -919,16 +994,37 @@ async function recarregarForcado(){
   u.searchParams.set('v',Date.now());
   location.replace(u.toString());
 }
-function exportarBackup(){
+/* ── BACKUP ────────────────────────────────────────────────────────────────
+   ⚠️ Esta função era INÚTIL para quem usa o app em rede, que é a situação de
+   todo mundo: `LOCAL` é falso sempre que o Firebase está ligado, então ela
+   caía no `else` e exportava MEM — que em modo Firebase está vazio. O arquivo
+   saía com `dados:{}` e dizia "Backup gerado". Quem perdeu dados descobriu
+   assim, tarde, que não tinha de onde voltar.
+   Em rede não existe "percorrer tudo": o Firestore não lista o que as regras
+   não deixam ler. Então pedimos pelas chaves que são do próprio usuário —
+   cadastro, dados PRO, o espelho da equipe e a caixa do currículo. É isso que
+   um atleta precisa para não perder a vida dele no app. */
+async function exportarBackup(){
   const dados={};
   if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
     if(k&&k.startsWith(PFX))dados[k.slice(PFX.length)]=JSON.parse(localStorage.getItem(k))}}
+  else if(FB||NUVEM){
+    if(!S.u)return toast('Entre na sua conta para exportar.');
+    toast('Montando o backup…');
+    const chaves=[kUser(S.u.email)];
+    if(temDadosPessoais())chaves.push(kPro(S.u.id));
+    if(S.u.equipe){ chaves.push(kEq(S.u.equipe), kPerf(S.u.equipe,S.u.id), kAbmn(S.u.equipe,S.u.id)); }
+    for(const k of chaves){ try{ const v=await DB.get(k); if(v!=null)dados[k]=v; }catch(_){} }
+  }
   else Object.keys(MEM).forEach(k=>dados[k]=JSON.parse(MEM[k]));
-  const pacote={app:APP_NOME,versao:VER,em:new Date().toISOString(),dados};
+  const n=Object.keys(dados).length;
+  if(!n)return alerta('Backup vazio','Não consegui ler nenhum dado seu. Confira se você está conectado e entrou na conta — um arquivo vazio é pior do que nenhum, porque parece um backup.');
+  const pacote={app:APP_NOME,versao:VER,em:new Date().toISOString(),
+    conta:S.u?S.u.email:null,censo:temDadosPessoais()?censoPro(S.pro):null,dados};
   try{
     const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
-    const a=document.createElement('a'); a.href=url; a.download=`parcial-backup-${hoje()}.json`; a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Backup gerado');
+    const a=document.createElement('a'); a.href=url; a.download=`meros360-backup-${hoje()}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),4000); toast(`Backup gerado · ${n} registro(s)`);
   }catch(e){
     sheet(`<h2>Backup</h2><p class="small muted">Copie e guarde este texto.</p>
       <textarea id="bkTxt" style="min-height:200px;font-size:11px">${esc(JSON.stringify(pacote))}</textarea>
@@ -1352,7 +1448,8 @@ async function cadastrarFB(dados){
   if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   let enviouConfirmacao=true;
-  try{ await cred.user.sendEmailVerification(); }catch(_){enviouConfirmacao=false}   /* confirma o e-mail por link */
+  try{ await cred.user.sendEmailVerification(); S.envioFalhou=null; }
+  catch(e){ enviouConfirmacao=false; S.envioFalhou=(e&&e.code)||'falhou'; }   /* confirma o e-mail por link */
   S.emailPendente=em; S.vista='verificar'; S.u=null; render();
   toast(enviouConfirmacao?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Use “Reenviar link”.');
 }
@@ -1368,7 +1465,7 @@ async function autenticarFB(email,senha){
   try{ await fauth.signInWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
   await fauth.currentUser.reload();
-  if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
+  if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.envioFalhou=null; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
   const u=await DB.get(kUser(em));
   if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Fale com o administrador para regularizar o acesso.'); }
   if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada. Fale com o administrador.'); }
@@ -1471,6 +1568,14 @@ function guardarChapeu(u,atleta){
 /* troca de chapéu zera o que estava aberto: treino, competição, atleta
    selecionado. Sem isso a tela nova herda a navegação da anterior. */
 function _limparContexto(){
+  /* ⚠️ _limparLaudo() PRIMEIRO, e não é detalhe: quando o técnico (ou o PRO
+     em gestão) está vendo o relatório/marcas de um atleta, S.pro APONTA PARA
+     OS DADOS DAQUELE ATLETA. Zerar S.laudoAtleta sem devolver S.pro deixava
+     o app convencido de que os dados do outro eram os do próprio usuário —
+     na vista de atleta dele, com permissão de escrita no pro_ dele.
+     Era assim que as marcas de um atleta apareciam para outro, e era assim
+     que um currículo ABMN importado em seguida se somava ao do colega. */
+  _limparLaudo();
   S.aba='treinos'; S.sub=null; S.provaSel=null; S.atletaSel=null;
   S.treino=null; S.comp=null; S.laudoAtleta=null; S.pilha=[];
 }
@@ -1528,6 +1633,7 @@ async function carregarDados(){
   if(!eq){
     S.eq=null; S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+    if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
@@ -1565,8 +1671,75 @@ async function carregarDados(){
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
+  if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
+}
+/* ── A FOTOGRAFIA DO CACHE VALE MAIS QUE A DO SERVIDOR? ─────────────────────
+   Compara o que o servidor acabou de entregar com a cópia que estava no cache
+   antes da sincronia. Se o cache tinha uma coleção cheia e o servidor entrega
+   vazia, alguma gravação apagou — e o usuário é avisado ENQUANTO ainda dá para
+   desfazer, em vez de descobrir semanas depois.
+   Só acusa coleção que foi para ZERO: 40 dias virando 38 é uso normal. */
+async function conferirCaixaPreta(){
+  if(!temDadosPessoais()||!S.pro)return;
+  try{ await _CAIXA_PRONTA; }catch(_){}
+  if(!CAIXA_PRETA||CAIXA_PRETA.id!=='pro_'+S.u.id)return;   /* cópia de outra conta não serve */
+  const faltando=[];
+  for(const k of COLECOES_PRO){
+    const cache=Array.isArray(CAIXA_PRETA.pro[k])?CAIXA_PRETA.pro[k].length:0;
+    const agora=Array.isArray(S.pro[k])?S.pro[k].length:0;
+    if(cache>=3&&agora===0)faltando.push({campo:k,n:cache});
+  }
+  S.caixaFalta=faltando.length?faltando:null;
+}
+function cardCaixaPreta(){
+  if(!S.caixaFalta)return'';
+  const l=S.caixaFalta.map(f=>`<b>${f.n}</b> em ${f.campo}`).join(', ');
+  return`<div class="note warn" style="margin:10px 0"><b>O que está no servidor tem menos do que a cópia guardada neste aparelho.</b>
+    <div class="xs" style="margin-top:4px">A cópia local tem ${l}, e o servidor devolveu vazio. Isso quase sempre é dado apagado por defeito.</div>
+    <button class="sm full" style="margin-top:8px" onclick="abrirCaixaPreta()">Ver e restaurar</button></div>`;
+}
+function abrirCaixaPreta(){
+  if(!S.caixaFalta)return;
+  const cp=CAIXA_PRETA.pro, CK=['sonoQ','energia','dor','estresse','humor'];
+  const g=Array.isArray(cp.garmin)?cp.garmin:[];
+  const relogio=g.filter(x=>x&&(x.hrv!=null||x.sono!=null||x.fc!=null)).length;
+  const ck=g.filter(x=>x&&CK.some(k=>x[k]!=null)).length;
+  const datas=g.map(x=>x&&x.data).filter(Boolean).sort();
+  sheet(`<h2>Restaurar do cache deste aparelho</h2>
+    <p class="small muted" style="margin:6px 0 10px">Esta é a cópia que o navegador tinha guardada antes de sincronizar. Vou repor <b>apenas as coleções que hoje estão vazias</b> — nada que você tem agora é sobrescrito.</p>
+    <div class="card" style="padding:4px 12px">
+      ${S.caixaFalta.map(f=>`<div class="row" style="padding:7px 0;border-top:1px solid var(--line)"><span class="grow">${esc(f.campo)}</span><b>${f.n}</b></div>`).join('')}
+    </div>
+    ${g.length?`<div class="note" style="margin:10px 0"><div class="xs"><b>Série de Saúde:</b> ${g.length} dia(s)${datas.length?` (${datas[0]} a ${datas[datas.length-1]})`:''} · ${relogio} com dados do relógio · <b>${ck} com check-in respondido</b>.</div>
+      <div class="xs muted" style="margin-top:4px">O do relógio você reimporta do export do Garmin. O check-in só existe nesta cópia.</div></div>`:''}
+    <button class="primary full" onclick="restaurarCaixaPreta()">Restaurar o que está vazio</button>
+    <button class="ghost full" style="margin-top:8px" onclick="baixarCaixaPreta()">Só baixar como arquivo</button>
+    <button class="ghost full" style="margin-top:8px" onclick="S.caixaFalta=null;fecharSheet();render()">Dispensar este aviso</button>`);
+}
+async function restaurarCaixaPreta(){
+  if(!S.caixaFalta||!CAIXA_PRETA)return;
+  let n=0;
+  for(const f of S.caixaFalta){
+    if(Array.isArray(CAIXA_PRETA.pro[f.campo])){ S.pro[f.campo]=CAIXA_PRETA.pro[f.campo]; n+=f.n; }
+  }
+  /* reposição é aditiva: a trava anti-apagamento não tem motivo para reclamar */
+  if(await salvarPro()===false)return;
+  S.caixaFalta=null; fecharSheet();
+  toast(`${n} registro(s) restaurado(s) do cache deste aparelho`); render();
+}
+function baixarCaixaPreta(){
+  if(!CAIXA_PRETA)return;
+  const pacote={app:APP_NOME,versao:'caixa-preta '+VER,em:new Date().toISOString(),
+    dados:{[CAIXA_PRETA.id]:CAIXA_PRETA.pro}};
+  try{
+    const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
+    const a=document.createElement('a'); a.href=url;
+    a.download=`meros360-cache-${hoje()}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Arquivo gerado');
+  }catch(e){ toast('Não consegui gerar o arquivo'); }
 }
 /* ── O CONTEXTO ADMINISTRATIVO SOBREVIVE À SINCRONIA ───────────────────────
    `assumirEquipe` reaponta S.u.equipe EM MEMÓRIA para a equipe que o
@@ -1668,8 +1841,55 @@ function ligarSincronia(){
   }
   _fbEq=eq; _fbSnap=()=>offs.forEach(f=>{try{f()}catch(_){}});
 }
-async function salvarPro(){
+/* ── CENSO DO pro_: QUANTAS ENTRADAS TINHA QUANDO CARREGOU ──────────────────
+   O pro_ é gravado inteiro a cada salvarPro(), então uma gravação com o objeto
+   errado não corrompe um campo: apaga tudo o que não estiver nele. Foi o que
+   aconteceu quando o espelho de outro atleta foi gravado por cima — o objeto
+   do espelho não tem check-in nem Garmin, e esses dados simplesmente deixaram
+   de existir, sem erro e sem aviso.
+   O censo é tirado no carregamento e comparado na gravação. Não custa leitura
+   nenhuma: é só a contagem do que já estava em memória. */
+const COLECOES_PRO=['resultados','garmin','exames','bioimp','seco'];
+function censoPro(pro){
+  const c={pbs:Object.keys((pro&&pro.pbs)||{}).length};
+  for(const k of COLECOES_PRO)c[k]=Array.isArray(pro&&pro[k])?pro[k].length:0;
+  return c;
+}
+/* só acusa o APAGAMENTO EM MASSA (tinha 3+, vai a zero). Apagar um item, ou
+   esvaziar uma lista curta, é operação normal e não pode virar alarme. */
+function perdasPro(censo,pro){
+  if(!censo)return [];
+  const novo=censoPro(pro), out=[];
+  for(const k in censo)if(censo[k]>=3&&novo[k]===0)out.push(`${k} (${censo[k]}→0)`);
+  return out;
+}
+async function salvarPro(op){
+  /* temDadosPessoais, não temPro: todo atleta tem pro_ para gravar os próprios
+     treinos, mesmo sem equipe — as abas avançadas é que seguem temPro. */
   if(!(S.u&&temDadosPessoais()))return;
+  /* ── TRAVA CONTRA GRAVAR O ATLETA ERRADO ─────────────────────────────────
+     S.pro é o único objeto de dados pessoais do app, e no modo espelho ele
+     aponta para OUTRO atleta. Qualquer salvarPro() nessa janela escrevia os
+     dados do outro dentro de kPro(S.u.id) — contaminação permanente, e com
+     cópia no kPerf, onde o técnico também passava a ver.
+     A trava fica AQUI, e não em cada um dos ~24 pontos que chamam esta
+     função, porque um ponto novo esquecido traria o bug de volta. E ela olha
+     a MARCA NO DADO (_espelho), não o estado de navegação: se um caminho
+     futuro zerar S.laudoAtleta sem devolver S.pro, continua travado. */
+  if(S.laudoAtleta||(S.pro&&S.pro._espelho)){
+    console.warn('salvarPro bloqueado: S.pro é o espelho de',S.laudoAtleta||S.pro._espelho);
+    toast('Não gravei: esta tela é a do atleta, não a sua.');
+    return false;
+  }
+  /* segunda rede: mesmo com o espelho resolvido, nenhuma gravação apaga
+     coleções inteiras sem que o dono mande. `op.apagando` é o consentimento
+     explícito de quem apaga de propósito (zerar marcas, apagar conta). */
+  const perdas=(op&&op.apagando)?[]:perdasPro(S._proCenso,S.pro);
+  if(perdas.length){
+    console.warn('salvarPro bloqueado: apagaria',perdas);
+    alerta('Gravação bloqueada',`Esta gravação apagaria <b>${esc(perdas.join(', '))}</b> dos seus dados, e isso quase sempre é defeito, não intenção.<br><br>Nada foi alterado. Feche e abra o app: ele recarrega os seus dados do servidor. Se o problema voltar, exporte um backup em <b>Conta › Dados e backup</b> antes de continuar e me avise.`);
+    return false;
+  }
   /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
      senão o formulário se repreenche sozinho no render seguinte. */
   limparRascunhos();
@@ -1683,6 +1903,10 @@ async function salvarPro(){
        o PLACAR (0-100) e a origem — VFC/sono/exames continuam privados. */
     prontidaoGar:(typeof prontidaoGarmin==='function'?(()=>{const p=prontidaoGarmin(S.pro,null);return p?{score:p.score,dias:p.dias}:null;})():null),
     at:Date.now()});
+  /* o censo acompanha o que acabou de ser gravado: quem apaga um item por vez
+     não topa com a trava no último, e o que ficou gravado é a nova referência */
+  S._proCenso=censoPro(S.pro);
+  return true;
 }
 
 /* =====================================================================
@@ -1824,9 +2048,32 @@ async function enviarCadastro(){
   try{await cadastrar({perfil:S.perfilEscolhido,...CAD})}
   finally{CAD_ENVIANDO=false;const atual=document.getElementById('btnCriarConta');if(atual){atual.disabled=false;atual.textContent='Criar conta'}}
 }
-function telaVerificarEmail(){return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div><p class="muted">Enviamos um link para <b>${esc(S.emailPendente||fauth?.currentUser?.email||'seu e-mail')}</b>. Abra o link e volte aqui para liberar o acesso.</p><button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button><button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button><button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button></div>`}
-async function confirmarEmailAgora(){try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
-async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.vista='login';render()}
+function telaVerificarEmail(){
+  const em=S.emailPendente||fauth?.currentUser?.email||'seu e-mail';
+  return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div>
+  <p class="muted">Enviamos um link para <b>${esc(em)}</b>. Abra o link e volte aqui para liberar o acesso.</p>
+  ${S.envioFalhou?`<div class="note warn" style="text-align:left"><b>O envio falhou.</b> A sua conta foi criada, mas o e-mail não saiu${/too-many/.test(S.envioFalhou)?' porque houve pedidos demais seguidos — espere cerca de uma hora':''}. Use <b>Reenviar link</b>.</div>`:''}
+  <button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button>
+  <button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button>
+  <button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button>
+  ${/* A tela dizia "abra o link" e parava. Quem não recebe nada fica sem
+       próximo passo — e foi o que aconteceu. Estas três saídas cobrem as
+       causas reais, em ordem de frequência. */''}
+  <details class="xs" style="margin-top:14px;text-align:left"><summary class="muted" style="cursor:pointer">Não chegou nada?</summary>
+    <ol style="margin:8px 0 0;padding-left:18px;line-height:1.6">
+      <li><b>Confira o endereço acima.</b> Se tiver um erro de digitação, o link foi para uma caixa que não é sua. Toque em <b>Usar outra conta</b> e cadastre-se de novo com o endereço certo.</li>
+      <li><b>Procure no spam e em Promoções.</b> O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b>, e provedores rígidos barram esse tipo de endereço.</li>
+      <li><b>Teste se o seu provedor aceita e-mail nosso:</b> saia daqui, toque em <b>Esqueci minha senha</b> e peça o link. Se esse também não chegar, o problema é o provedor bloqueando — fale com o administrador, que consegue conferir o cadastro pelo painel.</li>
+    </ol></details>
+  </div>`}
+async function confirmarEmailAgora(){
+  /* Sem sessão esta função estourava e virava um "Não consegui verificar
+     agora" que não explicava nada. A sessão expira em ~1h, e quem espera o
+     e-mail chegar passa desse tempo com facilidade. */
+  if(FB&&fauth&&!fauth.currentUser)
+    return alerta('Sessão expirada','Para conferir a confirmação eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro — se o link já foi aberto, você entra direto.');
+  try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
+async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.envioFalhou=null;S.vista='login';render()}
 
 /* ---------- conta / ajustes ---------- */
 function abrirConta(){
@@ -1919,7 +2166,10 @@ function abrirModo(){
     <button class="primary full" onclick="exportarBackup()">Exportar backup</button>
     <div class="field" style="margin-top:12px"><label>Restaurar de um arquivo</label>
       <input type="file" accept=".json,application/json" onchange="importarBackup(this)"></div>
-    <button class="ghost full" style="margin-top:6px" onclick="fecharSheet()">Fechar</button>`);
+    ${EMREDE?`<div class="sep"></div><div class="eyebrow">perdeu algo?</div>
+      <p class="xs muted" style="margin:6px 0 8px">O navegador guarda uma cópia do que já leu. Se um dado seu foi sobrescrito, a página de recuperação procura essa cópia — <b>no aparelho que não abriu o app desde então</b>.</p>
+      <a class="xs" href="./recuperar.html" target="_blank" rel="noopener">Abrir a página de recuperação</a>`:''}
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 async function salvarTel(){
   const t=val('acTel');
@@ -2049,7 +2299,9 @@ function renderInterno(){
     if(S.u.podeSaude)mapa.garmin=telaGarmin;
     if(S.u.podeRelatorio)mapa.relatorio=telaRelatorio; }
   if(ehDev())mapa.equipes=telaEquipes;   /* aba do desenvolvedor */
-  app.innerHTML=avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  /* cardCaixaPreta vem primeiro, e em todas as abas: perda de dado não espera
+     o usuário passar na aba certa — e a cópia que a repõe é perecível. */
+  app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
   _irAteHoje();
 }
 /* cor determinística por equipe (fundo suave) + destaque */
@@ -3506,7 +3758,7 @@ async function assumirEquipe(sg,nome){
   S.equipesDevList=null; S.equipesDisp=null; S.aba='treinos';
   toast('Visualizando '+nome+' como administrador'); render();
 }
-async function sairContextoAdmin(){if(!S.adminOrig)return;Object.assign(S.u,S.adminOrig);S.adminOrig=null;S.gestao=false;await carregarDados();S.aba='equipes';render();toast('Contexto administrativo encerrado')}
+async function sairContextoAdmin(){if(!S.adminOrig)return;_limparLaudo();Object.assign(S.u,S.adminOrig);S.adminOrig=null;S.gestao=false;await carregarDados();S.aba='equipes';render();toast('Contexto administrativo encerrado')}
 /* DEV: varre TODO o banco e mostra onde estão os treinos (por equipe), inclusive os
    que têm os SEUS tempos, e usuários. Recupera índices perdidos. */
 async function abrirDiagnostico(){
@@ -4065,6 +4317,63 @@ const _ABMN=[
  '2º 10ª 50 LIVRE MASC 40 + TNT SP 00:24.40 0,00 107,00 14/09/2025',
  '1º 12ª 50 LIVRE MASC 35 + TNT SP 00:24.63 0,00 105,00 10/12/2023'
 ].join('\n');
+/* ── HISTÓRICO: CABEÇALHO QUE COMEÇA COM NÚMERO (v151) ──────────────────────
+   Linhas reais do currículo do Renê. Na ABMN a maioria dos cabeçalhos de
+   competição começa com número — "75º", "73º", "46º", "6ª ETAPA" — e o leitor
+   os descartava, fazendo as provas seguintes herdarem o nome E A PISCINA da
+   competição anterior: os 100 livre de 50 m entravam como 25 m, e a prova
+   mais recente dele era descartada por ainda não haver piscina definida. */
+const _ABMN_H=[
+ 'Histórico por competição',
+ '75º CAMPEONATO BRASILEIRO MASTERS DE NATAÇÃO - 50 METROS',
+ 'CLUBE PAINEIRAS DO MORUMBY - SÃO PAULO/SP - BRA',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '1º 36ª 50 BORBOLETA MASC 40 + TNT SP 00:25.82 18,00 108,85 28/06/2026',
+ '1º 40ª 4X50 LIVRE MASC 160 + TNT SP A 01:36.06 36,00 101,20 28/06/2026',
+ 'OPEN PAULISTA DE MASTERS DE NATAÇÃO - PISCINA CURTA - 25 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '2º 10ª 100 BORBOLETA MASC 40 + TNT SP 00:58.32 0,00 547,00 19/10/2025',
+ '73º CAMPEONATO BRASILEIRO MASTERS DE NATAÇÃO - 50 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '3º 21ª 100 LIVRE MASC 40 + TNT SP 00:55.85 14,00 110,09 03/05/2025',
+ 'XV COPA BRASIL MASTERS DE NATAÇÃO - 25 METROS',
+ 'COL. PROVA FAIXA EQUIPE TEMPO REC. PONTOS ÍND.TÉC. DATA',
+ '1º 9ª 100 LIVRE MASC PRÉ- FUNDESPORT 00:51.05 RB 18,00 110,38 14/06/2008',
+ 'MASTER'
+].join('\n');
+teste('abmn','cabeçalho que começa com número é cabeçalho',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  const fly=h.find(x=>x.dist===50&&x.estilo==='borboleta');
+  a.ok(fly,'a prova do 75º Brasileiro não é mais descartada');
+  a.eq(fly.piscina,'LC50','e vem com a piscina do cabeçalho dela');
+  a.ok(/^75º/.test(fly.comp||''),'com o nome certo da competição');});
+teste('abmn','prova não herda a piscina da competição anterior',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  const c100=h.find(x=>x.dist===100&&x.estilo==='livre'&&x.faixa===40);
+  a.eq(c100.tempo,parseTempo('55.85'),'é o 100 livre do 73º Brasileiro');
+  a.eq(c100.piscina,'LC50','piscina longa — antes vinha como 25 m, do OPEN anterior');
+  const fly100=h.find(x=>x.dist===100&&x.estilo==='borboleta');
+  a.eq(fly100.piscina,'SC25','e o do OPEN continua curta');});
+teste('abmn','pré-master no histórico não desaparece',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  const pre=h.find(x=>x.tempo===parseTempo('51.05'));
+  a.ok(pre,'a linha com faixa PRÉ- é lida');
+  a.eq(pre.faixa,0,'entra como faixa 0, igual à tabela por faixa');
+  a.eq(pre.piscina,'SC25','e com a piscina da competição');});
+teste('abmn','revezamento continua fora e a conta fecha',a=>{
+  const h=parseABMNHistorico(_ABMN_H);
+  a.eq(h.length,4,'quatro provas individuais');
+  a.ok(!h.some(x=>/4X/i.test(x.prova||'')),'nenhum revezamento');});
+teste('abmn','reimportar substitui o que veio da ABMN',a=>{
+  /* a deduplicação só evitava repetir; não desfazia. Sem isso, nenhuma
+     correção no leitor alcança quem já importou errado. */
+  const pro=_atleta({});
+  pro.resultados=[{chave:'abmn_errado',dist:50,estilo:'livre',piscina:'SC25',data:'2025-05-03',tempo:1},
+                  {chave:'lx1',dist:50,estilo:'peito',piscina:'SC25',data:'2026-01-01',tempo:31350}];
+  const r=aplicarABMN(pro,parseABMN(_ABMN));
+  a.eq(r.removidos,1,'o resultado antigo da ABMN saiu');
+  a.ok(!pro.resultados.some(x=>x.chave==='abmn_errado'),'não ficou resíduo');
+  a.ok(pro.resultados.some(x=>x.chave==='lx1'),'o que o atleta digitou fica');});
 teste('abmn','prova que abre em pré-master não contamina a anterior',a=>{
   const c=parseABMN(_ABMN);
   const p=c.itens.filter(x=>x.dist===50&&x.piscina==='SC25');
@@ -4131,6 +4440,167 @@ teste('admin','a sincronia traz o resto do cadastro mesmo no contexto assumido',
 teste('admin','sem resposta do banco, nada é sobrescrito',a=>{
   const atual={id:'A1',equipe:'nova'};
   a.eq(mesclaUsuarioSincronia(atual,null,{equipe:'a3'}),atual,'mantém o que estava');});
+
+/* ── ESPELHO: DADOS DE UM ATLETA NÃO VAZAM PARA OUTRO (v151) ────────────────
+   O bug mais grave da série: o técnico/PRO abria as marcas de um atleta
+   (S.pro passa a apontar para os dados DELE), trocava de chapéu, e o app
+   seguia com os dados do outro na vista de atleta — com permissão de gravar
+   no pro_ de quem estava olhando. Resultado: marcas de um aparecendo para
+   outro, e um currículo ABMN importado em seguida somando-se ao do colega. */
+function _espelhoDe(id,meu){
+  S.laudoAtleta=id; S._proBak=meu;
+  S.pro={_espelho:id,pbs:{'50 livre SC25':24120},
+    resultados:[{chave:'abmn_x',comp:'Dele',data:'2025-06-27',dist:50,estilo:'livre',piscina:'SC25',tempo:24120}]};
+}
+/* _limparContexto mexe na navegação; a suíte não guarda aba/pilha, então
+   quem o chama devolve o que estava aberto. */
+function _semMexerNaNav(fn){
+  const g={aba:S.aba,sub:S.sub,pilha:S.pilha,treino:S.treino,comp:S.comp,
+           provaSel:S.provaSel,atletaSel:S.atletaSel};
+  try{ fn(); } finally{ Object.assign(S,g); }
+}
+teste('espelho','trocar de chapéu devolve os meus dados, não os do atleta',a=>{
+  const meu={pbs:{'50 peito SC25':31350},resultados:[],marcaMinha:true};
+  _espelhoDe('outro',meu);
+  _semMexerNaNav(_limparContexto);         /* é o que alternarModoAtleta faz */
+  a.eq(S.laudoAtleta,null,'o espelho foi fechado');
+  a.ok(S.pro&&S.pro.marcaMinha===true,'S.pro voltou a ser o meu');
+  a.ok(!(S.pro&&S.pro._espelho),'sem resíduo de espelho no dado');});
+teste('espelho','sem backup, o espelho nunca é devolvido como se fosse meu',a=>{
+  _espelhoDe('outro',undefined);
+  _semMexerNaNav(_limparContexto);
+  a.ok(!(S.pro&&S.pro._espelho),'espelho descartado');
+  a.eq((S.pro&&S.pro.resultados||[]).length,0,'pro vazio — a sincronia recarrega o verdadeiro');
+  a.ok(S.pro&&S.pro.pbs&&typeof S.pro.pbs==='object','e com a forma certa, para nada quebrar no render');});
+teste('espelho','_limparLaudo age mesmo se laudoAtleta já foi zerado',a=>{
+  const meu={pbs:{},resultados:[],marcaMinha:true};
+  _espelhoDe('outro',meu);
+  S.laudoAtleta=null;                      /* o descuido que causou o bug */
+  _limparLaudo();
+  a.ok(S.pro&&S.pro.marcaMinha===true,'a marca no dado basta para desfazer');});
+teste('espelho','a trava de gravação olha a marca no dado',a=>{
+  /* salvarPro() é async e toca o banco: aqui travamos a CONDIÇÃO que ela usa,
+     que é o que precisa continuar valendo se alguém mexer na navegação. */
+  const bloqueia=(laudo,pro)=>!!(laudo||(pro&&pro._espelho));
+  a.ok(bloqueia('outro',{}),'bloqueia no modo espelho');
+  a.ok(bloqueia(null,{_espelho:'outro'}),'bloqueia só pela marca, sem laudoAtleta');
+  a.ok(!bloqueia(null,{pbs:{}}),'libera a gravação dos meus dados');});
+
+/* ── TRAVA ANTI-APAGAMENTO (v152) ───────────────────────────────────────────
+   O pro_ é regravado inteiro a cada salvarPro(), então gravar o objeto errado
+   não corrompe um campo: apaga tudo o que não estiver nele. Foi assim que o
+   check-in e o Garmin de um usuário real desapareceram, sem erro e sem aviso,
+   quando o espelho de outro atleta foi gravado por cima. */
+teste('trava','apagamento em massa é barrado',a=>{
+  const censo=censoPro({pbs:{a:1,b:2,c:3},resultados:[1,2,3,4],garmin:[1,2,3],exames:[],bioimp:[],seco:[]});
+  const perdas=perdasPro(censo,{pbs:{a:1,b:2,c:3},resultados:[1,2,3,4],garmin:[],exames:[],bioimp:[],seco:[]});
+  a.eq(perdas.length,1,'uma coleção zerada, um alerta');
+  a.ok(/garmin \(3→0\)/.test(perdas[0]),'diz qual e quanto se perderia');});
+teste('trava','o espelho gravado por cima seria barrado',a=>{
+  /* exatamente o caso real: o objeto do espelho não tem garmin nem exames */
+  const meu=censoPro({pbs:{a:1,b:2,c:3},resultados:[1,2,3],garmin:[1,2,3,4,5],exames:[1,2,3],bioimp:[],seco:[]});
+  const espelho={pbs:{x:1},resultados:[9],garmin:[],exames:[],bioimp:[],seco:[]};
+  const perdas=perdasPro(meu,espelho);
+  a.ok(perdas.some(p=>/^garmin/.test(p)),'o Garmin seria apagado');
+  a.ok(perdas.some(p=>/^exames/.test(p)),'os exames também');
+  a.ok(!perdas.some(p=>/^pbs/.test(p)),'pbs não: 3→1 é perda, mas não apagamento');});
+teste('trava','apagar um item por vez não vira alarme',a=>{
+  const censo=censoPro({pbs:{},resultados:[1,2,3],garmin:[],exames:[],bioimp:[],seco:[]});
+  a.eq(perdasPro(censo,{pbs:{},resultados:[1,2],garmin:[],exames:[],bioimp:[],seco:[]}).length,0,'3→2 passa');
+  const c2=censoPro({pbs:{},resultados:[1,2],garmin:[],exames:[],bioimp:[],seco:[]});
+  a.eq(perdasPro(c2,{pbs:{},resultados:[],garmin:[],exames:[],bioimp:[],seco:[]}).length,0,
+       'lista curta pode ser esvaziada — o censo acompanha cada gravação');});
+teste('trava','sem censo (primeira gravação) nada é barrado',a=>{
+  a.eq(perdasPro(null,{pbs:{},resultados:[]}).length,0,'conta nova grava à vontade');
+  a.eq(perdasPro(undefined,null).length,0,'nem quebra sem pro');});
+
+/* ── CAIXA-PRETA (v153) ─────────────────────────────────────────────────────
+   A fotografia do cache antes da sincronia. Testo a DECISÃO: quando avisar,
+   quando calar, e que ela nunca confunda a cópia de outra conta com a minha —
+   restaurar o pro_ de outra pessoa seria repetir o bug na recuperação. */
+function _decideCaixa(cacheId,meuId,cache,agora){
+  if(!cache||cacheId!=='pro_'+meuId)return null;
+  const falta=[];
+  for(const k of COLECOES_PRO){
+    const c=Array.isArray(cache[k])?cache[k].length:0;
+    const a=Array.isArray(agora&&agora[k])?agora[k].length:0;
+    if(c>=3&&a===0)falta.push({campo:k,n:c});
+  }
+  return falta.length?falta:null;
+}
+teste('caixa-preta','cache cheio e servidor vazio vira aviso',a=>{
+  const cache={garmin:[1,2,3,4],exames:[1,2,3],bioimp:[],seco:[],resultados:[]};
+  const agora={garmin:[],exames:[],bioimp:[],seco:[],resultados:[]};
+  const f=_decideCaixa('pro_EU','EU',cache,agora);
+  a.eq(f.length,2,'duas coleções perdidas');
+  a.eq(f[0].campo,'garmin','a série de Saúde entre elas');
+  a.eq(f[0].n,4,'com a contagem do que dá para repor');});
+teste('caixa-preta','cópia de outra conta é ignorada',a=>{
+  /* a defesa que importa: a cópia no cache pode ser de um atleta que eu abri
+     como técnico, e restaurá-la seria recriar a contaminação */
+  const cache={garmin:[1,2,3,4],exames:[],bioimp:[],seco:[],resultados:[]};
+  a.eq(_decideCaixa('pro_OUTRO','EU',cache,{garmin:[]}),null,'id diferente, nada a fazer');});
+teste('caixa-preta','servidor com dados não dispara nada',a=>{
+  const cache={garmin:[1,2,3,4],exames:[],bioimp:[],seco:[],resultados:[]};
+  a.eq(_decideCaixa('pro_EU','EU',cache,{garmin:[1,2,3],exames:[],bioimp:[],seco:[],resultados:[]}),null,
+       '4→3 é uso normal, não perda');
+  a.eq(_decideCaixa('pro_EU','EU',null,{garmin:[]}),null,'sem cache, sem aviso');});
+teste('caixa-preta','coleção curta no cache não vira alarme',a=>{
+  const cache={garmin:[1,2],exames:[],bioimp:[],seco:[],resultados:[]};
+  a.eq(_decideCaixa('pro_EU','EU',cache,{garmin:[],exames:[],bioimp:[],seco:[],resultados:[]}),null,
+       '2 registros podem ter sido apagados de propósito');});
+
+/* ── PROCEDÊNCIA DAS MARCAS (v151) ──────────────────────────────────────── */
+teste('procedência','cada resultado é classificado pela chave',a=>{
+  const pro={resultados:[
+    {chave:'abmn_50_livre_SC25_2025-06-27_24120',comp:'III Troféu',data:'2025-06-27'},
+    {chave:'abmn_50_peito_SC25_2014-03-16_32830',comp:'1ª Etapa',data:'2014-03-16'},
+    {chave:'mc_abc_p1',comp:'Minha Copa',data:'2026-05-16'},
+    {chave:'c7|50|peito|SC25',comp:'Copa A3',data:'2026-06-01'},
+    {chave:'lx93kz',comp:'Digitada',data:'2026-07-01'}]};
+  const inv=inventarioMarcas(pro);
+  a.eq(inv.length,4,'quatro procedências');
+  a.eq(inv[0].id,'abmn','ABMN primeiro');
+  a.eq(inv[0].n,2,'com os dois resultados dela');
+  a.eq(inv[0].de,'2014-03-16','e o intervalo de datas certo');
+  a.eq(inv[0].ate,'2025-06-27','idem');
+  a.eq(inv.find(b=>b.id==='eq').rot,'Competições da equipe','chave com | é da equipe');
+  a.eq(inv.find(b=>b.id==='mao').n,1,'o resto é digitado à mão');});
+teste('procedência','histórico vazio não inventa bloco',a=>{
+  a.eq(inventarioMarcas({resultados:[]}).length,0,'nada a mostrar');
+  a.eq(inventarioMarcas(null).length,0,'nem sem pro');});
+
+/* ── CONFIRMAÇÃO DE E-MAIL (v150) ────────────────────────────────────────────
+   Um cadastro real ficou preso aqui: o envio falhou, o aviso era um toast de
+   4 segundos e a tela não dizia o que fazer. Estes testes travam o contrário. */
+function _telaVerif(email,falha){
+  const g={emailPendente:S.emailPendente,envioFalhou:S.envioFalhou};
+  S.emailPendente=email; S.envioFalhou=falha;
+  const h=telaVerificarEmail();
+  S.emailPendente=g.emailPendente; S.envioFalhou=g.envioFalhou;
+  return h;
+}
+teste('confirmação','a tela mostra o endereço para onde o link foi',a=>{
+  const h=_telaVerif('amigo@provedor.com',null);
+  a.ok(h.includes('amigo@provedor.com'),'o e-mail cadastrado aparece na tela');
+  a.ok(!h.includes('O envio falhou'),'sem falha, sem alarme falso');});
+teste('confirmação','envio falhado vira aviso que não desaparece',a=>{
+  const h=_telaVerif('amigo@provedor.com','falhou');
+  a.ok(h.includes('O envio falhou'),'o aviso fica na tela, não é um toast');
+  a.ok(h.includes('Reenviar link'),'e aponta o botão que resolve');});
+teste('confirmação','excesso de pedidos é explicado como espera, não como erro',a=>{
+  const h=_telaVerif('amigo@provedor.com','auth/too-many-requests');
+  a.ok(/pedidos demais/.test(h),'diz que foram pedidos demais');
+  a.ok(/cerca de uma hora/.test(h),'e quanto esperar — reenviar de novo só atrasa');});
+teste('confirmação','a tela ensina as três saídas reais',a=>{
+  const h=_telaVerif('amigo@provedor.com',null);
+  a.ok(/Confira o endereço/.test(h),'1: erro de digitação no endereço');
+  a.ok(h.includes('noreply@parcial-cdb0e.firebaseapp.com'),'2: o remetente, para liberar no provedor');
+  a.ok(/Esqueci minha senha/.test(h),'3: o teste de entrega por outro e-mail');});
+teste('confirmação','sem endereço guardado a tela não mente',a=>{
+  const h=_telaVerif(null,null);
+  a.ok(h.includes('seu e-mail'),'usa um rótulo neutro em vez de inventar um endereço');
+  a.ok(h.includes('Usar outra conta'),'e ainda oferece recomeçar');});
 
 /* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
 function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
@@ -4977,7 +5447,10 @@ async function abrirLaudoAtleta(id){
     ? {score:snap.prontidao.media,dias:snap.prontidao.n||0,fonte:'check-in'}
     : ((snap&&snap.prontidaoGar&&snap.prontidaoGar.score!=null)
         ? {score:snap.prontidaoGar.score,dias:snap.prontidaoGar.dias||0,fonte:'Garmin'} : null);
-  S.pro={pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
+  /* _espelho: a identidade do dono viaja DENTRO do objeto. É o que permite a
+     salvarPro() recusar a gravação mesmo que alguém zere S.laudoAtleta sem
+     devolver S.pro — foi exatamente esse descuido que misturou dois atletas. */
+  S.pro={_espelho:id,pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
     alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:ehAdmin()?((snap&&snap.garmin)||[]):[],exames:ehAdmin()?((snap&&snap.exames)||[]):[],_pront:_p};
   ESF=null; push(); render(); window.scrollTo(0,0);
 }
@@ -4988,8 +5461,14 @@ async function abrirMarcasAtleta(id){
   if(S.laudoAtleta){ S.laudoVista='marcas'; render(); window.scrollTo(0,0); }
 }
 function _limparLaudo(){
-  if(!S.laudoAtleta)return;
-  S.pro=S._proBak; S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; S.laudoVista=null; ESF=null;
+  /* a condição olha os DOIS: se S.laudoAtleta já foi zerado por outro caminho
+     mas S.pro continua sendo o espelho, é aqui que o estrago se desfaz. */
+  if(!S.laudoAtleta&&!(S.pro&&S.pro._espelho))return;
+  /* sem backup (espelho que vazou por um caminho que não passou por aqui),
+     devolve um pro VAZIO em vez de null: a sincronia recarrega o verdadeiro
+     em segundos, e nada quebra no render até lá. Nunca devolver o espelho. */
+  S.pro=S._proBak||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; S.laudoVista=null; ESF=null;
 }
 function voltarLaudo(){ _limparLaudo(); voltar(); }
 /* nome do sujeito do relatório (atleta quando o técnico está vendo; senão o próprio usuário) */
@@ -6444,6 +6923,8 @@ function telaMarcas(){
   ${acc('mk_alvos','Provas-alvo','provas foco da projeção',cardAlvos(pro)||'<div class="small muted">Sem provas-alvo definidas.</div>')}
   <div class="eyebrow" style="margin:16px 4px 4px">histórico de competições · por prova</div>
   ${histProvas||'<div class="card"><div class="small muted">Nenhum resultado ainda. Use + Tempo (com a competição) ou o técnico lança nas competições.</div></div>'}
+  ${espelho?'':`<div class="row noprint" style="margin:14px 0 0"><div class="grow"></div>
+    <button class="sm ghost" onclick="abrirLimparMarcas()">Conferir procedência das marcas</button></div>`}
   <div style="height:20px"></div>`;
 }
 function abrirNovaMarca(){
@@ -6486,6 +6967,66 @@ async function salvarMarca(){
 }
 async function apagarPB(k){delete S.pro.pbs[k];await salvarPro();render()}
 async function apagarResultado(chave){ S.pro.resultados=(S.pro.resultados||[]).filter(r=>r.chave!==chave); await salvarPro(); render(); }
+
+/* ── PROCEDÊNCIA DAS MARCAS ────────────────────────────────────────────────
+   Na tela de Marcas, um tempo de outra pessoa é indistinguível de um seu: são
+   os dois "50 livre, 24.12, tal competição". Isso deixou de ser hipótese
+   quando o modo espelho gravou marcas de um atleta no pro_ de quem estava
+   olhando — e o dono não tinha como saber o que era dele nem como separar.
+   A chave de cada resultado diz de onde ele veio, e é só isso que este
+   inventário faz: traduzir a chave em procedência, para o atleta decidir.
+   Função pura, para poder ser testada sem tela e sem banco. */
+const ORIGEM_RES=[
+  {id:'abmn',rot:'Currículo ABMN',          teste:c=>/^abmn_/.test(c)},
+  {id:'mc',  rot:'Competições que você lançou',teste:c=>/^mc_/.test(c)},
+  {id:'eq',  rot:'Competições da equipe',    teste:c=>c.includes('|')},
+  {id:'mao', rot:'Digitado em + Tempo',      teste:()=>true}];
+function inventarioMarcas(pro){
+  const g={};
+  for(const r of (pro&&pro.resultados)||[]){
+    const o=ORIGEM_RES.find(x=>x.teste(String(r.chave||'')));
+    const b=g[o.id]=g[o.id]||{rot:o.rot,n:0,comps:new Set(),de:null,ate:null};
+    b.n++;
+    if(r.comp)b.comps.add(r.comp);
+    if(r.data){ if(!b.de||r.data<b.de)b.de=r.data; if(!b.ate||r.data>b.ate)b.ate=r.data; }
+  }
+  return ORIGEM_RES.filter(o=>g[o.id])
+    .map(o=>({id:o.id,rot:g[o.id].rot,n:g[o.id].n,de:g[o.id].de,ate:g[o.id].ate,
+              comps:[...g[o.id].comps].sort()}));
+}
+function abrirLimparMarcas(){
+  const inv=inventarioMarcas(S.pro), nP=Object.keys((S.pro&&S.pro.pbs)||{}).length;
+  const br=d=>d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'—';
+  const blocos=inv.map(b=>`<div class="xs" style="padding:7px 0;border-top:1px solid var(--line)">
+      <div class="row"><b class="grow">${esc(b.rot)}</b><b>${b.n}</b></div>
+      <div class="muted">${br(b.de)} a ${br(b.ate)} · ${b.comps.length} competição(ões)</div>
+      ${b.comps.length?`<div class="muted" style="margin-top:3px">${b.comps.slice(0,6).map(esc).join(' · ')}${b.comps.length>6?' …':''}</div>`:''}
+      ${b.id==='abmn'?`<button class="sm ghost full" style="margin-top:6px" onclick="apagarMarcasOrigem('abmn')">Apagar estes ${b.n}</button>`:''}
+    </div>`).join('');
+  sheet(`<h2>Conferir minhas marcas</h2>
+    <p class="small muted" style="margin:6px 0 10px">De onde veio cada resultado do seu histórico. Se você vê aqui competições que não são suas, é isto que separa.</p>
+    ${blocos||'<div class="small muted">Nenhum resultado no histórico.</div>'}
+    <div class="sep"></div>
+    <div class="xs muted">Melhores tempos (PBs) guardados: <b>${nP}</b>.</div>
+    <div class="note warn" style="margin:10px 0"><b>Zerar apaga os PBs e todo o histórico de competições.</b> Os dados de Saúde (check-in, Garmin, exames, bioimpedância) e os treinos não são tocados. Depois de zerar, importe o seu currículo da ABMN de novo: ele reconstrói os dois.</div>
+    <button class="ghost full" onclick="zerarMarcas()">Zerar marcas (PBs e histórico)</button>
+    <button class="primary full" style="margin-top:8px" onclick="fecharSheet()">Fechar</button>`);
+}
+async function apagarMarcasOrigem(id){
+  const o=ORIGEM_RES.find(x=>x.id===id); if(!o||!S.pro)return;
+  const antes=(S.pro.resultados||[]).length;
+  S.pro.resultados=(S.pro.resultados||[]).filter(r=>!o.teste(String(r.chave||'')));
+  const n=antes-S.pro.resultados.length;
+  if(await salvarPro({apagando:true})===false)return;
+  fecharSheet(); toast(`${n} resultado(s) removido(s) · ${esc(o.rot)}`); render();
+}
+async function zerarMarcas(){
+  if(!S.pro)return;
+  S.pro.pbs={}; S.pro.resultados=[];
+  /* apagamento pedido pelo dono: passa pela trava com consentimento explícito */
+  if(await salvarPro({apagando:true})===false)return;
+  fecharSheet(); toast('Marcas zeradas. Importe o seu currículo da ABMN para reconstruir.'); render();
+}
 
 /* ---------- leitura de PDF no navegador (pdf.js sob demanda) ---------- */
 let _pdfjs=null;
@@ -6627,18 +7168,34 @@ function parseABMNHistorico(txt){
   let comp=null, pool=null;
   for(const bruto of t.slice(i).split('\n')){
     const l=bruto.trim(); if(!l)continue;
-    /* cabeçalho de competição: "NOME ... - 25 METROS" | "- 50 METROS" */
+    /* cabeçalho de competição: "NOME ... - 25 METROS" | "- 50 METROS"
+       ⚠️ O guarda antigo era `!/^\d/` e descartava TODO cabeçalho que começa
+       com número — que na ABMN é a maioria: "75º CAMPEONATO BRASILEIRO",
+       "46º", "6ª ETAPA", "2011 PANAMERICAN", "15º CAMPEONATO MUNDIAL".
+       Sem trocar o cabeçalho, as provas seguintes herdavam o nome E A
+       PISCINA da competição anterior. No currículo do Renê isso misturava
+       quatro competições debaixo de "III TROFÉU BRASIL" e marcava como
+       25 m os 100 livre de 55.85 nadados em piscina de 50 no 73º
+       Brasileiro — e a prova mais recente dele (50 borboleta do 75º
+       Brasileiro) era simplesmente descartada, porque ainda não havia
+       piscina definida quando ela apareceu.
+       O discriminador certo não é o primeiro caractere: linha de RESULTADO
+       sempre termina em data, cabeçalho NUNCA tem data. */
     const mc=l.match(/^(.+?)\s*[-–]\s*(25|50)\s*METROS\s*$/i);
-    if(mc&&!/^\d/.test(l)){ comp=mc[1].replace(/\s+/g,' ').trim().slice(0,90); pool=mc[2]==='50'?'LC50':'SC25'; continue; }
+    if(mc&&!/\d{2}\/\d{2}\/\d{4}/.test(l)){ comp=mc[1].replace(/\s+/g,' ').trim().slice(0,90); pool=mc[2]==='50'?'LC50':'SC25'; continue; }
     if(!pool)continue;
     if(/revez/i.test(l)||/\b\d\s*[xX]\s*\d{2,}\b/.test(l))continue;   /* revezamento fora */
-    const m=l.match(/^\s*(?:\d+[ºªo]|N\/?C|DQL|DNS)\s+\d+[ºªa]\s+(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(?:MASC|FEM)\s+(\d{2,3})\s*\+\s+.*?(\d{2}:\d{2}\.\d{2})\s+.*?(\d{2}\/\d{2}\/\d{4})\s*$/i);
+    /* a faixa também pode ser PRÉ-MASTER, e aí vem sem o "+" e com a palavra
+       MASTER quebrada para a linha seguinte. Entra como faixa 0, igual à
+       tabela de melhores por faixa — fica no histórico e sai do recorte da
+       faixa atual. Antes, essas sete provas do Renê desapareciam. */
+    const m=l.match(/^\s*(?:\d+[ºªo]|N\/?C|DQL|DNS)\s+\d+[ºªa]\s+(\d{2,4})\s+(LIVRE|PEITO|COSTAS|BORBOLETA|MEDLEY)\s+(?:MASC|FEM)\s+(PR[ÉE]-?|\d{2,3}\s*\+)\s+.*?(\d{2}:\d{2}\.\d{2})\s+.*?(\d{2}\/\d{2}\/\d{4})\s*$/i);
     if(!m)continue;
     const tempo=parseTempo(m[4].replace(/^00:/,''));   /* 00:25.82 → 25.82 */
     if(!tempo)continue;
     const d=m[5].split('/');
     out.push({dist:+m[1],estilo:ESTIL[m[2].toUpperCase()]||'livre',piscina:pool,
-      faixa:+m[3],tempo,comp,data:`${d[2]}-${d[1]}-${d[0]}`,
+      faixa:/PR[ÉE]/i.test(m[3])?0:parseInt(m[3],10),tempo,comp,data:`${d[2]}-${d[1]}-${d[0]}`,
       prova:`${+m[1]}m ${ESTIL[m[2].toUpperCase()]||'livre'}`,parciais:[],inscricao:null});
   }
   return out;
@@ -6666,6 +7223,16 @@ function aplicarABMN(pro,cur){
   if(cur.matricula)pro.matricula=cur.matricula;
   /* o PB da vida inteira fica à parte: é vitrine, não entra no modelo */
   if(cur.alltime&&Object.keys(cur.alltime).length)pro.pbAllTime=cur.alltime;
+  /* ── RE-IMPORTAR SUBSTITUI O QUE VEIO DA ABMN ────────────────────────────
+     A deduplicação sozinha só evita repetir; ela não desfaz. Então uma
+     correção no leitor não limpava o que a versão anterior tinha gravado
+     errado — os resultados com piscina trocada ficariam no histórico para
+     sempre, lado a lado com os certos, e o atleta não teria como removê-los.
+     Saem só as chaves 'abmn_' (é esta função que as cria): competição,
+     treino e marco digitados pelo atleta não são tocados. */
+  const antes=pro.resultados.length;
+  pro.resultados=pro.resultados.filter(r=>!/^abmn_/.test(r.chave||''));
+  const removidos=antes-pro.resultados.length;
   const existe=new Set(pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
   let add=0;
   /* O HISTÓRICO por competição entra junto com as melhores por faixa. É ele
@@ -6685,7 +7252,7 @@ function aplicarABMN(pro,cur){
     const r=melhores[pk];
     if(pro.pbs[pk]!==r.tempo){ pro.pbs[pk]=r.tempo; ajust++; }
   }
-  return {add,ajust,faixa:cur.faixaAtual,provas:Object.keys(melhores).length,
+  return {add,ajust,removidos,faixa:cur.faixaAtual,provas:Object.keys(melhores).length,
           historico:(cur.historico||[]).length,
           naFaixa:(cur.historico||[]).filter(r=>r.faixa===cur.faixaAtual).length,
           allTime:Object.keys(cur.alltime||{}).length};
@@ -6737,7 +7304,8 @@ async function importarABMN(inp){
      sucesso (deduplicação) ou falha. Pior: escondia o que de fato aconteceu,
      que é o recálculo dos melhores tempos pela FAIXA ATUAL. */
   const p=[`${cur.itens.length} tempo(s) lido(s) do currículo`];
-  p.push(r.add?`${r.add} novo(s)`:'nenhum novo — já estavam aqui');
+  p.push(r.add?`${r.add} no histórico`:'nenhum resultado no histórico');
+  if(r.removidos)p.push(`substituiu ${r.removidos} importado(s) antes`);
   if(r.faixa)p.push(`melhores tempos pela sua faixa (${r.faixa}+)`);
   if(r.ajust)p.push(`${r.ajust} marca(s) atualizada(s)`);
   toast(p.join(' · '));
