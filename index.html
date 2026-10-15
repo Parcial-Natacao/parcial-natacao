@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v152';
+const VER='v153';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2011,7 +2011,10 @@ function abrirModo(){
     <button class="primary full" onclick="exportarBackup()">Exportar backup</button>
     <div class="field" style="margin-top:12px"><label>Restaurar de um arquivo</label>
       <input type="file" accept=".json,application/json" onchange="importarBackup(this)"></div>
-    <button class="ghost full" style="margin-top:6px" onclick="fecharSheet()">Fechar</button>`);
+    ${EMREDE?`<div class="sep"></div><div class="eyebrow">perdeu algo?</div>
+      <p class="xs muted" style="margin:6px 0 8px">O navegador guarda uma cópia do que já leu. Se um dado seu foi sobrescrito, a página de recuperação procura essa cópia — <b>no aparelho que não abriu o app desde então</b>.</p>
+      <a class="xs" href="./recuperar.html" target="_blank" rel="noopener">Abrir a página de recuperação</a>`:''}
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 async function salvarTel(){
   const t=val('acTel');

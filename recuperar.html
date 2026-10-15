@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Meros360 — recuperar dados</title>
+<meta name="robots" content="noindex">
+<!--
+  ╔═══════════════════════════════════════════════════════════════════════════╗
+  PARA QUE SERVE ESTA PÁGINA
+
+  O Firestore grava no navegador uma cópia de tudo o que ele já leu
+  (persistência offline, ligada no app em index.html). Se um dado foi
+  sobrescrito no servidor, essa cópia local AINDA PODE conter a versão
+  anterior — mas só num aparelho que não abriu o app depois da sobrescrita.
+  Na primeira vez que aquele aparelho abre o app com internet, o SDK sincroniza
+  e a cópia velha é substituída. É por isso que esta página existe separada.
+
+  REGRAS QUE ESTA PÁGINA SEGUE, E O MOTIVO DE CADA UMA
+
+  1. NÃO carrega o SDK do Firebase. Nenhum. Se carregasse, só abrir esta
+     página já dispararia a sincronização que apaga o que estamos tentando
+     salvar. Ela fala direto com o IndexedDB.
+  2. NÃO escreve nada, em lugar nenhum. Só leitura.
+  3. Precisa ser servida DO MESMO ENDEREÇO do app (meros360.com), porque
+     IndexedDB é isolado por origem. Aberta de um arquivo local, não vê nada.
+  ╚═══════════════════════════════════════════════════════════════════════════╝
+-->
+<style>
+  :root{
+    --fundo:#f6f8fa; --cartao:#fff; --tinta:#0f1720; --tinta-2:#5a6b7b;
+    --linha:#e3e8ee; --agua:#0a6ebd; --agua-fraca:#eaf4fc;
+    --alerta:#b4232a; --alerta-fraca:#fdeceb; --ok:#13795b; --ok-fraca:#e8f6f0;
+    --r:12px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --fundo:#0d1116; --cartao:#151b22; --tinta:#e6edf3; --tinta-2:#93a3b1;
+      --linha:#283039; --agua:#58b4f5; --agua-fraca:#102430;
+      --alerta:#ff8a84; --alerta-fraca:#2a1413; --ok:#5fd0a6; --ok-fraca:#0f2a21;
+    }
+  }
+  :root[data-theme="dark"]{
+    --fundo:#0d1116; --cartao:#151b22; --tinta:#e6edf3; --tinta-2:#93a3b1;
+    --linha:#283039; --agua:#58b4f5; --agua-fraca:#102430;
+    --alerta:#ff8a84; --alerta-fraca:#2a1413; --ok:#5fd0a6; --ok-fraca:#0f2a21;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fundo);color:var(--tinta);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:0 16px 56px}
+  .capa{max-width:720px;margin:0 auto}
+  h1{font-size:22px;letter-spacing:-.02em;margin:26px 0 4px}
+  h2{font-size:16px;margin:22px 0 8px}
+  p{margin:8px 0}
+  .muted{color:var(--tinta-2)}
+  .xs{font-size:13px}
+  .cartao{background:var(--cartao);border:1px solid var(--linha);border-radius:var(--r);
+    padding:14px 16px;margin:12px 0}
+  .aviso{border-left:4px solid var(--alerta);background:var(--alerta-fraca);
+    border-radius:0 var(--r) var(--r) 0;padding:12px 14px;margin:12px 0}
+  .bom{border-left:4px solid var(--ok);background:var(--ok-fraca);
+    border-radius:0 var(--r) var(--r) 0;padding:12px 14px;margin:12px 0}
+  .nota{border-left:4px solid var(--agua);background:var(--agua-fraca);
+    border-radius:0 var(--r) var(--r) 0;padding:12px 14px;margin:12px 0}
+  button{font:inherit;font-weight:600;border-radius:10px;padding:12px 16px;
+    border:1px solid var(--linha);background:var(--cartao);color:var(--tinta);cursor:pointer}
+  button.forte{background:var(--agua);border-color:var(--agua);color:#fff}
+  button.cheio{display:block;width:100%}
+  button:disabled{opacity:.55;cursor:default}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--linha)}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--tinta-2)}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  code{background:var(--agua-fraca);padding:1px 5px;border-radius:5px;font-size:13px}
+  ol{padding-left:20px} li{margin:5px 0}
+  .achado{border:1px solid var(--linha);border-radius:var(--r);padding:12px 14px;margin:10px 0}
+  .achado h3{margin:0 0 2px;font-size:15px;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="capa">
+
+<h1>Recuperar dados do cache do navegador</h1>
+<p class="muted xs">Esta página não é o app. Ela não se conecta ao servidor, não carrega o Firebase e não grava nada — só procura, no próprio navegador, cópias dos seus dados que podem ter sobrado de antes.</p>
+
+<div class="aviso">
+  <b>Antes de qualquer coisa:</b> faça isto <b>no aparelho que não abriu o app desde que os dados se perderam</b> — normalmente o celular. Em um aparelho que já abriu o app depois, a cópia local já foi substituída pela versão nova e não há o que recuperar.
+  <div class="xs" style="margin-top:6px">Não abra o app neste aparelho antes de rodar a busca. Esta página pode abrir à vontade: ela não dispara sincronização.</div>
+</div>
+
+<button class="forte cheio" id="btn">Procurar cópias dos meus dados</button>
+<div id="saida"></div>
+
+<h2>Se não encontrar nada</h2>
+<p class="xs muted">Não é defeito desta página: significa que o navegador deste aparelho já não tem a versão antiga. O cache do Firestore é substituído na primeira sincronização e também é limpo quando o navegador precisa de espaço, quando se usa navegação privada, ou quando se limpa os dados do site. Vale tentar nos outros aparelhos onde você já usou o app.</p>
+
+</div>
+<script>
+/* ── leitura do IndexedDB ───────────────────────────────────────────────────
+   Nada aqui depende do formato interno do Firestore, e isso é de propósito: o
+   esquema muda de versão para versão (hoje a loja é remoteDocumentsV14, antes
+   era remoteDocuments). Em vez de decodificar a estrutura, varremos cada
+   registro à procura de texto que seja o NOSSO payload — o app grava o
+   documento inteiro como JSON num campo só, então ele aparece no cache como
+   uma string reconhecível. Funciona em qualquer versão do esquema. */
+const abrir = nome => new Promise((res,rej)=>{
+  const r = indexedDB.open(nome);
+  r.onsuccess = ()=>res(r.result);
+  r.onerror   = ()=>rej(r.error);
+  r.onblocked = ()=>rej(new Error('banco bloqueado por outra aba'));
+});
+const tudo = (st,metodo) => new Promise((res,rej)=>{
+  const r = st[metodo]();
+  r.onsuccess = ()=>res(r.result);
+  r.onerror   = ()=>rej(r.error);
+});
+
+/* Reconhece o payload do app: JSON de objeto com pelo menos um dos campos que
+   só existem nos nossos documentos. Evita confundir com metadados do SDK. */
+const CAMPOS = ['pbs','garmin','resultados','exames','bioimp','perfil','provas'];
+function talvezNosso(s){
+  if(typeof s!=='string' || s.length<2) return null;
+  const t = s.trim();
+  if(t[0]!=='{' && t[0]!=='[') return null;
+  let o; try{ o = JSON.parse(t); }catch(_){ return null; }
+  if(!o || typeof o!=='object') return null;
+  return CAMPOS.some(c=>c in o) ? o : null;
+}
+/* desce em qualquer estrutura, por mais aninhada que seja */
+function garimpar(v, achados, prof){
+  if(prof>8 || v==null) return;
+  if(typeof v==='string'){ const o=talvezNosso(v); if(o)achados.push(o); return; }
+  if(typeof v!=='object') return;
+  if(Array.isArray(v)){ for(const x of v) garimpar(x,achados,prof+1); return; }
+  for(const k of Object.keys(v)) garimpar(v[k],achados,prof+1);
+}
+/* procura uma data de referência dentro do registro (readTime/updateTime do
+   SDK) — é ela que diz se a cópia é mais antiga que a perda */
+function acharData(v, prof){
+  if(prof>8 || v==null) return null;
+  if(typeof v==='object'){
+    for(const k of Object.keys(v)){
+      if(/time|at$|seconds/i.test(k)){
+        const d = normalizarData(v[k]);
+        if(d) return d;
+      }
+    }
+    for(const k of Object.keys(v)){ const d=acharData(v[k],prof+1); if(d)return d; }
+  }
+  return null;
+}
+/* ── de qual documento é esta cópia ────────────────────────────────────────
+   A fonte confiável é o `name` que o SDK guarda junto do documento
+   (.../documents/kv/pro_<uid>). A chave interna do IndexedDB serve de
+   reserva. Não dá para adivinhar pelo conteúdo: dois atletas têm pro_ com a
+   mesma forma, e errar a chave aqui restauraria em cima do documento errado —
+   seria repetir, na recuperação, o bug que causou a perda. */
+const PADRAO_CHAVE = /\b(pro_[A-Za-z0-9_-]+|u_[^"\\\]\s]+|eq_[A-Za-z0-9_-]+)/;
+function acharDocId(v, prof){
+  if(prof>8 || v==null) return null;
+  if(typeof v==='string'){
+    const m = v.match(/\/documents\/[^/]+\/([^/]+)$/);
+    if(m) return m[1];
+    return null;
+  }
+  if(typeof v!=='object') return null;
+  if(Array.isArray(v)){ for(const x of v){ const d=acharDocId(x,prof+1); if(d)return d; } return null; }
+  if(typeof v.name==='string'){ const d=acharDocId(v.name,prof+1); if(d)return d; }
+  for(const k of Object.keys(v)){ const d=acharDocId(v[k],prof+1); if(d)return d; }
+  return null;
+}
+function normalizarData(x){
+  if(x==null) return null;
+  if(typeof x==='number'){
+    const ms = x>1e12 ? x : x>1e9 ? x*1000 : null;
+    if(!ms) return null;
+    const d=new Date(ms); return isNaN(d)?null:d;
+  }
+  if(typeof x==='string' && /^\d{4}-\d{2}-\d{2}T/.test(x)){ const d=new Date(x); return isNaN(d)?null:d; }
+  if(typeof x==='object'){
+    const s = x.seconds ?? x.secs ?? x._seconds;
+    if(typeof s==='number'){ const d=new Date(s*1000); return isNaN(d)?null:d; }
+  }
+  return null;
+}
+
+/* ── o que interessa em cada achado ──────────────────────────────────────── */
+const CK = ['sonoQ','energia','dor','estresse','humor'];   /* check-in diário */
+function retrato(o){
+  const g = Array.isArray(o.garmin)?o.garmin:[];
+  /* o app guarda relógio e check-in na MESMA série (pro.garmin), um registro
+     por dia: o relógio traz hrv/sono/fc, o check-in traz as respostas. Separar
+     importa porque o relógio é reimportável e o check-in não é. */
+  const comRelogio = g.filter(x=>x && (x.hrv!=null||x.sono!=null||x.fc!=null)).length;
+  const comCheckin = g.filter(x=>x && CK.some(k=>x[k]!=null)).length;
+  const datas = g.map(x=>x&&x.data).filter(Boolean).sort();
+  return {
+    dias:g.length, comRelogio, comCheckin,
+    de:datas[0]||null, ate:datas[datas.length-1]||null,
+    exames:(o.exames||[]).length, bioimp:(o.bioimp||[]).length,
+    seco:(o.seco||[]).length, resultados:(o.resultados||[]).length,
+    pbs:Object.keys(o.pbs||{}).length,
+    ehPro:['pbs','garmin','resultados'].some(k=>k in o),
+    ehUsuario:'perfil' in o
+  };
+}
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const brData = d => d ? d.toLocaleString('pt-BR') : '—';
+
+let ACHADOS = [];
+async function procurar(){
+  const btn = document.getElementById('btn'), saida = document.getElementById('saida');
+  btn.disabled = true; btn.textContent = 'Procurando…';
+  saida.innerHTML = '';
+  const log = [];
+  ACHADOS = [];
+
+  /* 1. localStorage — no modo "neste aparelho" é onde tudo mora */
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      const o = talvezNosso(localStorage.getItem(k));
+      /* no localStorage a chave JÁ é a do app (o prefixo é parcial_) */
+      if(o) ACHADOS.push({onde:'localStorage · '+k, chave:k, docId:k.replace(/^parcial_/,''), data:null, dados:o});
+    }
+  }catch(e){ log.push('localStorage indisponível: '+e.message); }
+
+  /* 2. IndexedDB do Firestore */
+  let bancos = [];
+  try{
+    bancos = indexedDB.databases ? await indexedDB.databases() : [];
+  }catch(e){ log.push('não consegui listar os bancos: '+e.message); }
+  const nomes = bancos.map(b=>b.name).filter(Boolean);
+  /* navegadores sem databases() (Safari antigo): tenta os nomes conhecidos */
+  if(!nomes.length) nomes.push('firestore/[DEFAULT]/parcial-cdb0e/main');
+
+  for(const nome of nomes){
+    if(!/firestore/i.test(nome) && !/^parcial/i.test(nome)) continue;
+    let db;
+    try{ db = await abrir(nome); }
+    catch(e){ log.push('não abri '+nome+': '+e.message); continue; }
+    for(const loja of [...db.objectStoreNames]){
+      let regs, chaves;
+      try{
+        const tx = db.transaction(loja,'readonly');
+        const st = tx.objectStore(loja);
+        regs   = await tudo(st,'getAll');
+        chaves = await tudo(st,'getAllKeys');
+      }catch(e){ continue; }
+      regs.forEach((r,i)=>{
+        const achados = [];
+        garimpar(r,achados,0);
+        if(!achados.length) return;
+        const chaveInterna = JSON.stringify(chaves[i]);
+        const docId = acharDocId(r,0) || (chaveInterna.match(PADRAO_CHAVE)||[])[1] || null;
+        for(const o of achados)
+          ACHADOS.push({onde:loja, chave:chaveInterna, docId, data:acharData(r,0), dados:o});
+      });
+      if(regs.length) log.push(loja+': '+regs.length+' registro(s)');
+    }
+    db.close();
+  }
+
+  /* um mesmo documento pode aparecer em várias lojas; fica o mais completo */
+  const vistos = new Map();
+  for(const a of ACHADOS){
+    const r = retrato(a.dados);
+    const peso = r.dias + r.resultados + r.exames + r.bioimp + r.pbs;
+    const id = (r.ehPro?'pro':'outro') + '|' + (a.dados.email||a.dados.matricula||a.chave||'');
+    const ant = vistos.get(id);
+    if(!ant || peso > ant.peso) vistos.set(id,{...a,retrato:r,peso});
+  }
+  ACHADOS = [...vistos.values()].sort((x,y)=>y.peso-x.peso);
+
+  btn.disabled = false; btn.textContent = 'Procurar de novo';
+  desenhar(log);
+}
+
+function desenhar(log){
+  const saida = document.getElementById('saida');
+  const comSaude = ACHADOS.filter(a=>a.retrato.dias>0 || a.retrato.exames>0 || a.retrato.bioimp>0);
+
+  if(!ACHADOS.length){
+    saida.innerHTML = `<div class="cartao"><b>Nenhuma cópia encontrada neste navegador.</b>
+      <p class="xs muted">O cache deste aparelho não tem nenhum documento do app guardado. Tente nos outros aparelhos onde você já abriu o Meros360 — e, em cada um, antes de abrir o app.</p>
+      ${log.length?`<details><summary class="xs muted">detalhes técnicos</summary><pre class="xs" style="white-space:pre-wrap">${esc(log.join('\n'))}</pre></details>`:''}</div>`;
+    return;
+  }
+
+  const blocos = ACHADOS.map((a,i)=>{
+    const r = a.retrato;
+    const linha = (rot,v,obs) => v ? `<tr><td>${rot}</td><td class="n"><b>${v}</b></td><td class="xs muted">${obs||''}</td></tr>` : '';
+    return `<div class="achado">
+      <h3>${esc(a.docId||(r.ehPro?'Dados pessoais (pro_)':r.ehUsuario?'Cadastro de conta':'Documento do app'))}</h3>
+      <div class="xs muted">${esc(a.onde)} · cópia de ${brData(a.data)}</div>
+      ${a.docId?`<div class="xs muted">Confira que este é o <b>seu</b> documento antes de restaurar — restaurar o de outra pessoa repetiria o problema.</div>`:
+                `<div class="xs" style="color:var(--alerta)">Não identifiquei a qual documento esta cópia pertence. Baixe e me mostre antes de restaurar.</div>`}
+      <table>
+        ${linha('Dias na série de Saúde', r.dias, r.de?`${r.de} a ${r.ate}`:'')}
+        ${linha('— com dados do relógio', r.comRelogio, 'reimportável do export do Garmin')}
+        ${linha('— com check-in respondido', r.comCheckin, 'só existe aqui')}
+        ${linha('Exames', r.exames)}
+        ${linha('Bioimpedância', r.bioimp)}
+        ${linha('Sessões fora d\'água', r.seco)}
+        ${linha('Resultados de competição', r.resultados)}
+        ${linha('Melhores tempos', r.pbs)}
+      </table>
+      <button class="cheio" style="margin-top:10px" onclick="baixar(${i})">Baixar este como backup</button>
+    </div>`;
+  }).join('');
+
+  saida.innerHTML = `
+    ${comSaude.length
+      ? `<div class="bom"><b>Encontrei ${comSaude.length} cópia(s) com dados de Saúde.</b> Confira as datas e os números abaixo: se forem os seus, baixe o arquivo <b>antes de abrir o app neste aparelho</b>.</div>`
+      : `<div class="nota"><b>Encontrei cópias, mas nenhuma com dados de Saúde.</b> Provavelmente são da versão já sobrescrita. Vale tentar em outro aparelho.</div>`}
+    ${blocos}
+    <div class="cartao"><b>Como restaurar</b>
+      <ol class="xs">
+        <li>Baixe o arquivo acima e guarde-o em dois lugares.</li>
+        <li>Abra o app, entre na sua conta e vá em <b>Conta › Dados e backup</b>.</li>
+        <li>Em <b>Restaurar de um arquivo</b>, escolha o arquivo baixado.</li>
+      </ol>
+      <p class="xs muted" style="margin:6px 0 0">A restauração grava por cima do que está no servidor hoje. Se o que está lá tem algo que esta cópia não tem, exporte um backup do estado atual primeiro — assim você tem os dois e não precisa escolher no escuro.</p>
+    </div>
+    ${log.length?`<details style="margin-top:10px"><summary class="xs muted">detalhes técnicos</summary><pre class="xs" style="white-space:pre-wrap">${esc(log.join('\n'))}</pre></details>`:''}`;
+}
+
+/* O arquivo sai no MESMO formato que importarBackup() do app espera:
+   {dados:{<chave>:<documento>}} — por isso a chave precisa ser a do app
+   (pro_<uid>, u_<email>), não a chave interna do IndexedDB. */
+function baixar(i){
+  const a = ACHADOS[i]; if(!a) return;
+  const o = a.dados;
+  let chave = a.docId || null;
+  if(!chave && o.email && o.perfil) chave = 'u_' + String(o.email).toLowerCase();
+  else if(!chave && o.id && ('pbs' in o || 'garmin' in o)) chave = 'pro_' + o.id;
+  if(!chave){
+    alert('Não consegui identificar a qual documento esta cópia pertence. Baixe de todo jeito: o arquivo sai com a chave "RECUPERADO" e eu ajusto depois.');
+    chave = 'RECUPERADO';
+  }
+  const pacote = {app:'Meros360', versao:'recuperacao', em:new Date().toISOString(),
+    origem:{loja:a.onde, chaveInterna:a.chave, copiaDe:a.data?a.data.toISOString():null},
+    dados:{[chave]:o}};
+  const url = URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
+  const el = document.createElement('a');
+  el.href = url;
+  el.download = 'meros360-recuperado-' + new Date().toISOString().slice(0,10) + '.json';
+  el.click();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
+
+document.getElementById('btn').addEventListener('click',procurar);
+</script>
+</body>
+</html>
