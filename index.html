@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v151';
+const VER='v152';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -929,16 +929,37 @@ async function recarregarForcado(){
   u.searchParams.set('v',Date.now());
   location.replace(u.toString());
 }
-function exportarBackup(){
+/* ── BACKUP ────────────────────────────────────────────────────────────────
+   ⚠️ Esta função era INÚTIL para quem usa o app em rede, que é a situação de
+   todo mundo: `LOCAL` é falso sempre que o Firebase está ligado, então ela
+   caía no `else` e exportava MEM — que em modo Firebase está vazio. O arquivo
+   saía com `dados:{}` e dizia "Backup gerado". Quem perdeu dados descobriu
+   assim, tarde, que não tinha de onde voltar.
+   Em rede não existe "percorrer tudo": o Firestore não lista o que as regras
+   não deixam ler. Então pedimos pelas chaves que são do próprio usuário —
+   cadastro, dados PRO, o espelho da equipe e a caixa do currículo. É isso que
+   um atleta precisa para não perder a vida dele no app. */
+async function exportarBackup(){
   const dados={};
   if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
     if(k&&k.startsWith(PFX))dados[k.slice(PFX.length)]=JSON.parse(localStorage.getItem(k))}}
+  else if(FB||NUVEM){
+    if(!S.u)return toast('Entre na sua conta para exportar.');
+    toast('Montando o backup…');
+    const chaves=[kUser(S.u.email)];
+    if(temPro())chaves.push(kPro(S.u.id));
+    if(S.u.equipe){ chaves.push(kEq(S.u.equipe), kPerf(S.u.equipe,S.u.id), kAbmn(S.u.equipe,S.u.id)); }
+    for(const k of chaves){ try{ const v=await DB.get(k); if(v!=null)dados[k]=v; }catch(_){} }
+  }
   else Object.keys(MEM).forEach(k=>dados[k]=JSON.parse(MEM[k]));
-  const pacote={app:APP_NOME,versao:VER,em:new Date().toISOString(),dados};
+  const n=Object.keys(dados).length;
+  if(!n)return alerta('Backup vazio','Não consegui ler nenhum dado seu. Confira se você está conectado e entrou na conta — um arquivo vazio é pior do que nenhum, porque parece um backup.');
+  const pacote={app:APP_NOME,versao:VER,em:new Date().toISOString(),
+    conta:S.u?S.u.email:null,censo:temPro()?censoPro(S.pro):null,dados};
   try{
     const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
-    const a=document.createElement('a'); a.href=url; a.download=`parcial-backup-${hoje()}.json`; a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Backup gerado');
+    const a=document.createElement('a'); a.href=url; a.download=`meros360-backup-${hoje()}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),4000); toast(`Backup gerado · ${n} registro(s)`);
   }catch(e){
     sheet(`<h2>Backup</h2><p class="small muted">Copie e guarde este texto.</p>
       <textarea id="bkTxt" style="min-height:200px;font-size:11px">${esc(JSON.stringify(pacote))}</textarea>
@@ -1534,6 +1555,7 @@ async function carregarDados(){
   if(!eq){
     S.eq=null; S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+    if(temPro()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
@@ -1570,6 +1592,7 @@ async function carregarDados(){
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(temPro()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  if(temPro()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
 }
@@ -1673,7 +1696,29 @@ function ligarSincronia(){
   }
   _fbEq=eq; _fbSnap=()=>offs.forEach(f=>{try{f()}catch(_){}});
 }
-async function salvarPro(){
+/* ── CENSO DO pro_: QUANTAS ENTRADAS TINHA QUANDO CARREGOU ──────────────────
+   O pro_ é gravado inteiro a cada salvarPro(), então uma gravação com o objeto
+   errado não corrompe um campo: apaga tudo o que não estiver nele. Foi o que
+   aconteceu quando o espelho de outro atleta foi gravado por cima — o objeto
+   do espelho não tem check-in nem Garmin, e esses dados simplesmente deixaram
+   de existir, sem erro e sem aviso.
+   O censo é tirado no carregamento e comparado na gravação. Não custa leitura
+   nenhuma: é só a contagem do que já estava em memória. */
+const COLECOES_PRO=['resultados','garmin','exames','bioimp','seco'];
+function censoPro(pro){
+  const c={pbs:Object.keys((pro&&pro.pbs)||{}).length};
+  for(const k of COLECOES_PRO)c[k]=Array.isArray(pro&&pro[k])?pro[k].length:0;
+  return c;
+}
+/* só acusa o APAGAMENTO EM MASSA (tinha 3+, vai a zero). Apagar um item, ou
+   esvaziar uma lista curta, é operação normal e não pode virar alarme. */
+function perdasPro(censo,pro){
+  if(!censo)return [];
+  const novo=censoPro(pro), out=[];
+  for(const k in censo)if(censo[k]>=3&&novo[k]===0)out.push(`${k} (${censo[k]}→0)`);
+  return out;
+}
+async function salvarPro(op){
   if(!(S.u&&temPro()))return;
   /* ── TRAVA CONTRA GRAVAR O ATLETA ERRADO ─────────────────────────────────
      S.pro é o único objeto de dados pessoais do app, e no modo espelho ele
@@ -1689,6 +1734,15 @@ async function salvarPro(){
     toast('Não gravei: esta tela é a do atleta, não a sua.');
     return false;
   }
+  /* segunda rede: mesmo com o espelho resolvido, nenhuma gravação apaga
+     coleções inteiras sem que o dono mande. `op.apagando` é o consentimento
+     explícito de quem apaga de propósito (zerar marcas, apagar conta). */
+  const perdas=(op&&op.apagando)?[]:perdasPro(S._proCenso,S.pro);
+  if(perdas.length){
+    console.warn('salvarPro bloqueado: apagaria',perdas);
+    alerta('Gravação bloqueada',`Esta gravação apagaria <b>${esc(perdas.join(', '))}</b> dos seus dados, e isso quase sempre é defeito, não intenção.<br><br>Nada foi alterado. Feche e abra o app: ele recarrega os seus dados do servidor. Se o problema voltar, exporte um backup em <b>Conta › Dados e backup</b> antes de continuar e me avise.`);
+    return false;
+  }
   /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
      senão o formulário se repreenche sozinho no render seguinte. */
   limparRascunhos();
@@ -1702,6 +1756,10 @@ async function salvarPro(){
        o PLACAR (0-100) e a origem — VFC/sono/exames continuam privados. */
     prontidaoGar:(typeof prontidaoGarmin==='function'?(()=>{const p=prontidaoGarmin(S.pro,null);return p?{score:p.score,dias:p.dias}:null;})():null),
     at:Date.now()});
+  /* o censo acompanha o que acabou de ser gravado: quem apaga um item por vez
+     não topa com a trava no último, e o que ficou gravado é a nova referência */
+  S._proCenso=censoPro(S.pro);
+  return true;
 }
 
 /* =====================================================================
@@ -4256,6 +4314,34 @@ teste('espelho','a trava de gravação olha a marca no dado',a=>{
   a.ok(bloqueia(null,{_espelho:'outro'}),'bloqueia só pela marca, sem laudoAtleta');
   a.ok(!bloqueia(null,{pbs:{}}),'libera a gravação dos meus dados');});
 
+/* ── TRAVA ANTI-APAGAMENTO (v152) ───────────────────────────────────────────
+   O pro_ é regravado inteiro a cada salvarPro(), então gravar o objeto errado
+   não corrompe um campo: apaga tudo o que não estiver nele. Foi assim que o
+   check-in e o Garmin de um usuário real desapareceram, sem erro e sem aviso,
+   quando o espelho de outro atleta foi gravado por cima. */
+teste('trava','apagamento em massa é barrado',a=>{
+  const censo=censoPro({pbs:{a:1,b:2,c:3},resultados:[1,2,3,4],garmin:[1,2,3],exames:[],bioimp:[],seco:[]});
+  const perdas=perdasPro(censo,{pbs:{a:1,b:2,c:3},resultados:[1,2,3,4],garmin:[],exames:[],bioimp:[],seco:[]});
+  a.eq(perdas.length,1,'uma coleção zerada, um alerta');
+  a.ok(/garmin \(3→0\)/.test(perdas[0]),'diz qual e quanto se perderia');});
+teste('trava','o espelho gravado por cima seria barrado',a=>{
+  /* exatamente o caso real: o objeto do espelho não tem garmin nem exames */
+  const meu=censoPro({pbs:{a:1,b:2,c:3},resultados:[1,2,3],garmin:[1,2,3,4,5],exames:[1,2,3],bioimp:[],seco:[]});
+  const espelho={pbs:{x:1},resultados:[9],garmin:[],exames:[],bioimp:[],seco:[]};
+  const perdas=perdasPro(meu,espelho);
+  a.ok(perdas.some(p=>/^garmin/.test(p)),'o Garmin seria apagado');
+  a.ok(perdas.some(p=>/^exames/.test(p)),'os exames também');
+  a.ok(!perdas.some(p=>/^pbs/.test(p)),'pbs não: 3→1 é perda, mas não apagamento');});
+teste('trava','apagar um item por vez não vira alarme',a=>{
+  const censo=censoPro({pbs:{},resultados:[1,2,3],garmin:[],exames:[],bioimp:[],seco:[]});
+  a.eq(perdasPro(censo,{pbs:{},resultados:[1,2],garmin:[],exames:[],bioimp:[],seco:[]}).length,0,'3→2 passa');
+  const c2=censoPro({pbs:{},resultados:[1,2],garmin:[],exames:[],bioimp:[],seco:[]});
+  a.eq(perdasPro(c2,{pbs:{},resultados:[],garmin:[],exames:[],bioimp:[],seco:[]}).length,0,
+       'lista curta pode ser esvaziada — o censo acompanha cada gravação');});
+teste('trava','sem censo (primeira gravação) nada é barrado',a=>{
+  a.eq(perdasPro(null,{pbs:{},resultados:[]}).length,0,'conta nova grava à vontade');
+  a.eq(perdasPro(undefined,null).length,0,'nem quebra sem pro');});
+
 /* ── PROCEDÊNCIA DAS MARCAS (v151) ──────────────────────────────────────── */
 teste('procedência','cada resultado é classificado pela chave',a=>{
   const pro={resultados:[
@@ -6613,13 +6699,14 @@ async function apagarMarcasOrigem(id){
   const antes=(S.pro.resultados||[]).length;
   S.pro.resultados=(S.pro.resultados||[]).filter(r=>!o.teste(String(r.chave||'')));
   const n=antes-S.pro.resultados.length;
-  if(await salvarPro()===false)return;
+  if(await salvarPro({apagando:true})===false)return;
   fecharSheet(); toast(`${n} resultado(s) removido(s) · ${esc(o.rot)}`); render();
 }
 async function zerarMarcas(){
   if(!S.pro)return;
   S.pro.pbs={}; S.pro.resultados=[];
-  if(await salvarPro()===false)return;
+  /* apagamento pedido pelo dono: passa pela trava com consentimento explícito */
+  if(await salvarPro({apagando:true})===false)return;
   fecharSheet(); toast('Marcas zeradas. Importe o seu currículo da ABMN para reconstruir.'); render();
 }
 
