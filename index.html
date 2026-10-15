@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v159';
+const VER='v160';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1109,6 +1109,32 @@ function comDono(pro,uid){ if(pro&&uid&&!pro._dono)pro._dono=uid; return pro; }
    já restringem leitura e escrita ao dono. */
 const kProBk=(uid,slot)=>`pro_${uid}_bk${slot}`;
 const DIAS_BK=['dom','seg','ter','qua','qui','sex','sáb'];
+/* ── SAÚDE EM DOCUMENTO PRÓPRIO ─────────────────────────────────────────────
+   Em 14/10 um problema de currículo da ABMN levou junto VFC, sono, check-in,
+   exames e fora d'água. Não porque tivessem relação, mas porque moravam no
+   MESMO documento: o pro_ é reescrito inteiro a cada gravação, então um
+   defeito em qualquer parte alcança todas as outras.
+
+   Agora a Saúde mora em `pro_<uid>_sau`, e a regra que sustenta a separação é
+   esta: na LEITURA, esse documento é a fonte de verdade. Mesmo que um dia
+   alguém volte a gravar Saúde dentro do pro_, o app não olha para lá. Só as
+   telas de Saúde gravam o documento de Saúde (salvarSaude); salvarPro nunca
+   o toca. São dois caminhos de escrita independentes, cada um com as suas
+   travas — o estrago de um não chega ao outro.
+
+   O prefixo `pro_` é de propósito: herda as regras do Firestore que já
+   restringem leitura e escrita ao dono, sem precisar republicar nada. */
+const kSau=uid=>`pro_${uid}_sau`;
+const CAMPOS_SAUDE=['garmin','exames','bioimp','seco'];
+function soSaude(pro){
+  const o={_dono:(pro&&pro._dono)||null};
+  for(const k of CAMPOS_SAUDE)o[k]=Array.isArray(pro&&pro[k])?pro[k]:[];
+  return o;
+}
+function semSaude(pro){
+  const o={}; for(const k in pro)if(!CAMPOS_SAUDE.includes(k))o[k]=pro[k];
+  return o;
+}
 /* Equipe pública criada pelo próprio atleta. A chave é o uid, não o nome:
    cada conta só cria um registro e duas equipes homônimas não se atropelam.
    Isto é AFILIAÇÃO; não dá poderes de técnico nem abre dados compartilhados. */
@@ -1688,8 +1714,10 @@ async function carregarDados(){
   if(!eq){
     S.eq=null; S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
+    await juntarSaude();
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
+    if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
@@ -1697,6 +1725,7 @@ async function carregarDados(){
   if(S.u.aprovado===false&&['atleta','pro','tecnico'].includes(S.u.perfil)){
     S.eq=await DB.get(kEq(eq)); S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
+    await juntarSaude();
     return;
   }
   S.tridx=await DB.get(kTrIdx(eq))||[];
@@ -1727,8 +1756,10 @@ async function carregarDados(){
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
   if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
+    await juntarSaude();
   if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
+    if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
@@ -1967,7 +1998,10 @@ async function salvarPro(op){
   /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
      senão o formulário se repreenche sozinho no render seguinte. */
   limparRascunhos();
-  await DB.set(kPro(S.u.id),S.pro);
+  /* A Saúde sai do pro_ assim que o documento próprio estiver confirmado
+     (`_sauOk`). Antes disso ela continua aqui, senão uma falha no meio da
+     migração apagaria justamente o que a separação existe para proteger. */
+  await DB.set(kPro(S.u.id),S._sauOk?semSaude(S.pro):S.pro);
   /* snapshot visível ao técnico (desempenho + carga + composição p/ a assinatura de sprint;
      SEM Saúde: Garmin (VFC/sono) e exames laboratoriais ficam só no pro_ privado) */
   if(S.u.equipe&&S.u.aprovado!==false)await DB.set(kPerf(S.u.equipe,S.u.id),{nome:S.u.nome,nivel:S.u.nivel||null,
@@ -2039,6 +2073,64 @@ async function restaurarVersao(slot){
   toast(`Dados restaurados para ${DIAS_BK[slot]!==undefined?DIAS_BK[slot]:'antes da restauração'} ${(v.dia||'').slice(8,10)}/${(v.dia||'').slice(5,7)}`);
   render();
 }
+/* Lê o documento de Saúde e o funde em S.pro. A forma em memória não muda —
+   as ~38 telas continuam lendo S.pro.garmin, S.pro.exames e companhia. O que
+   mudou é de ONDE vem e para onde vai.
+
+   Enquanto `pro_<uid>_sau` não existir, vale o que está no pro_ (contas
+   antigas) e a migração acontece na primeira gravação de Saúde. O pro_ só
+   para de carregar essas listas depois que o documento novo estiver
+   confirmado — senão uma falha no meio da migração apagaria o que ela deveria
+   proteger. */
+async function juntarSaude(){
+  if(!S.u)return;
+  S._sauOk=false;
+  let sau=null;
+  try{ sau=await DB.get(kSau(S.u.id)); }catch(_){ return; }   /* offline: fica o do pro_ */
+  if(!sau){
+    /* Conta anterior à separação: move a Saúde para o documento próprio agora,
+       sem esperar que o usuário abra a aba. Enquanto ela estiver só no pro_,
+       continua exposta ao defeito que a separação existe para evitar. */
+    const tem=CAMPOS_SAUDE.some(k=>Array.isArray(S.pro[k])&&S.pro[k].length);
+    if(tem&&!S.laudoAtleta&&!S.pro._espelho&&(!S.pro._dono||S.pro._dono===S.u.id)){
+      const corpo=soSaude(S.pro); corpo._dono=S.u.id;
+      try{ if(await DB.set(kSau(S.u.id),corpo))S._sauOk=true; }catch(_){}
+    }
+    return;
+  }
+  if(sau._dono&&sau._dono!==S.u.id){ console.warn('sau_ de outro dono — ignorado'); return; }
+  for(const k of CAMPOS_SAUDE)if(Array.isArray(sau[k]))S.pro[k]=sau[k];
+  S._sauOk=true;
+}
+/* Única porta de escrita da Saúde. Mesmas travas do salvarPro, aplicadas só
+   às listas de Saúde — e nenhuma outra função escreve aqui. */
+async function salvarSaude(op){
+  if(!(S.u&&temDadosPessoais()))return;
+  if(S.laudoAtleta||(S.pro&&S.pro._espelho)){
+    console.warn('salvarSaude bloqueado: espelho');
+    toast('Não gravei: esta tela é a do atleta, não a sua.');
+    return false;
+  }
+  if(S.pro&&S.pro._dono&&S.pro._dono!==S.u.id){
+    console.warn('salvarSaude bloqueado: dono',S.pro._dono);
+    alerta('Gravação bloqueada','Os dados abertos nesta tela <b>pertencem a outra conta</b> e não foram gravados nos seus.');
+    return false;
+  }
+  const corpo=soSaude(S.pro); corpo._dono=S.u.id;
+  /* o censo da Saúde é conferido contra o que foi carregado, igual ao do pro_ */
+  const perdas=(op&&op.apagando)?[]:perdasPro(S._sauCenso,corpo);
+  if(perdas.length){
+    console.warn('salvarSaude bloqueado: apagaria',perdas);
+    alerta('Gravação bloqueada',`Esta gravação apagaria <b>${esc(perdas.join(', '))}</b> dos seus dados de Saúde. Nada foi alterado — feche e abra o app.`);
+    return false;
+  }
+  const ok=await DB.set(kSau(S.u.id),corpo);
+  if(!ok)return false;
+  S._sauOk=true; S._sauCenso=censoSaude(corpo);
+  await salvarPro(op);          /* o kPerf do técnico e a versão do dia seguem no pro_ */
+  return true;
+}
+function censoSaude(o){ const c={}; for(const k of CAMPOS_SAUDE)c[k]=Array.isArray(o&&o[k])?o[k].length:0; return c; }
 async function guardarVersaoDoDia(){
   try{
     if(!EMREDE||!S.u||!S._proCarregado)return;
@@ -4554,6 +4646,40 @@ teste('dono','o espelho carrega o uid do atleta espelhado',a=>{
   a.eq(camposSeguranca('pro_EU',espelho).dono,'ATLETA','vai com o dono errado de propósito');
   a.ok(camposSeguranca('pro_EU',espelho).dono!=='EU','e por isso o servidor recusa');});
 
+/* ── SAÚDE EM DOCUMENTO PRÓPRIO (v160) ──────────────────────────────────────
+   Em 14/10 um problema de currículo da ABMN levou junto VFC, sono, check-in,
+   exames e fora d'água — não por terem relação, mas por morarem no mesmo
+   documento. Estes testes travam a separação. */
+teste('saúde','a partição é limpa nos dois sentidos',a=>{
+  const pro={_dono:'EU',pbs:{a:1},resultados:[1,2],garmin:[1,2,3],exames:[4],bioimp:[],seco:[5,6]};
+  const s=soSaude(pro), r=semSaude(pro);
+  a.eq(s.garmin.length,3,'a Saúde leva as listas de Saúde');
+  a.eq(s.seco.length,2,'fora d\'água junto — foi perdido com elas');
+  a.eq(s.pbs,undefined,'e não leva marcas');
+  a.eq(r.pbs.a,1,'o pro_ fica com as marcas');
+  a.eq(r.garmin,undefined,'e sem nenhuma lista de Saúde');
+  a.eq(r.resultados.length,2,'resultados continuam no pro_');});
+teste('saúde','o dono viaja nos dois documentos',a=>{
+  a.eq(soSaude({_dono:'EU',garmin:[]})._dono,'EU','a Saúde também se identifica');
+  a.eq(camposSeguranca('pro_EU_sau',{_dono:'EU'}).dono,'EU','e o servidor confere pelo conteúdo');
+  a.eq(camposSeguranca('pro_EU_sau',{_dono:'OUTRO'}).dono,'OUTRO','documento alheio é recusado lá');});
+teste('saúde','a chave herda as regras do pro_',a=>{
+  a.eq(kSau('U1'),'pro_U1_sau','prefixo pro_: nada de republicar regra');
+  a.ok(/^pro_/.test(kSau('U1'))&&/^pro_/.test(kProBk('U1',0)),'versões diárias idem');});
+teste('saúde','o censo de Saúde é só da Saúde',a=>{
+  const c=censoSaude({garmin:[1,2],exames:[3],bioimp:[],seco:[4,5,6]});
+  a.eq(c.garmin,2,'conta o que é de Saúde'); a.eq(c.seco,3,'idem');
+  a.eq(c.pbs,undefined,'e ignora o resto — marcas não disparam alarme de Saúde');});
+teste('saúde','um pro_ corrompido não leva a Saúde junto',a=>{
+  /* o cerne da separação: mesmo que S.pro perca tudo, o que vai para o
+     documento de Saúde é calculado à parte e tem a própria trava */
+  const carregado=censoSaude({garmin:[1,2,3,4],exames:[1,2,3],bioimp:[],seco:[1,2,3]});
+  const corrompido={_dono:'EU',pbs:{},garmin:[],exames:[],bioimp:[],seco:[]};
+  const perdas=perdasPro(carregado,soSaude(corrompido));
+  a.ok(perdas.length>=2,'a trava de Saúde acusa antes de gravar');
+  a.ok(perdas.some(p=>/^garmin/.test(p)),'VFC e sono entre os acusados');
+  a.ok(perdas.some(p=>/^seco/.test(p)),'fora d\'água também');});
+
 /* ── VERSÕES DIÁRIAS (v159) ─────────────────────────────────────────────── */
 teste('versões','sete fatias fixas, uma por dia da semana',a=>{
   a.eq(kProBk('U1',3),'pro_U1_bk3','a chave herda o prefixo pro_, e com ele as regras');
@@ -6022,14 +6148,27 @@ async function apagarDadosDaConta(u,pro){
     /* ANEXOS primeiro: depois de apagar o pro_ não há mais como achar as URLs,
        e o arquivo ficaria órfão no Storage para sempre. */
     const p=pro||await DB.get(kPro(u.id))||{};
-    for(const s of (p.seco||[]))
+    /* a Saúde mudou de documento (v160): os anexos de fora d'água podem estar
+       no pro_ antigo, no pro_<uid>_sau, ou nos dois durante a migração */
+    let sau=null; try{ sau=await DB.get(kSau(u.id)); }catch(_){}
+    const secos=[...(p.seco||[]),...((sau&&sau.seco)||[])];
+    const vistos=new Set();
+    for(const s of secos)
       for(const campo of ['img','arquivo'])
-        if(s[campo]){ await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
+        if(s[campo]&&!vistos.has(s[campo])){ vistos.add(s[campo]);
+          await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
     /* pro_ SEM condicionar ao perfil: desde que o técnico ganhou área de
        atleta, e desde que existe atleta com Marcas liberadas, dado de saúde
        pode morar aqui em qualquer perfil. Apagar é idempotente — se o
        documento não existe, não acontece nada. */
     await apagarChave(kPro(u.id)); feitas.push(kPro(u.id));
+    /* ⚠️ Apagar a conta tem de levar TUDO. A Saúde agora é um documento à
+       parte e as versões diárias são mais sete — deixá-los para trás seria
+       prometer exclusão e guardar dado de saúde assim mesmo. */
+    await apagarChave(kSau(u.id)); feitas.push(kSau(u.id));
+    for(const s of [0,1,2,3,4,5,6,'undo']){
+      await apagarChave(kProBk(u.id,s)); feitas.push(kProBk(u.id,s));
+    }
     /* o resumo que o TÉCNICO enxerga é um documento à parte e sobrevivia
        à exclusão: o atleta saía e o painel dele continuava no elenco. */
     if(u.equipe){ await apagarChave(kPerf(u.equipe,u.id)); feitas.push(kPerf(u.equipe,u.id)); }
@@ -8057,7 +8196,7 @@ async function salvarCheckin(){
   const hj=hoje(); let rec=(S.pro.garmin||[]).find(x=>x.data===hj); if(!rec){rec={data:hj};S.pro.garmin.push(rec);}
   rec.sonoQ=d.sonoQ; rec.energia=d.energia; rec.dor=d.dor; rec.estresse=d.estresse; rec.humor=d.humor;
   if(d.sono!=null)rec.sono=d.sono; if(d.fc!=null)rec.fc=d.fc;
-  await salvarPro(); S.checkinDraft=null;
+  await salvarSaude(); S.checkinDraft=null;
   toast('Check-in salvo · prontidão '+checkinScore(rec)); render();
 }
 /* ── IMPORT DO GARMIN: o atrito era ACHAR os arquivos ──────────────────────
@@ -8117,7 +8256,7 @@ async function arquivoGarmin(inp){
   if(!fs.length)return;
   dizGarmin(`Procurando nos ${fs.length} arquivo(s)…`);
   const r=await importarGarminLote(fs.map(f=>({nome:f.webkitRelativePath||f.name,texto:()=>f.text()})),dizGarmin);
-  if(r.total)await salvarPro();
+  if(r.total)await salvarSaude();
   dizGarmin(relatorioGarmin(r),r.total?'ok':'warn');
   if(r.total)render();
 }
@@ -8149,7 +8288,7 @@ async function zipGarmin(inp){
   zip.forEach((caminho,entry)=>{ if(!entry.dir&&garminRelevante(caminho))itens.push({nome:caminho,texto:()=>entry.async('string')}); });
   if(!itens.length)return dizGarmin(relatorioGarmin({total:0,ignorados:Object.keys(zip.files).length}),'warn');
   const r=await importarGarminLote(itens,dizGarmin);
-  if(r.total)await salvarPro();
+  if(r.total)await salvarSaude();
   dizGarmin(relatorioGarmin(r),r.total?'ok':'warn');
   if(r.total)render();
 }
@@ -8194,7 +8333,7 @@ async function importarGarmin(raw,silencioso){
     mapa[dia]=g;n++;tocados.add(dia);
   });
   S.pro.garmin=Object.values(mapa);
-  if(!silencioso){await salvarPro();toast(`${n} registro(s) lido(s)`);render()}
+  if(!silencioso){await salvarSaude();toast(`${n} registro(s) lido(s)`);render()}
   return {n,dias:[...tocados]};
 }
 async function lancarDia(){
@@ -8205,7 +8344,7 @@ async function lancarDia(){
   if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
   const sh=horasFlex(val('gS')); if(sh!=null)g.sono=sh; if(nm('gP')!==undefined)g.pse=nm('gP');
   S.sonoSel=null;                     /* senão a faixa fica marcada no dia seguinte */
-  await salvarPro(); toast('Gravado'); render();
+  await salvarSaude(); toast('Gravado'); render();
 }
 let FOTO=null,SECOPDF=null;
 function fotoSeco(inp){
@@ -8320,14 +8459,14 @@ async function salvarSeco(){
   if(S.secoEdit){ const i=S.pro.seco.findIndex(x=>x.id===S.secoEdit); if(i>=0)S.pro.seco[i]={...S.pro.seco[i],...reg}; else S.pro.seco.unshift(reg); }
   else S.pro.seco.unshift(reg);
   FOTO=null; SECOPDF=null; S.secoDraft=null; S.secoEdit=null;
-  await salvarPro(); fecharSheet(); toast('Treino salvo'); render();
+  await salvarSaude(); fecharSheet(); toast('Treino salvo'); render();
 }
 async function apagarSeco(id){
   /* apaga também o arquivo no Storage — senão vira lixo pago e dado pessoal
      que continua existindo depois de o usuário ter mandado excluir. */
   const s=(S.pro.seco||[]).find(x=>x.id===id);
   if(s){ await apagarAnexo(s.img); await apagarAnexo(s.arquivo); }
-  S.pro.seco=S.pro.seco.filter(x=>x.id!==id); await salvarPro(); render();
+  S.pro.seco=S.pro.seco.filter(x=>x.id!==id); await salvarSaude(); render();
 }
 /* ── Conserto em lote das durações fora d'água ─────────────────────────────
    Até a v96 uma duração de duas partes era SEMPRE lida como mm:ss: "1:10"
@@ -8379,7 +8518,7 @@ async function corrigirDuracoes(){
   const l=duracoesSuspeitas(); if(!l.length)return;
   const porId=new Map(l.map(x=>[x.id,x.para]));
   S.pro.seco=(S.pro.seco||[]).map(s=>porId.has(s.id)?{...s,dur:porId.get(s.id)}:s);
-  await salvarPro();
+  await salvarSaude();
   ESF=null; SESSOES=[];                   /* a carga é recalculada com os valores novos */
   fecharSheet(); toast(`${l.length} duração(ões) corrigida(s)`); render();
 }
@@ -9217,9 +9356,9 @@ async function salvarExame(){
   const ex={id:uid(),data:val('exData')||hoje(),vals,obs};
   S.pro=S.pro||proVazio();
   S.pro.exames=S.pro.exames||[]; S.pro.exames.push(ex);
-  await salvarPro(); fecharSheet(); toast('Exame salvo'); render();
+  await salvarSaude(); fecharSheet(); toast('Exame salvo'); render();
 }
-async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarPro(); render(); }
+async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarSaude(); render(); }
 
 /* gráfico de linha simples para série de marcador (neutro: nem alto nem baixo é "bom") */
 function graficoSerie(pts,faixa){
@@ -9296,9 +9435,9 @@ async function salvarBio(){
   if(BIO_M.every(([k])=>b[k]==null)&&!b.obs)return toast('Preencha ao menos um valor');
   S.pro=S.pro||proVazio();
   S.pro.bioimp=S.pro.bioimp||[]; S.pro.bioimp.push(b);
-  await salvarPro(); fecharSheet(); toast('Bioimpedância salva'); render();
+  await salvarSaude(); fecharSheet(); toast('Bioimpedância salva'); render();
 }
-async function apagarBio(id){ S.pro.bioimp=(S.pro.bioimp||[]).filter(x=>x.id!==id); await salvarPro(); render(); }
+async function apagarBio(id){ S.pro.bioimp=(S.pro.bioimp||[]).filter(x=>x.id!==id); await salvarSaude(); render(); }
 function resumoBioCurto(b){
   const m=[['Peso',b.peso,'kg'],['Gord',b.gordura,'%'],['Músc',b.musculo,'kg'],['Água',b.agua,'%'],['Visc',b.visceral,'']].filter(x=>x[1]!=null);
   return m.length?m.map(x=>x[0]+' '+x[1]+x[2]).join(' · '):(b.obs?esc(b.obs):'sem valores');
