@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v159';
+const VER='v161';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -848,7 +848,17 @@ const fkey=k=>k.replace(/\//g,'∕');
 function camposSeguranca(k,v){
   const o={dono:null,donoEmail:null,equipe:null,perfil:null,aprovado:null,categoria:null};
   const val=(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
-  if(k.startsWith('pro_')){ o.dono=k.slice(4)||null; }
+  if(k.startsWith('pro_')){
+    /* ⚠️ O DONO VEM DO CONTEÚDO, não da chave — e é esta linha que transforma
+       a trava do cliente numa garantia do SERVIDOR. A regra do Firestore exige
+       `dono == request.auth.uid`; tirando o dono da chave, gravar os dados de
+       um atleta dentro de pro_<outro> passava, porque a chave era a "certa".
+       Tirando do conteúdo, o documento denuncia a si mesmo e a gravação é
+       recusada no servidor, mesmo vinda de um app desatualizado.
+       A chave fica de reserva só para documentos antigos, ainda sem `_dono`.
+       O split corta o sufixo das versões diárias (pro_<uid>_bk3). */
+    o.dono=val._dono||k.slice(4).split('_')[0]||null;
+  }
   else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null); }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
@@ -1081,6 +1091,69 @@ function chaveTreinoUsuario(id,t){return ehTreinoPessoal(id,t)?kPTr(S.u.id,id):k
 async function lerTreinoUsuario(id){return DB.get(chaveTreinoUsuario(id))}
 async function gravarTreinoUsuario(t){return DB.set(chaveTreinoUsuario(t.id,t),t)}
 async function transacaoTreinoUsuario(id,fn){return transacao(chaveTreinoUsuario(id),fn)}
+/* ── O DADO CARREGA O DONO ──────────────────────────────────────────────────
+   A perda de 14/10 teve uma causa só, por trás de todos os sintomas: o objeto
+   de dados pessoais não dizia de quem era. S.pro era um objeto qualquer, e
+   `DB.set(kPro(S.u.id), S.pro)` gravava o que estivesse ali — inclusive os
+   dados de outro atleta, carregados pelo modo espelho.
+
+   `_dono` conserta isso na origem. Todo pro_ passa a carregar o uid do seu
+   dono DENTRO do objeto, e esse campo é verificado em três lugares
+   independentes: ao gravar (salvarPro), no espelhamento de segurança que vai
+   para o Firestore (camposSeguranca) e, por causa dele, nas próprias REGRAS
+   do servidor — que recusam a gravação mesmo vinda de um app desatualizado.
+
+   Uma fábrica única em vez de 17 literais espalhados: campo novo entra aqui e
+   vale em todo lugar, e nenhum pro_ nasce sem dono. */
+function proVazio(uid){
+  return {_dono:uid||(S.u&&S.u.id)||null,
+          pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+}
+/* carimba o dono num pro_ que veio do banco (documentos antigos não têm) */
+function comDono(pro,uid){ if(pro&&uid&&!pro._dono)pro._dono=uid; return pro; }
+/* ── VERSÕES DIÁRIAS ────────────────────────────────────────────────────────
+   As travas impedem a gravação errada; isto é o que resolve quando algo passa
+   mesmo assim. Em 14/10 não havia para onde voltar: o pro_ é um documento só,
+   reescrito inteiro a cada gravação, sem histórico — e a única cópia que
+   existia era o cache do navegador, perecível e que some na primeira
+   sincronização.
+
+   Sete fatias fixas, uma por dia da semana. A de hoje é escrita UMA vez, na
+   primeira gravação do dia, e guarda o estado como ele FOI CARREGADO — antes
+   de qualquer alteração de hoje. Assim até um estrago feito hoje tem para
+   onde voltar, e a fatia de sete dias atrás é sobrescrita sozinha: nada
+   cresce sem limite e não há faxina para esquecer de fazer.
+
+   A chave começa com `pro_` de propósito: herda as regras do Firestore, que
+   já restringem leitura e escrita ao dono. */
+const kProBk=(uid,slot)=>`pro_${uid}_bk${slot}`;
+const DIAS_BK=['dom','seg','ter','qua','qui','sex','sáb'];
+/* ── SAÚDE EM DOCUMENTO PRÓPRIO ─────────────────────────────────────────────
+   Em 14/10 um problema de currículo da ABMN levou junto VFC, sono, check-in,
+   exames e fora d'água. Não porque tivessem relação, mas porque moravam no
+   MESMO documento: o pro_ é reescrito inteiro a cada gravação, então um
+   defeito em qualquer parte alcança todas as outras.
+
+   Agora a Saúde mora em `pro_<uid>_sau`, e a regra que sustenta a separação é
+   esta: na LEITURA, esse documento é a fonte de verdade. Mesmo que um dia
+   alguém volte a gravar Saúde dentro do pro_, o app não olha para lá. Só as
+   telas de Saúde gravam o documento de Saúde (salvarSaude); salvarPro nunca
+   o toca. São dois caminhos de escrita independentes, cada um com as suas
+   travas — o estrago de um não chega ao outro.
+
+   O prefixo `pro_` é de propósito: herda as regras do Firestore que já
+   restringem leitura e escrita ao dono, sem precisar republicar nada. */
+const kSau=uid=>`pro_${uid}_sau`;
+const CAMPOS_SAUDE=['garmin','exames','bioimp','seco'];
+function soSaude(pro){
+  const o={_dono:(pro&&pro._dono)||null};
+  for(const k of CAMPOS_SAUDE)o[k]=Array.isArray(pro&&pro[k])?pro[k]:[];
+  return o;
+}
+function semSaude(pro){
+  const o={}; for(const k in pro)if(!CAMPOS_SAUDE.includes(k))o[k]=pro[k];
+  return o;
+}
 /* Equipe pública criada pelo próprio atleta. A chave é o uid, não o nome:
    cada conta só cria um registro e duas equipes homônimas não se atropelam.
    Isto é AFILIAÇÃO; não dá poderes de técnico nem abre dados compartilhados. */
@@ -1653,15 +1726,19 @@ async function carregarDados(){
   const pessoais=S.u.perfil==='pro'&&!ehGestor()?((await DB.get(kPTrIdx(S.u.id)))||[]):[];
   if(!eq){
     S.eq=null; S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
-    if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+    if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
+    await juntarSaude();
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
+    if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
+    if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
      equipe. Evita leituras negadas e mantém apenas o nome necessário à espera. */
   if(S.u.aprovado===false&&['atleta','pro','tecnico'].includes(S.u.perfil)){
     S.eq=await DB.get(kEq(eq)); S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
-    if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+    if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
+    await juntarSaude();
     return;
   }
   S.tridx=[...((await DB.get(kTrIdx(eq)))||[]),...pessoais].sort((a,b)=>(b.data||'').localeCompare(a.data||''));
@@ -1691,8 +1768,11 @@ async function carregarDados(){
   if(temPro())await carregarCompFuturas(eq);
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
   else if(S.cidx[0])S.comp=await DB.get(kCmp(eq,S.cidx[0].id));
-  if(temDadosPessoais()&&!S.laudoAtleta)S.pro=await DB.get(kPro(S.u.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
+    await juntarSaude();
   if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
+    if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
+    if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
@@ -1905,6 +1985,20 @@ async function salvarPro(op){
     toast('Não gravei: esta tela é a do atleta, não a sua.');
     return false;
   }
+  /* ── PROVA DE DONO ───────────────────────────────────────────────────────
+     A trava do espelho é por EXCLUSÃO: ela só pega o que foi marcado. Esta é
+     por INCLUSÃO — o objeto precisa dizer que é meu. Pega qualquer caminho em
+     que dados alheios cheguem a S.pro, inclusive os que eu não previ: uma
+     restauração de arquivo errado, uma versão antiga recuperada do cache, uma
+     tela nova que esqueça de limpar o contexto.
+     Documento antigo, ainda sem `_dono`, é carimbado em vez de recusado — a
+     esta altura as duas travas acima já garantiram que não é espelho. */
+  if(S.pro&&S.pro._dono&&S.pro._dono!==S.u.id){
+    console.warn('salvarPro bloqueado: pro_ é de',S.pro._dono,'e eu sou',S.u.id);
+    alerta('Gravação bloqueada','Os dados abertos nesta tela <b>pertencem a outra conta</b>, e por isso não foram gravados nos seus.<br><br>Feche e abra o app: ele recarrega os seus dados do servidor. Nada seu foi alterado.');
+    return false;
+  }
+  if(S.pro&&!S.pro._dono)S.pro._dono=S.u.id;
   /* segunda rede: mesmo com o espelho resolvido, nenhuma gravação apaga
      coleções inteiras sem que o dono mande. `op.apagando` é o consentimento
      explícito de quem apaga de propósito (zerar marcas, apagar conta). */
@@ -1917,7 +2011,10 @@ async function salvarPro(op){
   /* gravou de verdade → os rascunhos dos campos cumpriram o papel e devem sair,
      senão o formulário se repreenche sozinho no render seguinte. */
   limparRascunhos();
-  await DB.set(kPro(S.u.id),S.pro);
+  /* A Saúde sai do pro_ assim que o documento próprio estiver confirmado
+     (`_sauOk`). Antes disso ela continua aqui, senão uma falha no meio da
+     migração apagaria justamente o que a separação existe para proteger. */
+  await DB.set(kPro(S.u.id),S._sauOk?semSaude(S.pro):S.pro);
   /* snapshot visível ao técnico (desempenho + carga + composição p/ a assinatura de sprint;
      SEM Saúde: Garmin (VFC/sono) e exames laboratoriais ficam só no pro_ privado) */
   if(S.u.equipe&&S.u.aprovado!==false)await DB.set(kPerf(S.u.equipe,S.u.id),{nome:S.u.nome,nivel:S.u.nivel||null,
@@ -1930,7 +2027,136 @@ async function salvarPro(op){
   /* o censo acompanha o que acabou de ser gravado: quem apaga um item por vez
      não topa com a trava no último, e o que ficou gravado é a nova referência */
   S._proCenso=censoPro(S.pro);
+  /* sem await: a versão do dia é rede de segurança, não pode atrasar o salvar
+     nem derrubá-lo se falhar (documento grande demais, por exemplo) */
+  guardarVersaoDoDia();
   return true;
+}
+/* Grava a fatia de hoje uma única vez por dia, com o estado COMO FOI
+   CARREGADO — não com o de agora. A diferença é o que permite desfazer um
+   estrago feito hoje mesmo: se a primeira gravação do dia já for a ruim, a
+   fatia ainda guarda o estado íntegro de antes dela. */
+/* ── VER E VOLTAR ───────────────────────────────────────────────────────────
+   Guardar versão sem um jeito óbvio de voltar seria metade do trabalho: em
+   14/10 havia cópia no cache do celular e eu levei horas para chegar nela. */
+async function abrirVersoes(){
+  if(!S.u)return;
+  sheet('<h2>Versões guardadas</h2><p class="small muted">Procurando…</p>');
+  const achadas=[];
+  for(const s of [0,1,2,3,4,5,6,'undo']){
+    try{ const v=await DB.get(kProBk(S.u.id,s)); if(v&&v.pro)achadas.push({slot:s,...v}); }catch(_){}
+  }
+  achadas.sort((a,b)=>(b.em||0)-(a.em||0));
+  const agora=censoPro(S.pro);
+  const br=d=>d?d.slice(8,10)+'/'+d.slice(5,7):'—';
+  const linha=(rot,de,para)=>de===para?'':`<div class="row xs" style="padding:3px 0"><span class="grow">${rot}</span>
+    <span style="color:${para>de?'var(--clock)':'var(--ink-2)'}"><b>${de}</b> → ${para}</span></div>`;
+  const blocos=achadas.map(v=>{
+    const c=v.censo||{};
+    const difs=Object.keys(c).map(k=>linha(k,c[k],agora[k]||0)).join('');
+    const rotulo=v.slot==='undo'?'antes da última restauração':`${DIAS_BK[v.slot]} · ${br(v.dia)}`;
+    return `<div class="card" style="margin:10px 0">
+      <div class="row"><b class="grow">${esc(rotulo)}</b><span class="xs muted">${esc(v.ver||'')}</span></div>
+      ${difs?`<div class="xs muted" style="margin:6px 0 2px">o que mudou de lá para cá</div>${difs}`
+            :'<div class="xs muted" style="margin-top:6px">Idêntica ao que você tem agora.</div>'}
+      <button class="sm full" style="margin-top:8px" onclick="restaurarVersao(${typeof v.slot==='string'?`'${v.slot}'`:v.slot})">Restaurar esta</button>
+    </div>`;}).join('');
+  sheet(`<h2>Versões guardadas</h2>
+    ${achadas.length?`<p class="small muted" style="margin:6px 0 2px">Uma cópia por dia, como os dados estavam ao abrir o app. A mais antiga é substituída automaticamente.</p>${blocos}`
+      :'<div class="note" style="margin:10px 0"><b>Ainda não há versões.</b> A primeira é guardada na próxima vez que você salvar algo. A partir daí, uma por dia.</div>'}
+    <div class="note warn" style="margin:10px 0">Restaurar <b>substitui</b> os seus dados de hoje pelos daquele dia. O estado atual é guardado antes, como <b>“antes da última restauração”</b> — então dá para voltar atrás.</div>
+    <button class="primary full" onclick="fecharSheet()">Fechar</button>`);
+}
+async function restaurarVersao(slot){
+  const v=await DB.get(kProBk(S.u.id,slot));
+  if(!v||!v.pro)return toast('Versão não encontrada');
+  if(v.pro._dono&&v.pro._dono!==S.u.id)return alerta('Versão de outra conta','Esta cópia não é sua e não foi restaurada.');
+  /* O estado atual vai para a fatia 'undo', NÃO para a de hoje: a de hoje
+     guarda o estado da manhã, que é justamente o que se costuma querer de
+     volta — gravar por cima dela seria destruir o alvo da restauração. */
+  await DB.set(kProBk(S.u.id,'undo'),
+    {_dono:S.u.id,em:Date.now(),dia:hoje(),ver:VER,censo:censoPro(S.pro),
+     pro:JSON.parse(JSON.stringify(S.pro))});
+  S.pro=comDono(v.pro,S.u.id);
+  /* a versão restaurada passa a ser o estado "carregado" do dia, senão a
+     próxima gravação guardaria o dado antigo como se fosse o de hoje */
+  S._proCarregado=JSON.stringify(S.pro); S._bkDia=hoje();
+  if(await salvarPro({apagando:true})===false)return;
+  fecharSheet();
+  toast(`Dados restaurados para ${DIAS_BK[slot]!==undefined?DIAS_BK[slot]:'antes da restauração'} ${(v.dia||'').slice(8,10)}/${(v.dia||'').slice(5,7)}`);
+  render();
+}
+/* Lê o documento de Saúde e o funde em S.pro. A forma em memória não muda —
+   as ~38 telas continuam lendo S.pro.garmin, S.pro.exames e companhia. O que
+   mudou é de ONDE vem e para onde vai.
+
+   Enquanto `pro_<uid>_sau` não existir, vale o que está no pro_ (contas
+   antigas) e a migração acontece na primeira gravação de Saúde. O pro_ só
+   para de carregar essas listas depois que o documento novo estiver
+   confirmado — senão uma falha no meio da migração apagaria o que ela deveria
+   proteger. */
+async function juntarSaude(){
+  if(!S.u)return;
+  S._sauOk=false;
+  let sau=null;
+  try{ sau=await DB.get(kSau(S.u.id)); }catch(_){ return; }   /* offline: fica o do pro_ */
+  if(!sau){
+    /* Conta anterior à separação: move a Saúde para o documento próprio agora,
+       sem esperar que o usuário abra a aba. Enquanto ela estiver só no pro_,
+       continua exposta ao defeito que a separação existe para evitar. */
+    const tem=CAMPOS_SAUDE.some(k=>Array.isArray(S.pro[k])&&S.pro[k].length);
+    if(tem&&!S.laudoAtleta&&!S.pro._espelho&&(!S.pro._dono||S.pro._dono===S.u.id)){
+      const corpo=soSaude(S.pro); corpo._dono=S.u.id;
+      try{ if(await DB.set(kSau(S.u.id),corpo))S._sauOk=true; }catch(_){}
+    }
+    return;
+  }
+  if(sau._dono&&sau._dono!==S.u.id){ console.warn('sau_ de outro dono — ignorado'); return; }
+  for(const k of CAMPOS_SAUDE)if(Array.isArray(sau[k]))S.pro[k]=sau[k];
+  S._sauOk=true;
+}
+/* Única porta de escrita da Saúde. Mesmas travas do salvarPro, aplicadas só
+   às listas de Saúde — e nenhuma outra função escreve aqui. */
+async function salvarSaude(op){
+  if(!(S.u&&temDadosPessoais()))return;
+  if(S.laudoAtleta||(S.pro&&S.pro._espelho)){
+    console.warn('salvarSaude bloqueado: espelho');
+    toast('Não gravei: esta tela é a do atleta, não a sua.');
+    return false;
+  }
+  if(S.pro&&S.pro._dono&&S.pro._dono!==S.u.id){
+    console.warn('salvarSaude bloqueado: dono',S.pro._dono);
+    alerta('Gravação bloqueada','Os dados abertos nesta tela <b>pertencem a outra conta</b> e não foram gravados nos seus.');
+    return false;
+  }
+  const corpo=soSaude(S.pro); corpo._dono=S.u.id;
+  /* o censo da Saúde é conferido contra o que foi carregado, igual ao do pro_ */
+  const perdas=(op&&op.apagando)?[]:perdasPro(S._sauCenso,corpo);
+  if(perdas.length){
+    console.warn('salvarSaude bloqueado: apagaria',perdas);
+    alerta('Gravação bloqueada',`Esta gravação apagaria <b>${esc(perdas.join(', '))}</b> dos seus dados de Saúde. Nada foi alterado — feche e abra o app.`);
+    return false;
+  }
+  const ok=await DB.set(kSau(S.u.id),corpo);
+  if(!ok)return false;
+  S._sauOk=true; S._sauCenso=censoSaude(corpo);
+  await salvarPro(op);          /* o kPerf do técnico e a versão do dia seguem no pro_ */
+  return true;
+}
+function censoSaude(o){ const c={}; for(const k of CAMPOS_SAUDE)c[k]=Array.isArray(o&&o[k])?o[k].length:0; return c; }
+async function guardarVersaoDoDia(){
+  try{
+    if(!EMREDE||!S.u||!S._proCarregado)return;
+    const dia=hoje();
+    if(S._bkDia===dia)return;                 /* já guardei hoje nesta sessão */
+    S._bkDia=dia;
+    const base=JSON.parse(S._proCarregado);
+    if(base&&base._espelho)return;            /* nunca versiona o de outro */
+    if(base&&base._dono&&base._dono!==S.u.id)return;
+    const slot=new Date().getDay();
+    await DB.set(kProBk(S.u.id,slot),
+      {_dono:S.u.id,em:Date.now(),dia,ver:VER,censo:censoPro(base),pro:base});
+  }catch(e){ console.warn('versão do dia',e&&e.message); }
 }
 
 /* =====================================================================
@@ -2198,7 +2424,10 @@ function abrirModo(){
             joga para o Safari, que tem armazenamento SEPARADO do app — a
             página procuraria no lugar errado e não acharia nada. Navegando na
             mesma janela, ela fica dentro do app e vê o cache certo. */''}
-      <a class="xs" href="./recuperar.html">Abrir a página de recuperação</a>`:''}
+      <a class="xs" href="./recuperar.html">Abrir a página de recuperação</a>
+      <div class="sep"></div><div class="eyebrow">versões dos últimos 7 dias</div>
+      <p class="xs muted" style="margin:6px 0 8px">Todo dia o app guarda uma cópia dos seus dados como estavam ao abrir. Se algo sumir, dá para voltar — sem depender de cache de navegador.</p>
+      <button class="full" onclick="abrirVersoes()">Ver versões guardadas</button>`:''}
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 async function salvarTel(){
@@ -4249,7 +4478,7 @@ teste('garmin','o lote diz quantos dias são novos e quantos foram atualizados',
   a.eq(S.pro.garmin.find(x=>x.data==='2026-10-01').fc,57,'o dia existente foi atualizado, não duplicado');
   a.eq(S.pro.garmin.length,3,'sem duplicar dia');});
 teste('garmin','arquivo ilegível não derruba o lote',async a=>{
-  _atleta(); S.pro={pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  _atleta(); S.pro=proVazio();
   const r=await importarGarminLote([
     {nome:'UDSFile_a.json',texto:async()=>'{ isso não é json'},
     {nome:'UDSFile_b.json',texto:async()=>{throw new Error('leitura falhou')}},
@@ -4258,7 +4487,7 @@ teste('garmin','arquivo ilegível não derruba o lote',async a=>{
   a.eq(r.falhas,2,'dois falharam'); a.eq(r.lidos,1,'o terceiro entrou');
   a.eq(r.total,1,'e o dia dele foi gravado');});
 teste('garmin','sem nada reconhecido, a mensagem diz o que procurar',async a=>{
-  _atleta(); S.pro={pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  _atleta(); S.pro=proVazio();
   const r=await importarGarminLote([{nome:'foto.jpg',texto:async()=>''}]);
   a.eq(r.total,0,'nada importado');
   const h=relatorioGarmin(r);
@@ -4398,6 +4627,80 @@ teste('abmn','revezamento continua fora e a conta fecha',a=>{
   const h=parseABMNHistorico(_ABMN_H);
   a.eq(h.length,4,'quatro provas individuais');
   a.ok(!h.some(x=>/4X/i.test(x.prova||'')),'nenhum revezamento');});
+/* ── O DADO CARREGA O DONO (v159) ───────────────────────────────────────────
+   A causa única por trás de todos os sintomas de 14/10: o objeto de dados
+   pessoais não dizia de quem era, e `DB.set(kPro(meu uid), S.pro)` gravava o
+   que estivesse ali. Agora o dono viaja dentro do dado e é conferido no
+   cliente E no servidor — este bloco trava as duas pontas. */
+teste('dono','todo pro_ nasce com dono',a=>{
+  a.eq(proVazio('U1')._dono,'U1','a fábrica carimba');
+  a.ok(Array.isArray(proVazio('U1').resultados),'e mantém a forma esperada');});
+teste('dono','documento antigo é adotado, não recusado',a=>{
+  const velho={pbs:{},resultados:[]};
+  a.eq(comDono(velho,'U1')._dono,'U1','carimba quem não tinha');
+  a.eq(comDono({_dono:'U2'},'U1')._dono,'U2','e NUNCA reescreve um dono existente');});
+teste('dono','a condição da trava de gravação',a=>{
+  /* salvarPro é async e grava; aqui travamos a REGRA que ela aplica */
+  const barra=(pro,meu)=>!!(pro&&pro._dono&&pro._dono!==meu);
+  a.ok(barra({_dono:'OUTRO'},'EU'),'dados de outra conta não gravam nos meus');
+  a.ok(!barra({_dono:'EU'},'EU'),'os meus gravam');
+  a.ok(!barra({pbs:{}},'EU'),'sem dono, adota — as travas de espelho já passaram');});
+teste('dono','o campo de segurança sai do CONTEÚDO, não da chave',a=>{
+  /* é esta linha que faz o Firestore recusar: a regra exige dono==uid, e um
+     documento com dados de outro atleta denuncia a si mesmo */
+  a.eq(camposSeguranca('pro_EU',{_dono:'OUTRO'}).dono,'OUTRO','o conteúdo manda');
+  a.eq(camposSeguranca('pro_EU',{_dono:'EU'}).dono,'EU','gravação legítima passa');
+  a.eq(camposSeguranca('pro_EU',{pbs:{}}).dono,'EU','documento antigo cai na chave');
+  a.eq(camposSeguranca('pro_EU_bk3',{_dono:'EU'}).dono,'EU','a versão diária é do mesmo dono');});
+teste('dono','o espelho carrega o uid do atleta espelhado',a=>{
+  const espelho={_espelho:'ATLETA',_dono:'ATLETA',pbs:{}};
+  a.eq(camposSeguranca('pro_EU',espelho).dono,'ATLETA','vai com o dono errado de propósito');
+  a.ok(camposSeguranca('pro_EU',espelho).dono!=='EU','e por isso o servidor recusa');});
+
+/* ── SAÚDE EM DOCUMENTO PRÓPRIO (v160) ──────────────────────────────────────
+   Em 14/10 um problema de currículo da ABMN levou junto VFC, sono, check-in,
+   exames e fora d'água — não por terem relação, mas por morarem no mesmo
+   documento. Estes testes travam a separação. */
+teste('saúde','a partição é limpa nos dois sentidos',a=>{
+  const pro={_dono:'EU',pbs:{a:1},resultados:[1,2],garmin:[1,2,3],exames:[4],bioimp:[],seco:[5,6]};
+  const s=soSaude(pro), r=semSaude(pro);
+  a.eq(s.garmin.length,3,'a Saúde leva as listas de Saúde');
+  a.eq(s.seco.length,2,'fora d\'água junto — foi perdido com elas');
+  a.eq(s.pbs,undefined,'e não leva marcas');
+  a.eq(r.pbs.a,1,'o pro_ fica com as marcas');
+  a.eq(r.garmin,undefined,'e sem nenhuma lista de Saúde');
+  a.eq(r.resultados.length,2,'resultados continuam no pro_');});
+teste('saúde','o dono viaja nos dois documentos',a=>{
+  a.eq(soSaude({_dono:'EU',garmin:[]})._dono,'EU','a Saúde também se identifica');
+  a.eq(camposSeguranca('pro_EU_sau',{_dono:'EU'}).dono,'EU','e o servidor confere pelo conteúdo');
+  a.eq(camposSeguranca('pro_EU_sau',{_dono:'OUTRO'}).dono,'OUTRO','documento alheio é recusado lá');});
+teste('saúde','a chave herda as regras do pro_',a=>{
+  a.eq(kSau('U1'),'pro_U1_sau','prefixo pro_: nada de republicar regra');
+  a.ok(/^pro_/.test(kSau('U1'))&&/^pro_/.test(kProBk('U1',0)),'versões diárias idem');});
+teste('saúde','o censo de Saúde é só da Saúde',a=>{
+  const c=censoSaude({garmin:[1,2],exames:[3],bioimp:[],seco:[4,5,6]});
+  a.eq(c.garmin,2,'conta o que é de Saúde'); a.eq(c.seco,3,'idem');
+  a.eq(c.pbs,undefined,'e ignora o resto — marcas não disparam alarme de Saúde');});
+teste('saúde','um pro_ corrompido não leva a Saúde junto',a=>{
+  /* o cerne da separação: mesmo que S.pro perca tudo, o que vai para o
+     documento de Saúde é calculado à parte e tem a própria trava */
+  const carregado=censoSaude({garmin:[1,2,3,4],exames:[1,2,3],bioimp:[],seco:[1,2,3]});
+  const corrompido={_dono:'EU',pbs:{},garmin:[],exames:[],bioimp:[],seco:[]};
+  const perdas=perdasPro(carregado,soSaude(corrompido));
+  a.ok(perdas.length>=2,'a trava de Saúde acusa antes de gravar');
+  a.ok(perdas.some(p=>/^garmin/.test(p)),'VFC e sono entre os acusados');
+  a.ok(perdas.some(p=>/^seco/.test(p)),'fora d\'água também');});
+
+/* ── VERSÕES DIÁRIAS (v159) ─────────────────────────────────────────────── */
+teste('versões','sete fatias fixas, uma por dia da semana',a=>{
+  a.eq(kProBk('U1',3),'pro_U1_bk3','a chave herda o prefixo pro_, e com ele as regras');
+  a.eq(kProBk('U1','undo'),'pro_U1_bkundo','e há a fatia de desfazer');
+  a.eq(DIAS_BK.length,7,'uma semana — a de sete dias atrás é substituída sozinha');});
+teste('versões','a chave da versão não confunde o dono',a=>{
+  /* sem o corte do sufixo, o dono de reserva viraria "U1_bk3" e o documento
+     antigo deixaria de ser legível pelo próprio dono */
+  a.eq(camposSeguranca('pro_U1_bk3',{}).dono,'U1','sufixo não entra no uid');});
+
 /* ── BIOIMPEDÂNCIA InBody (v158) ────────────────────────────────────────────
    Trechos reais do laudo, com o espaçamento que o pdf.js entrega. Nele os
    rótulos são IMAGENS: o texto traz os números sem dizer o que são, e o
@@ -5594,7 +5897,10 @@ async function abrirLaudoAtleta(id){
   /* _espelho: a identidade do dono viaja DENTRO do objeto. É o que permite a
      salvarPro() recusar a gravação mesmo que alguém zere S.laudoAtleta sem
      devolver S.pro — foi exatamente esse descuido que misturou dois atletas. */
-  S.pro={_espelho:id,pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
+  /* `_dono` com o uid do ATLETA, não o meu: se este objeto escapar para uma
+     gravação, o campo espelhado vai com o dono errado e o próprio Firestore
+     recusa. É a mesma informação servindo de trava no cliente e no servidor. */
+  S.pro={_espelho:id,_dono:id,pbs:(snap&&snap.pbs)||{},resultados:(snap&&snap.resultados)||[],seco:(snap&&snap.seco)||[],
     alvos:(snap&&snap.alvos)||null,bioimp:(snap&&snap.bioimp)||[],garmin:ehAdmin()?((snap&&snap.garmin)||[]):[],exames:ehAdmin()?((snap&&snap.exames)||[]):[],_pront:_p};
   ESF=null; push(); render(); window.scrollTo(0,0);
 }
@@ -5611,7 +5917,7 @@ function _limparLaudo(){
   /* sem backup (espelho que vazou por um caminho que não passou por aqui),
      devolve um pro VAZIO em vez de null: a sincronia recarrega o verdadeiro
      em segundos, e nada quebra no render até lá. Nunca devolver o espelho. */
-  S.pro=S._proBak||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S._proBak||proVazio();
   S._proBak=undefined; S.laudoAtleta=null; S.laudoNome=null; S.laudoVista=null; ESF=null;
 }
 function voltarLaudo(){ _limparLaudo(); voltar(); }
@@ -5876,9 +6182,15 @@ async function apagarDadosDaConta(u,pro){
     /* ANEXOS primeiro: depois de apagar o pro_ não há mais como achar as URLs,
        e o arquivo ficaria órfão no Storage para sempre. */
     const p=pro||await DB.get(kPro(u.id))||{};
-    for(const s of (p.seco||[]))
+    /* a Saúde mudou de documento (v160): os anexos de fora d'água podem estar
+       no pro_ antigo, no pro_<uid>_sau, ou nos dois durante a migração */
+    let sau=null; try{ sau=await DB.get(kSau(u.id)); }catch(_){}
+    const secos=[...(p.seco||[]),...((sau&&sau.seco)||[])];
+    const vistos=new Set();
+    for(const s of secos)
       for(const campo of ['img','arquivo'])
-        if(s[campo]){ await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
+        if(s[campo]&&!vistos.has(s[campo])){ vistos.add(s[campo]);
+          await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
     /* pro_ SEM condicionar ao perfil: desde que o técnico ganhou área de
        atleta, e desde que existe atleta com Marcas liberadas, dado de saúde
        pode morar aqui em qualquer perfil. Apagar é idempotente — se o
@@ -5887,6 +6199,13 @@ async function apagarDadosDaConta(u,pro){
     const pessoais=await DB.get(kPTrIdx(u.id))||[];
     for(const t of pessoais)if(t&&t.id){await apagarChave(kPTr(u.id,t.id));feitas.push(kPTr(u.id,t.id));}
     await apagarChave(kPTrIdx(u.id)); feitas.push(kPTrIdx(u.id));
+    /* ⚠️ Apagar a conta tem de levar TUDO. A Saúde agora é um documento à
+       parte e as versões diárias são mais sete — deixá-los para trás seria
+       prometer exclusão e guardar dado de saúde assim mesmo. */
+    await apagarChave(kSau(u.id)); feitas.push(kSau(u.id));
+    for(const s of [0,1,2,3,4,5,6,'undo']){
+      await apagarChave(kProBk(u.id,s)); feitas.push(kProBk(u.id,s));
+    }
     /* o resumo que o TÉCNICO enxerga é um documento à parte e sobrevivia
        à exclusão: o atleta saía e o painel dele continuava no elenco. */
     if(u.equipe){ await apagarChave(kPerf(u.equipe,u.id)); feitas.push(kPerf(u.equipe,u.id)); }
@@ -6740,7 +7059,7 @@ async function enviarProvasParaMarcas(mcId){
   const mc=(S.u.competicoes||[]).find(x=>x.id===mcId); if(!mc)return;
   const comTempo=(mc.provas||[]).filter(p=>p.tempo);
   if(!comTempo.length)return toast('Nenhum tempo lançado ainda');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   S.pro.resultados=S.pro.resultados||[];
   const existe=new Set(S.pro.resultados.map(r=>`${r.dist}|${r.estilo}|${r.piscina}|${r.data}|${r.tempo}`));
   let add=0;
@@ -6928,7 +7247,7 @@ async function gravarResultadoPro(ix){
   if(!at||at.perfil!=='pro')return;
   const np=nPassagens(p,c.piscina),ps=(i.parciais||[]).filter(x=>x!=null);
   if(ps.length<np)return;
-  const pro=await DB.get(kPro(at.id))||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  const pro=comDono(await DB.get(kPro(at.id)),at.id)||proVazio(at.id);
   const chave=c.id+'_'+p.id;
   /* P2-B: a procedência da parcial viaja com ela. Aqui é cronometragem da
      competição, lançada por passagem — é o que o app pode chamar de oficial. */
@@ -7101,7 +7420,7 @@ async function salvarMarca(){
   const b=PROVAS_MARCA[+document.getElementById('mkProva').value];
   const pis=document.getElementById('mkPis').value,ms=msHMSC(val('mkH'),val('mkM'),val('mkS'),val('mkC'));
   if(!ms)return toast('Informe o tempo (ao menos os segundos)');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   const key=pbKey(b.d,b.e,pis);
   if(!S.pro.pbs[key]||ms<S.pro.pbs[key])S.pro.pbs[key]=ms;
   if(val('mkComp')){
@@ -7528,7 +7847,7 @@ async function aplicarABMNProprio(){
      como as partes do texto — era a mesma função antes de eu separá-la. */
   const pend=S.abmnPend; if(!pend||!pend.proprio)return;
   const cur=pend.cur; S.abmnPend=null; fecharSheet();
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   const r=aplicarABMN(S.pro,cur);
   if(await salvarPro()===false)return;
   /* A mensagem antiga dizia só "0 resultado(s) importado(s)" quando o currículo
@@ -7910,11 +8229,11 @@ function setCheckin(k,v,re){ S.checkinDraft=S.checkinDraft||{}; S.checkinDraft[k
 async function salvarCheckin(){
   const d=S.checkinDraft||{};
   if(['sonoQ','energia','dor','estresse','humor'].some(k=>d[k]==null))return toast('Responda as 5 perguntas do check-in');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   const hj=hoje(); let rec=(S.pro.garmin||[]).find(x=>x.data===hj); if(!rec){rec={data:hj};S.pro.garmin.push(rec);}
   rec.sonoQ=d.sonoQ; rec.energia=d.energia; rec.dor=d.dor; rec.estresse=d.estresse; rec.humor=d.humor;
   if(d.sono!=null)rec.sono=d.sono; if(d.fc!=null)rec.fc=d.fc;
-  await salvarPro(); S.checkinDraft=null;
+  await salvarSaude(); S.checkinDraft=null;
   toast('Check-in salvo · prontidão '+checkinScore(rec)); render();
 }
 /* ── IMPORT DO GARMIN: o atrito era ACHAR os arquivos ──────────────────────
@@ -7974,7 +8293,7 @@ async function arquivoGarmin(inp){
   if(!fs.length)return;
   dizGarmin(`Procurando nos ${fs.length} arquivo(s)…`);
   const r=await importarGarminLote(fs.map(f=>({nome:f.webkitRelativePath||f.name,texto:()=>f.text()})),dizGarmin);
-  if(r.total)await salvarPro();
+  if(r.total)await salvarSaude();
   dizGarmin(relatorioGarmin(r),r.total?'ok':'warn');
   if(r.total)render();
 }
@@ -8006,7 +8325,7 @@ async function zipGarmin(inp){
   zip.forEach((caminho,entry)=>{ if(!entry.dir&&garminRelevante(caminho))itens.push({nome:caminho,texto:()=>entry.async('string')}); });
   if(!itens.length)return dizGarmin(relatorioGarmin({total:0,ignorados:Object.keys(zip.files).length}),'warn');
   const r=await importarGarminLote(itens,dizGarmin);
-  if(r.total)await salvarPro();
+  if(r.total)await salvarSaude();
   dizGarmin(relatorioGarmin(r),r.total?'ok':'warn');
   if(r.total)render();
 }
@@ -8017,7 +8336,7 @@ async function importarGarmin(raw,silencioso){
   const vazio={n:0,dias:[]};
   if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return vazio}
   let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return vazio}
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   const arr=Array.isArray(j)?j.flat():[j],mapa={};
   (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
   let n=0; const tocados=new Set();
@@ -8051,18 +8370,18 @@ async function importarGarmin(raw,silencioso){
     mapa[dia]=g;n++;tocados.add(dia);
   });
   S.pro.garmin=Object.values(mapa);
-  if(!silencioso){await salvarPro();toast(`${n} registro(s) lido(s)`);render()}
+  if(!silencioso){await salvarSaude();toast(`${n} registro(s) lido(s)`);render()}
   return {n,dias:[...tocados]};
 }
 async function lancarDia(){
   const d=val('gD'); if(!d)return;
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   let g=(S.pro.garmin||[]).find(x=>x.data===d); if(!g){g={data:d};S.pro.garmin.push(g)}
   const nm=id=>{const v=val(id);return v?parseFloat(v):undefined};
   if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
   const sh=horasFlex(val('gS')); if(sh!=null)g.sono=sh; if(nm('gP')!==undefined)g.pse=nm('gP');
   S.sonoSel=null;                     /* senão a faixa fica marcada no dia seguinte */
-  await salvarPro(); toast('Gravado'); render();
+  await salvarSaude(); toast('Gravado'); render();
 }
 let FOTO=null,SECOPDF=null;
 function fotoSeco(inp){
@@ -8154,7 +8473,7 @@ function formTreinoExtra(){
     ${S.secoEdit?`<button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="apagarSeco('${S.secoEdit}');fecharSheet()">Apagar treino</button>`:''}`;
 }
 async function salvarSeco(){
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   S.pro.seco=S.pro.seco||[];
   const d=S.secoDraft||{};
   const trans=val('skTrans')||d.trans||'';
@@ -8177,14 +8496,14 @@ async function salvarSeco(){
   if(S.secoEdit){ const i=S.pro.seco.findIndex(x=>x.id===S.secoEdit); if(i>=0)S.pro.seco[i]={...S.pro.seco[i],...reg}; else S.pro.seco.unshift(reg); }
   else S.pro.seco.unshift(reg);
   FOTO=null; SECOPDF=null; S.secoDraft=null; S.secoEdit=null;
-  await salvarPro(); fecharSheet(); toast('Treino salvo'); render();
+  await salvarSaude(); fecharSheet(); toast('Treino salvo'); render();
 }
 async function apagarSeco(id){
   /* apaga também o arquivo no Storage — senão vira lixo pago e dado pessoal
      que continua existindo depois de o usuário ter mandado excluir. */
   const s=(S.pro.seco||[]).find(x=>x.id===id);
   if(s){ await apagarAnexo(s.img); await apagarAnexo(s.arquivo); }
-  S.pro.seco=S.pro.seco.filter(x=>x.id!==id); await salvarPro(); render();
+  S.pro.seco=S.pro.seco.filter(x=>x.id!==id); await salvarSaude(); render();
 }
 /* ── Conserto em lote das durações fora d'água ─────────────────────────────
    Até a v96 uma duração de duas partes era SEMPRE lida como mm:ss: "1:10"
@@ -8236,7 +8555,7 @@ async function corrigirDuracoes(){
   const l=duracoesSuspeitas(); if(!l.length)return;
   const porId=new Map(l.map(x=>[x.id,x.para]));
   S.pro.seco=(S.pro.seco||[]).map(s=>porId.has(s.id)?{...s,dur:porId.get(s.id)}:s);
-  await salvarPro();
+  await salvarSaude();
   ESF=null; SESSOES=[];                   /* a carga é recalculada com os valores novos */
   fecharSheet(); toast(`${l.length} duração(ões) corrigida(s)`); render();
 }
@@ -9076,11 +9395,11 @@ async function salvarExame(){
   const obs=val('exObs')||'';
   if(!Object.keys(vals).length&&!obs)return toast('Preencha ao menos um valor');
   const ex={id:uid(),data:val('exData')||hoje(),vals,obs};
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   S.pro.exames=S.pro.exames||[]; S.pro.exames.push(ex);
-  await salvarPro(); fecharSheet(); toast('Exame salvo'); render();
+  await salvarSaude(); fecharSheet(); toast('Exame salvo'); render();
 }
-async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarPro(); render(); }
+async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarSaude(); render(); }
 
 /* gráfico de linha simples para série de marcador (neutro: nem alto nem baixo é "bom") */
 function graficoSerie(pts,faixa){
@@ -9155,11 +9474,11 @@ async function salvarBio(){
     agua:numCampo('biAgua'),visceral:numCampo('biVisc'),ossea:numCampo('biOssea'),tmb:numCampo('biTmb'),
     altura:numCampo('biAltura'),obs:val('biObs')||''};
   if(BIO_M.every(([k])=>b[k]==null)&&!b.obs)return toast('Preencha ao menos um valor');
-  S.pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  S.pro=S.pro||proVazio();
   S.pro.bioimp=S.pro.bioimp||[]; S.pro.bioimp.push(b);
-  await salvarPro(); fecharSheet(); toast('Bioimpedância salva'); render();
+  await salvarSaude(); fecharSheet(); toast('Bioimpedância salva'); render();
 }
-async function apagarBio(id){ S.pro.bioimp=(S.pro.bioimp||[]).filter(x=>x.id!==id); await salvarPro(); render(); }
+async function apagarBio(id){ S.pro.bioimp=(S.pro.bioimp||[]).filter(x=>x.id!==id); await salvarSaude(); render(); }
 function resumoBioCurto(b){
   const m=[['Peso',b.peso,'kg'],['Gord',b.gordura,'%'],['Músc',b.musculo,'kg'],['Água',b.agua,'%'],['Visc',b.visceral,'']].filter(x=>x[1]!=null);
   return m.length?m.map(x=>x[0]+' '+x[1]+x[2]).join(' · '):(b.obs?esc(b.obs):'sem valores');
@@ -11390,7 +11709,7 @@ function telaRelatorio(){
     <p class="xs muted">Se a mensagem acima aparecer sempre, me mostre: ela diz exatamente onde parou.</p>
     <button class="primary" onclick="ESF_ERRO=null;ESF=null;render()">Tentar novamente</button></div>`;
   if(!ESF){coletarEsforcos({dias:120}).then(e=>{ESF=e;ESF_ERRO=null;render()}).catch(e=>{console.warn(e);ESF_ERRO=e||true;render()});return`<div class="empty"><div class="big">Consolidando…</div><div class="small muted">Analisando os últimos 120 dias</div></div>`}
-  const pro=S.pro||{pbs:{},garmin:[],seco:[],resultados:[],exames:[],bioimp:[]};
+  const pro=S.pro||proVazio();
   const tec=ESF.filter(e=>['pernada','técnica','braçada','filipina'].some(t=>e.tags.includes(t)));
   const int=ESF.filter(e=>!tec.includes(e));
   const comPct=int.map(e=>{const pb=pbDe(pro,e.dist,e.estilo,e.pis);return{...e,pct:pb?pb/e.tempo*100:null}}).filter(e=>e.pct);
