@@ -18,8 +18,11 @@ performance" (Performance Score / Readiness / correlações etc.).
   Anthropic para (a) OCR de PDFs/fotos de exames, bioimpedância e fichas de
   treino fora d'água, e (b) gerar um laudo narrativo. Chave da IA fica só no
   Worker. Enquanto `IA_URL` está vazio no app, os recursos de IA ficam ocultos.
-- **Perfis:** `tecnico` (gestor da equipe), `atleta` (comum), `pro` (atleta com
-  poderes de gestão via código mestre — é o caso do dono/piloto).
+- **Perfis:** `tecnico` (gestor da equipe), `atleta` (saúde ou lazer) e `pro`
+  (atleta competitivo, com acompanhamento diário, tempos completos e relatório;
+  não recebe poderes de gestão). Atleta e PRO podem usar o app sem equipe e sem
+  técnico. O administrador global é um papel separado, validado pelo e-mail do
+  token do Firebase.
 
 ## 2. Chaves do Firestore (coleção `kv`)
 
@@ -111,6 +114,20 @@ e um "Performance Fingerprint" (radar) a partir das dimensões que já existem
 
 ## 8. Atualizações recentes
 
+### v159 — PRO competitivo, independente de equipe e técnico
+
+- `pro` passa a representar finalidade competitiva, não permissão administrativa.
+  O cadastro é aberto, sem convite ou código, e `ehGestor()` continua restrito
+  ao técnico e ao administrador global.
+- O PRO pode criar treinos completos de piscina em `pt_<uid>_*`, lançar todos
+  os tempos, RPE e duração e consolidá-los no próprio relatório mesmo sem
+  equipe. Prescrições recebidas do técnico continuam em `eq_<slug>_tr_*`.
+- Equipe/clube é afiliação opcional; técnico é um vínculo operacional separado
+  e também opcional. Um pedido pendente não bloqueia a área pessoal.
+- A confirmação de e-mail passou a registrar se o Firebase aceitou ou recusou
+  o pedido de envio e a orientar reenvio, spam e recuperação sem criar contas
+  duplicadas.
+
 ### v147 — equipe e técnico deixam de ser o mesmo vínculo
 
 - **Atleta independente é um estado completo**, não uma tela de bloqueio. Sem
@@ -158,9 +175,9 @@ os usuários para fora):
    de `pro_*`**. `kUser` é `u_<email>`, então a regra usa
    `request.auth.token.email`.
 
-**Papel de gestor:** `ehGestor()` inclui atleta PRO com "Gestão de equipe", não
-só `perfil == 'tecnico'` — a regra precisa cobrir os dois, senão o PRO em
-gestão perde a própria equipe.
+**Papel de gestor:** `ehGestor()` inclui apenas técnico e administrador global.
+Atleta PRO é o perfil competitivo (acompanhamento diário, tempos, Garmin e
+relatório), sem poderes para alterar a equipe.
 
 **Trava de tamanho** (`checaTamanho`): documento do Firestore tem teto rígido de
 1 MiB e a gravação é otimista, então estourar fazia o app **parar de salvar em
@@ -521,8 +538,8 @@ tela e `salvarPro()` descartam os rascunhos.
   (4) recria o doc `eq_<slug>` se sumiu e re-registra em `dev_equipes`. Toast informa
   "Recuperado: N treino(s), N competição(ões), N atleta(s)". Botão passou a se chamar
   **"recuperar"** e aparece sempre que houver docs órfãos OU tempos do próprio dev.
-  `assumirEquipe(slug,nome)` liga `S.gestao=true` para perfil `pro` → entra com **visão de
-  técnico** (vê atletas e lança treinos). Fluxo de resgate: Equipes → Diagnóstico → equipe com
+  `assumirEquipe(slug,nome)` liga `S.gestao=true` apenas para o administrador global → entra
+  com **visão administrativa** (vê atletas e lança treinos). Fluxo de resgate: Equipes → Diagnóstico → equipe com
   "SEUS tempos" → **recuperar** → **assumir**.
 
 ### v41
@@ -728,7 +745,7 @@ tela e `salvarPro()` descartam os rascunhos.
 
 - **Calendário também para o atleta (v26)**: `calendarioTreinos` ganhou o parâmetro
   `podeCriar` (o atalho "criar treino nesse dia" só aparece para o técnico). `telaTreinosAtleta`
-  (atleta comum e PRO sem gestão) ganhou o mesmo toggle 📅/☰. O atleta só vê dias com treino
+  (atleta comum e PRO) ganhou o mesmo toggle 📅/☰. O atleta só vê dias com treino
   já liberado (data ≤ hoje), coerente com a liberação dia a dia.
 
 - **Calendário de treinos do técnico (v25)**: `calendarioTreinos(lista,cardFn,podeCriar)` — grade

@@ -557,26 +557,11 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v160';
+const VER='v161';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
 try{ const _vt=document.getElementById('verTag'); if(_vt)_vt.textContent=VER; }catch(_){}
-/* ─────────────────────────────────────────────────────────────
-   CÓDIGO MESTRE DO PERFIL PRO — troque este valor para revogar
-   o acesso ou liberar para outra pessoa. Independe do técnico.
-   ───────────────────────────────────────────────────────────── */
-/* Cada equipe tem o SEU código, sorteado na criação. Antes havia um código
-   único embutido aqui (publico no codigo-fonte), e ele valia para TODAS as
-   equipes: quem lesse o fonte entrava como PRO em qualquer uma.
-   Alfabeto sem I, O, 0 e 1 para nao confundir na hora de ditar. */
-function novoCodigoPro(){
-  const abc='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', a=new Uint8Array(8);
-  try{ crypto.getRandomValues(a); }catch(_){ for(let i=0;i<8;i++)a[i]=Math.floor(Math.random()*256); }
-  let s=''; for(let i=0;i<8;i++){ s+=abc[a[i]%abc.length]; if(i===3)s+='-'; }
-  return s;
-}
-const CODIGO_PRO_ANTIGO='BARBATO-PRO-2026';   /* so para avisar quem ainda usa */
 /* IDADE MÍNIMA DO CADASTRO. Era 8, o que contradizia a política de privacidade
    e, nas lojas, dispararia um regime inteiro a mais (Google Play Families,
    classificação etária da Apple, questionário de público-alvo). Natação master
@@ -622,15 +607,40 @@ function dataMaxNascimento(){
   h.setFullYear(h.getFullYear()-IDADE_MINIMA);
   return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
 }
-/* Troca o código da equipe. Necessário para quem foi criado antes da v90: o
-   código antigo é o mesmo em todas as equipes e está no fonte público. */
-async function trocarCodigoEquipe(){
-  if(!ehGestor()||!S.u.equipe)return;
-  if(!confirm('Gerar um código novo para a equipe?\n\nQuem já está na equipe continua normalmente. Só quem for se cadastrar como PRO daqui em diante precisará do código novo.'))return;
-  const novo=novoCodigoPro();
-  const ok=await transacao(kEq(S.u.equipe),eq=>{ eq=eq||{slug:S.u.equipe}; eq.codigoPro=novo; return eq; });
-  if(!ok)return toast('Não consegui trocar o código');
-  S.eq=ok; toast('Código novo: '+novo); render();
+/* A confirmação deixa um rastro no próprio perfil. O administrador não enxerga
+   a caixa de e-mail da pessoa, mas passa a distinguir "o Firebase aceitou o
+   envio" de "a API recusou o envio" — sem guardar senha, link ou token. */
+let ULTIMO_ENVIO_CONFIRMACAO=0;
+async function registrarStatusConfirmacao(user,status,erro){
+  const em=String(user?.email||S.emailPendente||'').toLowerCase(); if(!em)return;
+  try{
+    const u=await DB.get(kUser(em)); if(!u)return;
+    u.confirmacaoEmail={status,atualizadoEm:Date.now(),erro:erro||null};
+    await DB.set(kUser(em),u);
+  }catch(e){console.warn('registrarStatusConfirmacao',e?.message||e)}
+}
+/* Usa o português e traz a pessoa de volta ao endereço oficial depois do
+   clique. Enquanto o domínio ainda não estiver autorizado no Firebase, o
+   fallback sem URL mantém o envio funcionando pelo manipulador padrão. */
+async function enviarConfirmacaoFirebase(user){
+  if(!user)return{ok:false,code:'auth/user-token-expired'};
+  try{
+    if(fauth)fauth.languageCode='pt-BR';
+    try{await user.sendEmailVerification({url:'https://meros360.com/',handleCodeInApp:false})}
+    catch(e){
+      if(!/unauthorized-continue-uri|invalid-continue-uri/.test(e?.code||''))throw e;
+      console.warn('URL de retorno da confirmação não autorizada; usando o fluxo padrão');
+      await user.sendEmailVerification();
+    }
+    ULTIMO_ENVIO_CONFIRMACAO=Date.now(); S.envioFalhou=null;
+    await registrarStatusConfirmacao(user,'enviado',null);
+    return{ok:true,code:null};
+  }catch(e){
+    const code=e?.code||'falhou'; S.envioFalhou=code;
+    await registrarStatusConfirmacao(user,'falhou',code);
+    console.warn('enviarConfirmacaoFirebase',code,e?.message||'');
+    return{ok:false,code};
+  }
 }
 /* O reenvio falhava calado em dois casos e o usuário ficava sem saber o que
    fazer: sem sessão (`currentUser` nulo) e quando o Firebase estrangula o
@@ -640,17 +650,13 @@ async function reenviarConfirmacao(){
   if(!FB||!fauth)return alerta('Reenviar','Este modo não envia e-mail.');
   if(!fauth.currentUser)
     return alerta('Sessão expirada','Para reenviar o link eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro: o app volta direto para esta tela e o botão funciona.');
-  try{
-    await fauth.currentUser.sendEmailVerification();
-    S.envioFalhou=null;
-    alerta('Link enviado',`Mandei para <b>${esc(fauth.currentUser.email||'')}</b>. Procure também no <b>spam</b> e em <b>Promoções</b>. O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b> — vale liberar esse endereço se o seu provedor for rígido.`);
-  }catch(e){
-    const c=e&&e.code||'';
-    S.envioFalhou=c;
-    if(/too-many-requests/.test(c))
-      return alerta('Muitas tentativas','O Firebase bloqueou novos envios para esta conta por excesso de pedidos. <b>Espere cerca de uma hora</b> e tente de novo — enviar várias vezes seguidas atrasa, não acelera.');
-    alerta('Não consegui enviar',`${esc(traduzErroFB(c)||e.message||String(e))}<br><br>Se insistir, fale com o administrador: dá para conferir no painel se o endereço cadastrado está escrito certo.`);
-  }
+  const falta=60-Math.floor((Date.now()-ULTIMO_ENVIO_CONFIRMACAO)/1000);
+  if(falta>0)return alerta('Aguarde um pouco',`O último link acabou de ser pedido. Espere <b>${falta} segundos</b> antes de tentar novamente — vários pedidos seguidos fazem o Firebase bloquear a conta temporariamente.`);
+  const r=await enviarConfirmacaoFirebase(fauth.currentUser);
+  if(r.ok)alerta('Link enviado',`O Firebase aceitou o envio para <b>${esc(fauth.currentUser.email||'')}</b>. Aguarde alguns minutos e procure também no <b>spam</b> e em <b>Promoções</b>. O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b>.`);
+  else if(/too-many-requests/.test(r.code))
+    return alerta('Muitas tentativas','O Firebase bloqueou novos envios para esta conta por excesso de pedidos. <b>Espere cerca de uma hora</b> e tente de novo — enviar várias vezes seguidas atrasa, não acelera.');
+  else alerta('Não consegui enviar',`${esc(traduzErroFB(r.code))}<br><br>O erro ficou registrado no perfil para o administrador diagnosticar. Confira o endereço e fale com ele se continuar.`);
   render();
 }
 /* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
@@ -853,6 +859,7 @@ function camposSeguranca(k,v){
        O split corta o sufixo das versões diárias (pro_<uid>_bk3). */
     o.dono=val._dono||k.slice(4).split('_')[0]||null;
   }
+  else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null); }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
     o.equipe=val.equipe||null;
@@ -862,8 +869,8 @@ function camposSeguranca(k,v){
   else if(k.startsWith('eq_')){
     o.equipe=k.split('_')[1]||null;
     /* só o documento da equipe em si tem tecnicoEmail. É o que permite à regra
-       reconhecer o DONO da equipe — quem cria a própria equipe (técnico ou PRO
-       avulso) pode se auto-aprovar nela; entrar na equipe dos outros, não. */
+       reconhecer o responsável técnico da equipe. Criar uma afiliação pública
+       nunca concede este papel a um atleta comum ou PRO. */
     o.donoEmail=val.tecnicoEmail?String(val.tecnicoEmail).toLowerCase():null;
   }
   else if(k.startsWith('time_')){
@@ -1031,6 +1038,11 @@ async function exportarBackup(){
     toast('Montando o backup…');
     const chaves=[kUser(S.u.email)];
     if(temDadosPessoais())chaves.push(kPro(S.u.id));
+    if(S.u.perfil==='pro'){
+      chaves.push(kPTrIdx(S.u.id));
+      const pessoais=await DB.get(kPTrIdx(S.u.id))||[];
+      for(const t of pessoais)if(t&&t.id)chaves.push(kPTr(S.u.id,t.id));
+    }
     if(S.u.equipe){ chaves.push(kEq(S.u.equipe), kPerf(S.u.equipe,S.u.id), kAbmn(S.u.equipe,S.u.id)); }
     for(const k of chaves){ try{ const v=await DB.get(k); if(v!=null)dados[k]=v; }catch(_){} }
   }
@@ -1063,7 +1075,7 @@ async function importarBackup(inp){
 }
 /* chaves */
 const kUser=em=>`u_${em.toLowerCase()}`;
-const kEq=eq=>`eq_${eq}`;                     /* {slug,nome,criadoEm,tecnicoEmail,codigoPro} */
+const kEq=eq=>`eq_${eq}`;                     /* {slug,nome,criadoEm,tecnicoEmail} */
 const kEqUsers=eq=>`eq_${eq}_users`;          /* [emails] */
 const kLib=eq=>`eq_${eq}_libs`;               /* liberações por CPF */
 const kTrIdx=eq=>`eq_${eq}_tridx`;
@@ -1072,6 +1084,13 @@ const kCIdx=eq=>`eq_${eq}_cidx`;
 const kCmp=(eq,id)=>`eq_${eq}_cmp_${id}`;
 const kPerf=(eq,uid)=>`eq_${eq}_perf_${uid}`; /* snapshot de performance p/ o técnico (SEM Saúde) */
 const kPro=uid=>`pro_${uid}`;                 /* {pbs,garmin,seco,resultados} */
+const kPTrIdx=uid=>`pt_${uid}_idx`;           /* índice de treinos pessoais do PRO */
+const kPTr=(uid,id)=>`pt_${uid}_${id}`;        /* treino de piscina pessoal do PRO */
+function ehTreinoPessoal(id,t){return !!(t?._pessoal||(S.tridx||[]).find(x=>x.id===id)?._pessoal)}
+function chaveTreinoUsuario(id,t){return ehTreinoPessoal(id,t)?kPTr(S.u.id,id):kTr(S.u.equipe,id)}
+async function lerTreinoUsuario(id){return DB.get(chaveTreinoUsuario(id))}
+async function gravarTreinoUsuario(t){return DB.set(chaveTreinoUsuario(t.id,t),t)}
+async function transacaoTreinoUsuario(id,fn){return transacao(chaveTreinoUsuario(id),fn)}
 /* ── O DADO CARREGA O DONO ──────────────────────────────────────────────────
    A perda de 14/10 teve uma causa só, por trás de todos os sintomas: o objeto
    de dados pessoais não dizia de quem era. S.pro era um objeto qualquer, e
@@ -1176,7 +1195,7 @@ async function voltar(){
   S.vista=f.vista; S.perfilEscolhido=f.perfil; S.aba=f.aba; S.sub=f.sub;
   S.atletaSel=f.atletaSel; S.provaSel=f.provaSel; S.editando=false;
   if(S.u){
-    if(f.treinoId){ if(S.treino?.id!==f.treinoId)S.treino=await DB.get(kTr(S.u.equipe,f.treinoId)) }
+    if(f.treinoId){ if(S.treino?.id!==f.treinoId)S.treino=await lerTreinoUsuario(f.treinoId) }
     if(f.compId){ if(S.comp?.id!==f.compId)S.comp=await DB.get(kCmp(S.u.equipe,f.compId)) } else S.comp=null;
   }
   render(); window.scrollTo(0,0);
@@ -1473,11 +1492,11 @@ function traduzErroFB(code){
 }
 
 /* Cadastro no modo em rede (Firebase). Cria a conta de verdade e só depois
-   valida CPF/código/equipe — assim as liberações não precisam ficar públicas.
+   valida CPF/equipe — assim as liberações não precisam ficar públicas.
    Se a validação falhar, a conta recém-criada é removida. */
 async function cadastrarFB(dados){
-  const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,codigoPro,nivel}=dados;
-  const semEquipe=perfil==='atleta'&&!equipe;
+  const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,nivel}=dados;
+  const atleta=perfil==='atleta'||perfil==='pro', semEquipe=atleta&&!equipe;
   if(!equipe&&!semEquipe)return toast('Informe o nome da equipe');
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
@@ -1488,11 +1507,11 @@ async function cadastrarFB(dados){
   if(!senhaForte(senha))return toast('Use uma senha de 10 a 72 caracteres, com letras e números');
   if(senha!==senha2)return toast('As senhas não conferem');
 
-  /* Para atleta, equipe/clube é apenas afiliação pública. O vínculo que dá
+  /* Para os dois tipos de atleta, equipe/clube é apenas afiliação pública. O vínculo que dá
      acesso aos treinos de um técnico é escolhido separadamente, já dentro do
-     app. Técnico e PRO mantêm a equipe operacional antiga. */
-  const em=email.toLowerCase(), eqSlug=perfil==='atleta'?'':slug(equipe);
-  const afiliacao=perfil==='atleta'&&equipe?`cat:${slug(equipe)}`:null;
+     app. Somente o técnico precisa nascer ligado a uma equipe operacional. */
+  const em=email.toLowerCase(), eqSlug=atleta?'':slug(equipe);
+  const afiliacao=atleta&&equipe?`cat:${slug(equipe)}`:null;
   let cred;
   try{ cred=await fauth.createUserWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
@@ -1504,11 +1523,6 @@ async function cadastrarFB(dados){
     /* Equipes são criadas exclusivamente pelo administrador. Isso impede que
        alguém invente uma equipe durante o cadastro e vire gestor sem revisão. */
     if(!eq)return abortar('Equipe não encontrada. Peça ao administrador para criar a equipe antes do cadastro do técnico.');
-  }else if(perfil==='pro'){
-    const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
-    const aceito=!!(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());   /* so o codigo DAQUELA equipe */
-    if(!aceito)return abortar('Código PRO inválido. Peça ao técnico o código DESTA equipe — ele aparece na tela de Conta dele.');
-    nivelFinal='Master';
   }else{
     /* Cadastro livre: a afiliação não depende de técnico e não concede acesso
        compartilhado. O atleta escolhe um técnico depois, se quiser. */
@@ -1518,21 +1532,20 @@ async function cadastrarFB(dados){
 
   /* o id do perfil é o uid do Firebase — é ele que amarra a privacidade
      dos dados PRO (o dono e o administrador global leem pro_<uid>). */
-  /* Ninguém nasce aprovado. O técnico é liberado pelo administrador; atletas
-     e PROs vinculados a uma equipe são liberados pelo gestor dela. */
+  /* Ninguém nasce aprovado no vínculo operacional. Atleta e PRO independentes
+     usam o app normalmente; se escolherem um técnico depois, ele aprova só o
+     compartilhamento dos treinos. */
   const u={id:cred.user.uid,perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,
-    afiliacao,afiliacaoNome:perfil==='atleta'&&equipe?equipe.trim():null,nome:nome.trim(),
+    afiliacao,afiliacaoNome:atleta&&equipe?equipe.trim():null,nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),
     nivel:perfil==='tecnico'?null:nivelFinal,ativo:true,aprovado:false,criadoEm:Date.now()};
   if(!await DB.set(kUser(u.email),u))return abortar('Não consegui salvar seu perfil. Tente novamente.');
   if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
-  let enviouConfirmacao=true;
-  try{ await cred.user.sendEmailVerification(); S.envioFalhou=null; }
-  catch(e){ enviouConfirmacao=false; S.envioFalhou=(e&&e.code)||'falhou'; }   /* confirma o e-mail por link */
+  const envio=await enviarConfirmacaoFirebase(cred.user);   /* confirma o e-mail por link */
   S.emailPendente=em; S.vista='verificar'; S.u=null; render();
-  toast(enviouConfirmacao?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Use “Reenviar link”.');
+  toast(envio.ok?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Veja o aviso e tente novamente.');
 }
 /* fila global de técnicos, para o desenvolvedor enxergar e liberar */
 async function registrarTecnicoDev(u){
@@ -1546,17 +1559,22 @@ async function autenticarFB(email,senha){
   try{ await fauth.signInWithEmailAndPassword(em,senha); }
   catch(e){ return toast(traduzErroFB(e.code)); }
   await fauth.currentUser.reload();
-  if(!fauth.currentUser.emailVerified){ S.emailPendente=em; S.envioFalhou=null; S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.'); }
+  if(!fauth.currentUser.emailVerified){
+    const pend=await DB.get(kUser(em));
+    S.emailPendente=em; S.envioFalhou=pend?.confirmacaoEmail?.status==='falhou'?(pend.confirmacaoEmail.erro||'falhou'):null;
+    S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.');
+  }
   const u=await DB.get(kUser(em));
   if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Fale com o administrador para regularizar o acesso.'); }
   if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada. Fale com o administrador.'); }
+  if(u.confirmacaoEmail?.status!=='confirmado'){u.confirmacaoEmail={status:'confirmado',atualizadoEm:Date.now(),erro:null};await DB.set(kUser(em),u)}
   await entrarSessao(u); toast('Bom treino, '+prim(u.nome)+'!');
 }
 
 async function cadastrar(dados){
   if(FB)return cadastrarFB(dados);
-  const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,codigoPro,nivel}=dados;
-  const semEquipe=perfil==='atleta'&&!equipe;
+  const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,nivel}=dados;
+  const atleta=perfil==='atleta'||perfil==='pro', semEquipe=atleta&&!equipe;
   if(!equipe&&!semEquipe)return toast('Informe o nome da equipe');
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
@@ -1568,19 +1586,13 @@ async function cadastrar(dados){
   if(senha!==senha2)return toast('As senhas não conferem');
   if(await DB.get(kUser(email)))return toast('Já existe conta com este e-mail');
 
-  const eqSlug=perfil==='atleta'?'':slug(equipe);
-  const afiliacao=perfil==='atleta'&&equipe?`cat:${slug(equipe)}`:null;
+  const eqSlug=atleta?'':slug(equipe);
+  const afiliacao=atleta&&equipe?`cat:${slug(equipe)}`:null;
   let eq=eqSlug?await DB.get(kEq(eqSlug)):null;
   let nivelFinal=nivel||'Master';
 
   if(perfil==='tecnico'){
     if(!eq)return toast('Equipe não encontrada. Peça ao administrador para criar a equipe antes do cadastro do técnico.');
-  }else if(perfil==='pro'){
-    /* O PRO não depende de liberação do técnico: a tranca é o código mestre. */
-    const cod=(codigoPro||'').toUpperCase().replace(/\s/g,'');
-    const aceito=!!(eq&&eq.codigoPro&&cod===String(eq.codigoPro).toUpperCase());   /* so o codigo DAQUELA equipe */
-    if(!aceito)return toast('Código PRO inválido. Peça ao técnico o código DESTA equipe.');
-    nivelFinal='Master';
   }else{
     if(cpf&&!cpfValido(cpf))return toast('CPF inválido');
     nivelFinal=nivel||'Master';
@@ -1590,7 +1602,7 @@ async function cadastrar(dados){
   const em=email.toLowerCase();
   const aprovInicial=perfil==='tecnico'?(DEV_EMAILS.includes(em)||(((await DB.get('dev_pre'))||[]).includes(em))):false;
   const u={id:uid(),perfil,equipe:eqSlug||null,equipeNome:eq?eq.nome:null,
-    afiliacao,afiliacaoNome:perfil==='atleta'&&equipe?equipe.trim():null,nome:nome.trim(),
+    afiliacao,afiliacaoNome:atleta&&equipe?equipe.trim():null,nome:nome.trim(),
     email:em,nascimento,idade:id,telefone:soDig(telefone),sal,senha:await hash(senha,sal),
     tipo:perfil==='tecnico'?null:(tipo||'piscina'),cpf:cpfLimpo(cpf||''),nivel:perfil==='tecnico'?null:nivelFinal,
     ativo:true,aprovado:aprovInicial,criadoEm:Date.now()};
@@ -1598,7 +1610,7 @@ async function cadastrar(dados){
   if(eqSlug)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
   await entrarSessao(u);
-  toast(perfil==='atleta'?'Conta criada. Você já pode usar o app.':u.aprovado?'Conta criada. Bem-vindo!':'Cadastro de técnico enviado. Aguarde a liberação do administrador.');
+  toast(atleta?'Conta criada. Você já pode usar o app.':u.aprovado?'Conta criada. Bem-vindo!':'Cadastro de técnico enviado. Aguarde a liberação do administrador.');
 }
 
 async function autenticar(email,senha){
@@ -1616,7 +1628,7 @@ async function entrarSessao(u){
   S.modoAtleta=chapeuSalvo(u);
   await carregarDados(); ligarSincronia(); render();
 }
-/* PRO liga/desliga o chapéu de gestão da equipe */
+/* Somente o administrador global liga/desliga o chapéu de gestão. */
 function alternarGestao(){
   S.gestao=!S.gestao; _limparContexto();
   fecharSheet(); toast(S.gestao?'Modo gestão ativado':'Modo gestão desativado'); render();
@@ -1649,8 +1661,8 @@ function guardarChapeu(u,atleta){
 /* troca de chapéu zera o que estava aberto: treino, competição, atleta
    selecionado. Sem isso a tela nova herda a navegação da anterior. */
 function _limparContexto(){
-  /* ⚠️ _limparLaudo() PRIMEIRO, e não é detalhe: quando o técnico (ou o PRO
-     em gestão) está vendo o relatório/marcas de um atleta, S.pro APONTA PARA
+  /* ⚠️ _limparLaudo() PRIMEIRO, e não é detalhe: quando o técnico ou o
+     administrador está vendo o relatório/marcas de um atleta, S.pro APONTA PARA
      OS DADOS DAQUELE ATLETA. Zerar S.laudoAtleta sem devolver S.pro deixava
      o app convencido de que os dados do outro eram os do próprio usuário —
      na vista de atleta dele, com permissão de escrita no pro_ dele.
@@ -1711,8 +1723,9 @@ function copiar(t){
 async function carregarDados(){
   if(!S.u)return;
   const eq=S.u.equipe;
+  const pessoais=S.u.perfil==='pro'&&!ehGestor()?((await DB.get(kPTrIdx(S.u.id)))||[]):[];
   if(!eq){
-    S.eq=null; S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    S.eq=null; S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
     await juntarSaude();
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
@@ -1723,12 +1736,12 @@ async function carregarDados(){
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
      equipe. Evita leituras negadas e mantém apenas o nome necessário à espera. */
   if(S.u.aprovado===false&&['atleta','pro','tecnico'].includes(S.u.perfil)){
-    S.eq=await DB.get(kEq(eq)); S.tridx=[]; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    S.eq=await DB.get(kEq(eq)); S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
     await juntarSaude();
     return;
   }
-  S.tridx=await DB.get(kTrIdx(eq))||[];
+  S.tridx=[...((await DB.get(kTrIdx(eq)))||[]),...pessoais].sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   S.cidx=await DB.get(kCIdx(eq))||[];
   /* de-duplica o índice de competições por id (recuperações/fusões antigas podiam repetir) */
   {const vis=new Set(),lim=[]; for(const c of S.cidx){ if(c&&c.id&&!vis.has(c.id)){vis.add(c.id);lim.push(c);} }
@@ -1749,8 +1762,8 @@ async function carregarDados(){
   const meus=ehGestor()?S.tridx:S.tridx.filter(t=>(t.para||[]).includes(S.u.id));
   /* atualiza o treino/competição ABERTO (mostra edições remotas) sem jogar
      de volta pro primeiro da lista — era o que causava o "volta sozinho". */
-  if(S.treino){const t2=await DB.get(kTr(eq,S.treino.id)); if(t2)S.treino=t2;}
-  else if(meus[0])S.treino=await DB.get(kTr(eq,meus[0].id));
+  if(S.treino){const t2=await lerTreinoUsuario(S.treino.id); if(t2)S.treino=t2;}
+  else if(meus[0])S.treino=await lerTreinoUsuario(meus[0].id);
   await carregarSemana(eq,meus);
   if(temPro())await carregarCompFuturas(eq);
   if(S.comp){const c2=await DB.get(kCmp(eq,S.comp.id)); if(c2)S.comp=c2;}
@@ -2159,8 +2172,8 @@ function telaEntrada(){
   <div class="card" style="margin-top:22px">
     <div class="eyebrow">quem é você</div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-      ${[['atleta','A','Atleta','Recebe os treinos do técnico, lança os tempos e devolve tudo pra ele.'],
-         ['pro','P','Atleta PRO','Tudo do atleta, mais Garmin, melhores tempos, histórico e relatório. Usa o código da própria equipe.'],
+      ${[['atleta','A','Atleta','Para quem nada por saúde ou lazer. Registre seus treinos de forma simples.'],
+         ['pro','P','Atleta PRO','Para quem compete: acompanhamento diário, todos os tempos, Garmin, histórico e relatório de análise.'],
          ['tecnico','T','Técnico','Comanda a equipe, monta os treinos por nível e cronometra as competições.']]
         .map(([k,i,t,d])=>`<button class="perfil ${S.perfilEscolhido===k?'on':''}" onclick="push();S.perfilEscolhido='${k}';render()">
           <span class="ic">${i}</span><span><b>${t}</b><span class="small muted">${d}</span></span></button>`).join('')}
@@ -2201,20 +2214,19 @@ function telaReset(){
 
 let TIPO='piscina', CAD_PASSO=1, CAD={}, CAD_ENVIANDO=false;
 function guardarCadastro(){
-  const ids={cdEquipe:'equipe',cdPro:'codigoPro',cdNome:'nome',cdEmail:'email',cdNasc:'nascimento',cdTel:'telefone',cdCpf:'cpf',cdSenha:'senha',cdSenha2:'senha2'};
+  const ids={cdEquipe:'equipe',cdNome:'nome',cdEmail:'email',cdNasc:'nascimento',cdTel:'telefone',cdCpf:'cpf',cdSenha:'senha',cdSenha2:'senha2'};
   Object.entries(ids).forEach(([id,k])=>{const el=document.getElementById(id);if(el)CAD[k]=el.value.trim()}); CAD.tipo=TIPO;
 }
 function passoCadastro(dir){
   guardarCadastro();
-  if(dir>0&&CAD_PASSO===1&&!CAD.equipe&&!(S.perfilEscolhido==='atleta'&&CAD.semEquipe))return toast('Informe sua equipe ou escolha “Ainda não tenho equipe”');
-  if(dir>0&&CAD_PASSO===1&&S.perfilEscolhido==='pro'&&!CAD.codigoPro)return toast('Informe o código PRO da equipe');
+  if(dir>0&&CAD_PASSO===1&&!CAD.equipe&&!(['atleta','pro'].includes(S.perfilEscolhido)&&CAD.semEquipe))return toast('Informe sua equipe ou escolha “Ainda não tenho equipe”');
   if(dir>0&&CAD_PASSO===2){
     if(!CAD.nome||CAD.nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(CAD.email||''))return toast('Informe um e-mail válido');
     const idade=idadeDe(CAD.nascimento);
-    if(!CAD.nascimento||idade==null||idade<8||idade>110)return toast('Informe uma data de nascimento válida (idade entre 8 e 110 anos)');
+    if(!CAD.nascimento||idade==null||idade<IDADE_MINIMA||idade>110)return toast(`Informe uma data de nascimento válida (idade entre ${IDADE_MINIMA} e 110 anos)`);
     if(!telValido(CAD.telefone))return toast('Informe WhatsApp com DDD');
-    if(S.perfilEscolhido==='atleta'&&CAD.cpf&&!cpfValido(CAD.cpf))return toast('Confira o CPF ou deixe o campo vazio');
+    if(['atleta','pro'].includes(S.perfilEscolhido)&&CAD.cpf&&!cpfValido(CAD.cpf))return toast('Confira o CPF ou deixe o campo vazio');
   }
   CAD_PASSO=Math.max(1,Math.min(3,CAD_PASSO+dir)); render(); window.scrollTo(0,0);
 }
@@ -2223,14 +2235,15 @@ function selSituacaoEquipe(v){
 }
 function telaCadastro(){
   const p=S.perfilEscolhido;
+  const atleta=p==='atleta'||p==='pro';
   const titulo={atleta:'Conta de atleta',pro:'Conta PRO',tecnico:'Conta de técnico'}[p];
-  /* No Firebase a lista protegida só pode ser lida depois que o Auth cria a
-     conta. Antes disso usamos entrada por nome; a validação real ocorre já
-     autenticada, sem abrir o catálogo e os códigos da equipe ao público. */
+  /* No Firebase a lista operacional só pode ser lida depois que o Auth cria a
+     conta. Antes disso o técnico usa entrada por nome; atletas usam o catálogo
+     público embutido e podem ajustar equipe/técnico depois. */
   const precisaLista=p==='tecnico'&&!FB;
   if(precisaLista&&S.equipesDisp==null){carregarEquipesDisp().then(()=>render());}
   const opcoesCatalogo=[...CATALOGO_EQUIPES].sort((a,b)=>a.nome.localeCompare(b.nome));
-  const campoEquipe=p==='atleta'
+  const campoEquipe=atleta
     ? `<select id="cdEquipe">
          <option value="">— escolha sua equipe —</option>
          ${opcoesCatalogo.map(e=>`<option value="${esc(e.nome)}" ${CAD.equipe===e.nome?'selected':''}>${esc(e.nome)}</option>`).join('')}
@@ -2238,7 +2251,7 @@ function telaCadastro(){
        <div class="xs muted" style="margin-top:5px">A equipe é opcional e não precisa ter técnico. Se ela não estiver aqui, crie sua conta sem equipe e registre-a depois.</div>`
     : !precisaLista
     ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" autocapitalize="words" placeholder="ex.: A3 Swim Team">
-       <div class="xs muted" style="margin-top:5px">${p==='atleta'?'Digite exatamente o nome informado pelo seu técnico.':p==='tecnico'?'Digite o nome oficial da equipe. Se ela já existir, seu cadastro será vinculado a ela.':'Digite o nome oficial da equipe vinculada ao código PRO.'}</div>`
+       <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Digite o nome oficial da equipe. Se ela já existir, seu cadastro será vinculado a ela.':'Digite exatamente o nome informado pelo seu técnico.'}</div>`
     : (S.equipesDisp==null
         ? `<select id="cdEquipe" disabled><option>carregando equipes…</option></select>`
         : (S.equipesDisp.length
@@ -2246,12 +2259,11 @@ function telaCadastro(){
                <datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>
                <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou (digite para buscar).':'Digite e escolha a mesma equipe do seu técnico.'}</div>`
             : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
-  const escolhaEquipe=p==='atleta'?`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
+  const escolhaEquipe=atleta?`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
       <button type="button" class="${!CAD.semEquipe?'on':''}" aria-pressed="${!CAD.semEquipe}" onclick="selSituacaoEquipe('com')">Tenho uma equipe</button>
       <button type="button" class="${CAD.semEquipe?'on':''}" aria-pressed="${!!CAD.semEquipe}" onclick="selSituacaoEquipe('sem')">Ainda não tenho equipe</button>
     </div></div>`:'';
-  const equipe=`${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Equipe e técnico são opcionais. Depois de confirmar o e-mail, você já poderá registrar seus próprios treinos e escolher qualquer um dos dois quando quiser.</div>`:`<div class="field"><label for="cdEquipe">Equipe ou clube <span class="muted">(opcional)</span></label>${campoEquipe}</div>`}
-    ${p==='pro'?`<div class="field"><label for="cdPro">Código PRO da equipe</label><input id="cdPro" value="${esc(CAD.codigoPro||'')}" autocapitalize="characters" autocorrect="off" placeholder="ABCD-EFGH"><div class="xs muted" style="margin-top:5px">Peça este código ao responsável pela equipe.</div></div>`:''}`;
+  const equipe=`${p==='pro'?`<div class="note ok" style="margin:0 0 12px"><b>Perfil competitivo.</b> Você terá acompanhamento diário, registro completo dos tempos, Garmin, histórico e relatório de análise. Equipe e técnico continuam opcionais.</div>`:''}${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Equipe e técnico são opcionais. Depois de confirmar o e-mail, você já poderá registrar seus próprios treinos e escolher qualquer um dos dois quando quiser.</div>`:`<div class="field"><label for="cdEquipe">${atleta?'Equipe ou clube <span class="muted">(opcional)</span>':'Equipe'}</label>${campoEquipe}</div>`}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
     ${/* o `max` já barra no seletor do aparelho: a pessoa não escolhe uma data
@@ -2259,7 +2271,7 @@ function telaCadastro(){
     <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${dataMaxNascimento()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
     <div class="xs muted" style="margin:-4px 0 8px">O cadastro é para <b>maiores de ${IDADE_MINIMA} anos</b>. Menor de idade só com o responsável — fale com o administrador.</div>
     <div class="xs muted" style="margin:-4px 0 8px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div>
-    ${p==='atleta'?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
+    ${atleta?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
     ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
   const confirmar=`<div class="cad-resumo"><b>${esc(CAD.nome||'Novo usuário')}</b><span>${esc(CAD.email||'')}</span><span>${CAD.semEquipe?'Sem equipe por enquanto':esc(CAD.equipe||'')} · ${titulo}</span></div>
     <div class="grid2"><div class="field"><label for="cdSenha">Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="10+ caracteres"></div><div class="field"><label for="cdSenha2">Repita a senha</label><input id="cdSenha2" type="password" autocomplete="new-password"></div></div>
@@ -2288,8 +2300,9 @@ async function enviarCadastro(){
 function telaVerificarEmail(){
   const em=S.emailPendente||fauth?.currentUser?.email||'seu e-mail';
   return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div>
-  <p class="muted">Enviamos um link para <b>${esc(em)}</b>. Abra o link e volte aqui para liberar o acesso.</p>
+  <p class="muted">${S.envioFalhou?'A conta foi criada, mas o Firebase não confirmou o envio para':'O Firebase aceitou o envio para'} <b>${esc(em)}</b>.</p>
   ${S.envioFalhou?`<div class="note warn" style="text-align:left"><b>O envio falhou.</b> A sua conta foi criada, mas o e-mail não saiu${/too-many/.test(S.envioFalhou)?' porque houve pedidos demais seguidos — espere cerca de uma hora':''}. Use <b>Reenviar link</b>.</div>`:''}
+  ${!S.envioFalhou?`<div class="note" style="text-align:left"><b>A entrega pode levar alguns minutos.</b> Não crie outra conta. Procure por <b>Meros360</b> ou por <b>noreply@parcial-cdb0e.firebaseapp.com</b> em Todas as mensagens, spam e Promoções.</div>`:''}
   <button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button>
   <button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button>
   <button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button>
@@ -2299,8 +2312,8 @@ function telaVerificarEmail(){
   <details class="xs" style="margin-top:14px;text-align:left"><summary class="muted" style="cursor:pointer">Não chegou nada?</summary>
     <ol style="margin:8px 0 0;padding-left:18px;line-height:1.6">
       <li><b>Confira o endereço acima.</b> Se tiver um erro de digitação, o link foi para uma caixa que não é sua. Toque em <b>Usar outra conta</b> e cadastre-se de novo com o endereço certo.</li>
-      <li><b>Procure no spam e em Promoções.</b> O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b>, e provedores rígidos barram esse tipo de endereço.</li>
-      <li><b>Teste se o seu provedor aceita e-mail nosso:</b> saia daqui, toque em <b>Esqueci minha senha</b> e peça o link. Se esse também não chegar, o problema é o provedor bloqueando — fale com o administrador, que consegue conferir o cadastro pelo painel.</li>
+      <li><b>Aguarde até 10 minutos</b> e pesquise em Todas as mensagens pelo remetente acima. Pedir várias vezes seguidas pode bloquear novos envios por uma hora.</li>
+      <li><b>Se ainda não chegar, fale com o administrador.</b> O app registra se o Firebase aceitou ou recusou o envio, sem expor sua senha nem o link.</li>
     </ol></details>
   </div>`}
 async function confirmarEmailAgora(){
@@ -2309,7 +2322,7 @@ async function confirmarEmailAgora(){
      e-mail chegar passa desse tempo com facilidade. */
   if(FB&&fauth&&!fauth.currentUser)
     return alerta('Sessão expirada','Para conferir a confirmação eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro — se o link já foi aberto, você entra direto.');
-  try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
+  try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');u.confirmacaoEmail={status:'confirmado',atualizadoEm:Date.now(),erro:null};await DB.set(kUser(em),u);await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
 async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.envioFalhou=null;S.vista='login';render()}
 
 /* ---------- conta / ajustes ---------- */
@@ -2324,7 +2337,7 @@ function abrirConta(){
       ${u.nivel?`<span class="tag o">${esc(u.nivel)}</span>`:''}
       ${u.tipo?`<span class="tag o">${u.tipo==='aguas'?'águas abertas':'piscina'}</span>`:''}
     </div>
-    ${u.perfil==='atleta'?`<button class="full ghost" style="margin-top:10px" onclick="abrirVinculos()">Configurar equipe e técnico</button>`:''}
+    ${['atleta','pro'].includes(u.perfil)?`<button class="full ghost" style="margin-top:10px" onclick="abrirVinculos()">Configurar equipe e técnico</button>`:''}
     <div class="sep"></div>
     <div class="field"><label>WhatsApp</label>
       <div class="row"><input id="acTel" type="tel" inputmode="tel" value="${telBr(u.telefone||'')}" placeholder="(67) 99999-9999">
@@ -2334,11 +2347,6 @@ function abrirConta(){
     <div class="field"><label>Trocar senha</label><input id="acA" type="password" placeholder="senha atual"></div>
     <div class="grid2"><input id="acB" type="password" placeholder="nova"><input id="acC" type="password" placeholder="repita"></div>
     <button class="full" style="margin-top:10px" onclick="trocarSenha()">Salvar nova senha</button>
-    ${ehGestor()?(()=>{const cod=S.eq?.codigoPro||'', publico=cod===CODIGO_PRO_ANTIGO;
-      return `<div class="sep"></div>
-      <div class="xs muted">Código da equipe: <b class="t">${esc(cod||'—')}</b> — é o que o atleta PRO digita ao se cadastrar. Passe só a quem deve entrar.</div>
-      ${publico?`<div class="note warn" style="margin:6px 0"><b>Este código está no código-fonte do app</b>, que é público: qualquer pessoa consegue lê-lo e entrar como PRO na sua equipe. Gere um novo agora.</div>`:''}
-      <button class="sm ${publico?'primary':'ghost'} full" onclick="trocarCodigoEquipe()">Gerar novo código da equipe</button>`;})():''}
     ${(FB&&fauth&&fauth.currentUser&&!fauth.currentUser.emailVerified)?`<div class="sep"></div>
       <div class="note warn"><b>E-mail ainda não confirmado.</b> Confirmar protege a sua conta e é o que permite recuperar a senha se você esquecê-la.</div>
       <button class="sm ghost full" onclick="reenviarConfirmacao()">Reenviar e-mail de confirmação</button>`:''}
@@ -2363,9 +2371,8 @@ function abrirConta(){
       ${n?`<button class="full" onclick="migrarAnexos()">Mover anexos para o armazenamento</button>
       <div id="migAnexoSt" class="xs muted" style="margin-top:6px">Requer o Storage ativo no Firebase (plano Blaze). Sem ele, os anexos continuam aqui e o app controla o tamanho.</div>`:''}`;})():''}
     ${u.perfil==='pro'?`<div class="sep"></div>
-      <div class="note">Conta PRO independente. Ela não depende de liberação do técnico e continua funcionando mesmo que você troque de equipe.
-      ${S.tecnico?`Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:'Nenhum técnico vinculado a esta equipe ainda — os treinos aparecem assim que ele criar a conta com o mesmo nome de equipe.'}</div>`:''}
-    ${(u.perfil==='pro'||ehAdmin())?`<div class="sep"></div>
+      <div class="note"><b>Perfil competitivo.</b> Acompanhamento diário, todos os tempos, Garmin, histórico e relatório ficam no seu espaço privado. Equipe e técnico são opcionais.${S.tecnico?` Técnico vinculado: <b>${esc(S.tecnico.nome)}</b>.`:' Você pode escolher um técnico quando quiser.'}</div>`:''}
+    ${ehAdmin()?`<div class="sep"></div>
       <div class="row" style="align-items:center;gap:10px">
         <div class="grow"><b>Gestão da equipe</b>
           <div class="xs muted">Ative para ajudar o técnico: liberar CPFs, montar treinos e lançar tempos de todos. Desligada, você volta à sua área de atleta.</div></div>
@@ -2506,10 +2513,9 @@ function renderInterno(){
     app.innerHTML={entrada:telaEntrada,login:telaLogin,cadastro:telaCadastro,reset:telaReset,verificar:telaVerificarEmail}[S.vista]();
     return;
   }
-  /* Técnico e PRO ainda dependem da aprovação administrativa. O atleta comum
-     nunca fica bloqueado: enquanto o pedido ao técnico está pendente, continua
-     usando seus próprios treinos e vê o status num cartão não modal. */
-  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&['pro','tecnico'].includes(S.u.perfil)){
+  /* Só o técnico depende da aprovação administrativa. Atleta e PRO continuam
+     usando seus dados privados enquanto o vínculo com um técnico está pendente. */
+  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&S.u.perfil==='tecnico'){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
@@ -2535,7 +2541,7 @@ function renderInterno(){
   /* a etiqueta diz o chapéu em uso: é por onde o técnico-atleta percebe,
      sem abrir nada, em qual das duas vistas ele está */
   b.textContent=S.u.perfil==='tecnico'?(S.modoAtleta?'técnico · atleta':'técnico')
-    :(S.u.perfil==='pro'?(S.gestao?'PRO · gestão':'PRO'):prim(S.u.nome));
+    :(S.u.perfil==='pro'?(ehAdmin()&&S.gestao?'Administrador':'PRO'):prim(S.u.nome));
   b.className='pill '+(S.u.perfil==='pro'?'pro':S.u.perfil==='tecnico'?'tec':'');
   const _nomeCor=nomeAfiliacao(S.u);
   const _cor=_nomeCor?corEquipe(_nomeCor):null;
@@ -2607,9 +2613,8 @@ function telaEmDesenvolvimento(){
 }
 async function escolherEsporte(e){ S.u.esporte=e; try{await DB.set(kUser(S.u.email),S.u);}catch(_){} render(); }
 async function trocarEsporte(){ S.u.esporte=null; try{await DB.set(kUser(S.u.email),S.u);}catch(_){} render(); }
-/* Quem tem os poderes de gestão: o técnico SEMPRE; o PRO e o administrador
-   quando LIGAM o modo gestão (ou entram numa equipe pelo painel admin, que já
-   liga sozinho).
+/* Quem tem os poderes de gestão: o técnico e o administrador global quando
+   ele liga o modo gestão (ou entra numa equipe pelo painel admin).
 
    O administrador não pode ser gestor o tempo todo. A navegação troca conforme
    isto: gestor vê Treinos/Equipe/Competição, e é só o atleta que vê Marcas,
@@ -2618,13 +2623,11 @@ async function trocarEsporte(){ S.u.esporte=null; try{await DB.set(kUser(S.u.ema
    caminho até elas, e sem como desligar, porque o botão de gestão deixava de
    ter efeito. Ser administrador do app não deixa de ser atleta. */
 /* ── OS DOIS CHAPÉUS ───────────────────────────────────────────────────────
-   O PRO já podia LIGAR o chapéu de gestão; o técnico não podia DESLIGAR o
-   dele. Técnico que também nada ficava sem Marcas, Saúde e Relatório — não
-   por regra de segurança, só porque a barra de abas nunca ofereceu a troca.
-   `S.modoAtleta` é o mesmo mecanismo, no outro sentido. É estado de SESSÃO,
-   não do cadastro: ninguém muda de perfil, muda de vista. */
+   Técnico que também nada alterna entre gestão e área pessoal. PRO é somente
+   atleta competitivo; gestão de equipe fica com técnico ou administrador.
+   `S.modoAtleta` é estado de sessão, não mudança de perfil. */
 function ehGestor(){ return !!(S.u&&((S.u.perfil==='tecnico'&&!S.modoAtleta)
-  ||((S.u.perfil==='pro'||ehAdmin())&&(S.gestao||S.adminOrig)))); }
+  ||(ehAdmin()&&(S.gestao||S.adminOrig)))); }
 /* o técnico tem dois chapéus: só oferece a troca quem de fato pode usá-la */
 function temDoisChapeus(u){ u=u||S.u; return !!(u&&u.perfil==='tecnico'); }
 /* quem tem dados de performance (aba Marcas/Saúde/Relatório): PRO, atleta
@@ -3062,7 +3065,7 @@ function telaNovoTreino(){
       </button>`).join(''):'<div class="small muted">Nenhum atleta cadastrado ainda. Libere CPFs na aba Elenco.</div>'}
     <div class="small muted" style="margin-top:10px">${S.selMulti.length} selecionado(s)</div>
   </div>`:`<div class="card"><div class="eyebrow">treino pessoal</div>
-    <p class="small muted" style="margin-top:6px">Este treino é só seu. Ele entra nos seus treinos e na sua carga — e fica visível para o seu técnico.</p></div>`}
+    <p class="small muted" style="margin-top:6px">Este treino é só seu. Ele entra no seu histórico, na sua carga e no seu relatório. Os treinos passados pelo técnico aparecem junto, mas continuam separados.</p></div>`}
   <button class="primary full" onclick="salvarTreino()">${ed?'Salvar alterações':(ehGestor()?'Publicar treino':'Salvar treino')}</button>
   <div style="height:14px"></div>`;
 }
@@ -3101,6 +3104,11 @@ async function salvarTreino(){
   const piscina=document.getElementById('ntPiscina').value;
   const parcial25=document.getElementById('ntParcial25').value==='1';
   const editando=S.editando&&S.treino;
+  /* Um treino montado pelo próprio atleta PRO é sempre dele. Mesmo vinculado a
+     um técnico, tentar gravá-lo no índice da equipe seria incorreto (e as regras
+     recusam): só o técnico administra a prescrição coletiva. Os treinos que o
+     técnico passou continuam nos documentos da equipe e aparecem lado a lado. */
+  const pessoal=!ehGestor();
   const pdf=TREINOPDF||(editando&&S.treino.pdf)||null;
   if(!texto.trim()&&!pdf)return toast('Cole o treino ou anexe um PDF');
   if(!S.selMulti.length)return toast('Escolha ao menos um atleta');
@@ -3110,21 +3118,23 @@ async function salvarTreino(){
   /* PDF do treino vai para o Storage: em base64 ele ocupava até 600 KB do
      documento do treino, que também guarda os registros de TODOS os atletas. */
   let pdfRef=pdf;
-  if(fst&&ehDataURL(pdf)){ const u=await subirAnexo(anexoTreino(S.u.equipe,id),pdf); if(u)pdfRef=u; }
+  if(fst&&ehDataURL(pdf)&&!pessoal){ const u=await subirAnexo(anexoTreino(S.u.equipe,id),pdf); if(u)pdfRef=u; }
   const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,pdf:pdfRef,para:[...S.selMulti],
     registros:editando?(S.treino.registros||{}):{},autor:S.u.nome,
-    criadoPor:editando?(S.treino.criadoPor||null):S.u.id,atualizado:Date.now()};
-  await DB.set(kTr(S.u.equipe,id),t);
-  const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==id);
-  idx.unshift({id,data,titulo,nivel,vol:volTreino(t),para:t.para,nAtletas:t.para.length});
+    criadoPor:editando?(S.treino.criadoPor||null):S.u.id,atualizado:Date.now(),_pessoal:pessoal};
+  const chaveIdx=pessoal?kPTrIdx(S.u.id):kTrIdx(S.u.equipe);
+  await DB.set(pessoal?kPTr(S.u.id,id):kTr(S.u.equipe,id),t);
+  const idx=(await DB.get(chaveIdx)||[]).filter(x=>x.id!==id);
+  idx.unshift({id,data,titulo,nivel,vol:volTreino(t),para:t.para,nAtletas:t.para.length,_pessoal:pessoal});
   idx.sort((a,b)=>b.data.localeCompare(a.data));
-  await DB.set(kTrIdx(S.u.equipe),idx);
-  S.tridx=idx; S.treino=t; S.sub='detalhe'; S.editando=false; S.rascunho=null; TREINOPDF=null; S.pilha.pop();
+  await DB.set(chaveIdx,idx);
+  S.treino=t; S.sub='detalhe'; S.editando=false; S.rascunho=null; TREINOPDF=null; S.pilha.pop();
+  await carregarDados(); S.treino=t;
   toast(`${t.blocos.reduce((n,b)=>n+b.itens.length,0)} séries · ${t.para.length} atleta(s)`);
   render();
 }
 async function abrirTreino(id){
-  push(); S.treino=await DB.get(kTr(S.u.equipe,id)); S.sub='detalhe'; render(); window.scrollTo(0,0);
+  push(); S.treino=await lerTreinoUsuario(id); S.sub='detalhe'; render(); window.scrollTo(0,0);
 }
 
 function temposDoAtleta(t,atId){const r=t&&t.registros&&t.registros[atId]; if(!r)return false;
@@ -3132,17 +3142,17 @@ function temposDoAtleta(t,atId){const r=t&&t.registros&&t.registros[atId]; if(!r
 /* treino "feito": marcado explicitamente, ou tem tempos lançados (e não foi desmarcado) */
 function treinoFeito(t,atId){ if(t&&t.feito&&t.feito[atId]===true)return true; if(t&&t.feito&&t.feito[atId]===false)return false; return temposDoAtleta(t,atId); }
 async function toggleFeito(treinoId,atId){
-  const t=await DB.get(kTr(S.u.equipe,treinoId))||S.treino;
+  const t=await lerTreinoUsuario(treinoId)||S.treino;
   const novo=!treinoFeito(t,atId);
   t.feito=t.feito||{}; t.feito[atId]=novo; t.atualizado=Date.now();
-  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  await gravarTreinoUsuario(t); S.treino=t;
   toast(novo?'Treino feito ✓':'Fora da consolidação'); render();
 }
 async function setSessao(treinoId,atId,campo,val){
-  const t=(S.treino&&S.treino.id===treinoId)?S.treino:(await DB.get(kTr(S.u.equipe,treinoId))||S.treino);
+  const t=(S.treino&&S.treino.id===treinoId)?S.treino:(await lerTreinoUsuario(treinoId)||S.treino);
   t.sessao=t.sessao||{}; t.sessao[atId]=t.sessao[atId]||{}; t.sessao[atId][campo]=val; t.atualizado=Date.now();
   S.treino=t; render();                                  /* mostra na hora (otimista) */
-  const ok=await DB.set(kTr(S.u.equipe,t.id),t); if(ok)toast('Salvo ✓');
+  const ok=await gravarTreinoUsuario(t); if(ok)toast('Salvo ✓');
 }
 function telaTreinoDetalhe(){
   const t=S.treino,tec=ehGestor();
@@ -3459,7 +3469,7 @@ async function mutarRegistro(itemId,atletaId,fn){
     const r=t.registros[atletaId][itemId]||{}; fn(r); r.em=Date.now(); r.por=S.u.nome;
     t.registros[atletaId][itemId]=r; t.atualizado=Date.now(); return t; };
   S.treino=aplicar(null);
-  const salvo=await transacao(kTr(S.u.equipe,trId),serv=>aplicar(serv||null));
+  const salvo=await transacaoTreinoUsuario(trId,serv=>aplicar(serv||null));
   if(salvo)S.treino=salvo;
 }
 function atualizaSomaBroken(n){
@@ -3604,7 +3614,7 @@ async function salvarSplits(itemId,atletaId){
 /* adiciona uma rodada à série (para blocos que repetem, ex.: "2x"). Migra o
    registro simples para rodada 1 e cria a próxima; funciona em qualquer série. */
 async function addRodada(itemId,atletaId){
-  const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
+  const t=await lerTreinoUsuario(S.treino.id)||S.treino;
   const item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId); if(!item)return;
   t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
   const prev=t.registros[atletaId][itemId]||{};
@@ -3617,7 +3627,7 @@ async function addRodada(itemId,atletaId){
   const novo={...prev,rd,nrd:rd.length,em:Date.now(),por:S.u.nome};
   delete novo.tempos; delete novo.parciais; delete novo.tot;
   t.registros[atletaId][itemId]=novo; t.atualizado=Date.now();
-  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  await gravarTreinoUsuario(t); S.treino=t;
   S.rd=rd.length-1; abrirLancamento(itemId,atletaId); toast('Rodada '+rd.length+' adicionada');
 }
 /* lê todos os campos digitados na ficha (para não perder nada) */
@@ -3660,7 +3670,7 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais,extra){
   /* tela responde na hora (é o que evita a sensação de lapso)… */
   S.treino=aplicar(null);
   /* …e a gravação é atômica em cima do que está no servidor. */
-  const salvo=await transacao(kTr(S.u.equipe,trId),serv=>aplicar(serv||null));
+  const salvo=await transacaoTreinoUsuario(trId,serv=>aplicar(serv||null));
   if(salvo)S.treino=salvo;
 }
 /* ✓ verde: grava o tempo daquela linha (e tudo que estiver digitado) na hora */
@@ -3683,11 +3693,11 @@ async function delTempo(itemId,atletaId,i,rd){
 }
 async function salvarRitmoAA(itemId,atletaId){
   const ms=parseTempo(document.getElementById('aaRitmo').value);
-  const t=await DB.get(kTr(S.u.equipe,S.treino.id))||S.treino;
+  const t=await lerTreinoUsuario(S.treino.id)||S.treino;
   t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
   t.registros[atletaId][itemId]={ritmo100:ms,tempos:[],parciais:[],em:Date.now(),por:S.u.nome};
   t.atualizado=Date.now();
-  await DB.set(kTr(S.u.equipe,t.id),t); S.treino=t;
+  await gravarTreinoUsuario(t); S.treino=t;
   fecharSheet(); toast(ms!=null?'Ritmo salvo':'Ritmo removido'); render();
 }
 function editarTreino(){S.rascunho=null;TREINOPDF=null;S.editando=true;S.selMulti=[...(S.treino.para||[])];S.sub='novo';render()}
@@ -3697,10 +3707,11 @@ async function excluirTreino(){
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
 }
 async function confirmarExclusao(){
-  const idx=(await DB.get(kTrIdx(S.u.equipe))||[]).filter(x=>x.id!==S.treino.id);
+  const pessoal=ehTreinoPessoal(S.treino.id,S.treino), chaveIdx=pessoal?kPTrIdx(S.u.id):kTrIdx(S.u.equipe);
+  const idx=(await DB.get(chaveIdx)||[]).filter(x=>x.id!==S.treino.id);
   /* apaga de verdade: gravar null deixava o documento residual no banco */
-  await DB.set(kTrIdx(S.u.equipe),idx); await apagarChave(kTr(S.u.equipe,S.treino.id));
-  S.tridx=idx; S.treino=null; S.sub=null; S.pilha.pop(); fecharSheet(); toast('Treino excluído'); render();
+  await DB.set(chaveIdx,idx); await apagarChave(pessoal?kPTr(S.u.id,S.treino.id):kTr(S.u.equipe,S.treino.id));
+  S.treino=null; S.sub=null; S.pilha.pop(); fecharSheet(); await carregarDados(); toast('Treino excluído'); render();
 }
 
 /* =====================================================================
@@ -3724,7 +3735,7 @@ async function carregarSemana(eq,metas){
   const ids=(metas||[]).filter(t=>dias.includes(t.data)).map(t=>t.id);
   const agora=Date.now(), reler=(agora-_semEm)>60000;
   for(const id of (reler?ids:ids.filter(id=>!_semDocs[id]))){
-    try{ const d=await DB.get(kTr(eq,id)); if(d)_semDocs[id]=d; }catch(_){}
+    try{ const meta=(metas||[]).find(x=>x.id===id),d=await DB.get(meta?._pessoal?kPTr(S.u.id,id):kTr(eq,id)); if(d)_semDocs[id]=d; }catch(_){}
   }
   if(reler)_semEm=agora;
   for(const k of Object.keys(_semDocs))if(!ids.includes(k))delete _semDocs[k];   /* virou a semana */
@@ -3849,11 +3860,11 @@ function telaAguardando(){
     <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
   </div>
   <button class="ghost full" style="margin-top:18px" onclick="sincronizar(false)">Já fui liberado? Atualizar</button>
-  ${S.u.perfil==='atleta'?'<button class="ghost full" style="margin-top:8px" onclick="cancelarPedidoEquipe()">Escolhi a equipe errada</button>':''}
+  ${['atleta','pro'].includes(S.u.perfil)?'<button class="ghost full" style="margin-top:8px" onclick="cancelarPedidoEquipe()">Escolhi a equipe errada</button>':''}
   <button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="sair()">Sair</button>`;
 }
 async function cancelarPedidoEquipe(){
-  if(!S.u||S.u.perfil!=='atleta'||S.u.aprovado!==false||!S.u.equipe)return;
+  if(!S.u||!['atleta','pro'].includes(S.u.perfil)||S.u.aprovado!==false||!S.u.equipe)return;
   const tinhaAf=Object.prototype.hasOwnProperty.call(S.u,'afiliacao');
   const atualizado={...S.u,
     afiliacao:tinhaAf?S.u.afiliacao:'eq:'+S.u.equipe,
@@ -3969,7 +3980,7 @@ async function criarEquipeDev(){
   if(!nome)return toast('Escolha uma equipe da lista ou digite o nome');
   const sg=slug(nome); if(!sg)return toast('Nome inválido');
   if(await DB.get(kEq(sg)))return toast('Essa equipe já foi criada');
-  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:novoCodigoPro()});
+  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null});
   await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]);
   await registrarEquipeDev(sg);
   S.equipesDisp=null;   /* invalida o cache do dropdown de cadastro */
@@ -5009,11 +5020,32 @@ teste('confirmação','a tela ensina as três saídas reais',a=>{
   const h=_telaVerif('amigo@provedor.com',null);
   a.ok(/Confira o endereço/.test(h),'1: erro de digitação no endereço');
   a.ok(h.includes('noreply@parcial-cdb0e.firebaseapp.com'),'2: o remetente, para liberar no provedor');
-  a.ok(/Esqueci minha senha/.test(h),'3: o teste de entrega por outro e-mail');});
+  a.ok(/Aguarde até 10 minutos/.test(h),'3: dá um prazo realista sem induzir vários reenvios');
+  a.ok(/fale com o administrador/.test(h),'4: indica a saída quando a entrega não acontece');});
 teste('confirmação','sem endereço guardado a tela não mente',a=>{
   const h=_telaVerif(null,null);
   a.ok(h.includes('seu e-mail'),'usa um rótulo neutro em vez de inventar um endereço');
   a.ok(h.includes('Usar outra conta'),'e ainda oferece recomeçar');});
+
+/* ── ATLETA PRO COMPETITIVO (v159) ─────────────────────────────────────────
+   PRO é o atleta que compete e usa o acompanhamento completo; não é gestor,
+   não depende de convite e pode começar sem equipe ou técnico. */
+teste('cadastro PRO','a escolha explica a diferença para o atleta de lazer',a=>{
+  const h=telaEntrada();
+  a.ok(h.includes("S.perfilEscolhido='pro'"),'PRO é uma escolha direta de cadastro');
+  a.ok(/Para quem compete/.test(h),'explica a finalidade competitiva');
+  a.ok(/saúde ou lazer/.test(h),'diferencia o atleta comum');});
+teste('cadastro PRO','não pede código e aceita começar independente',a=>{
+  const g={perfil:S.perfilEscolhido,passo:CAD_PASSO,cad:CAD};
+  S.perfilEscolhido='pro'; CAD_PASSO=1; CAD={semEquipe:true};
+  const h=telaCadastro();
+  S.perfilEscolhido=g.perfil; CAD_PASSO=g.passo; CAD=g.cad;
+  a.ok(/Perfil competitivo/.test(h),'confirma os recursos do perfil');
+  a.ok(/Equipe e técnico são opcionais/.test(h),'deixa claro que pode começar sozinho');
+  a.ok(!/Código.*PRO/i.test(h),'não exige código desconhecido');});
+teste('cadastro PRO','atleta competitivo não recebe gestão de equipe',a=>{
+  _atleta();S.u.email='pro@x.com';S.gestao=true;
+  a.ok(!ehGestor(),'PRO continua atleta mesmo com estado antigo de gestão');});
 
 /* ── DOIS CHAPÉUS: TÉCNICO QUE TAMBÉM NADA (v136) ────────────────────────── */
 function _tecnico(){ _atleta(); S.u.perfil='tecnico'; S.u.nivel=null; S.modoAtleta=false; S.gestao=false; return S.u; }
@@ -5046,7 +5078,7 @@ teste('chapéus','atleta comum e PRO não ganham o botão',a=>{
   _atleta(); S.u.perfil='atleta';
   a.ok(!temDoisChapeus(),'atleta não tem dois chapéus');
   S.u.perfil='pro';
-  a.ok(!temDoisChapeus(),'PRO também não — ele usa o modo gestão');
+  a.ok(!temDoisChapeus(),'PRO também não — ele é sempre atleta competitivo');
   S.modoAtleta=true;
   a.ok(!ehGestor(),'e modoAtleta não transforma PRO em gestor');});
 teste('chapéus','o aparelho lembra o último chapéu',a=>{
@@ -5492,7 +5524,7 @@ async function reconstruirTridx(sg){
   /* lista de atletas: reconstrói a partir das contas que apontam para esta equipe */
   const us=[]; snap.forEach(doc=>{ if(/^u_/.test(doc.id)){ let v=null; try{v=JSON.parse(doc.data().v)}catch(_){}; if(v&&v.equipe===sg&&v.email)us.push(v.email); } });
   if(us.length){ const cur=await DB.get(kEqUsers(sg))||[]; await DB.set(kEqUsers(sg),[...new Set([...cur,...us])]); }
-  if(!(await DB.get(kEq(sg))))await DB.set(kEq(sg),{slug:sg,nome:sg,criadoEm:Date.now(),tecnicoEmail:null,codigoPro:novoCodigoPro()});
+  if(!(await DB.get(kEq(sg))))await DB.set(kEq(sg),{slug:sg,nome:sg,criadoEm:Date.now(),tecnicoEmail:null});
   await registrarEquipeDev(sg);
   if(sg===S.u.equipe)await carregarDados();
   S.equipesDevList=null; toast(`Recuperado: ${idx.length} treino(s), ${cidx.length} competição(ões), ${us.length} atleta(s)`); abrirDiagnostico();
@@ -5544,7 +5576,7 @@ async function mesclarEquipe(orig,dest){
   /* técnico: se o destino não tem e a origem tinha, carrega */
   if(eqO&&eqO.tecnicoEmail&&!eqD.tecnicoEmail){ eqD.tecnicoEmail=eqO.tecnicoEmail; await DB.set(kEq(dest),eqD); }
   /* se eu estava na origem, passo para o destino */
-  if(S.u.equipe===orig){ S.u.equipe=dest; S.u.equipeNome=nomeD; await DB.set(kUser(S.u.email),S.u); if(S.u.perfil==='pro')S.gestao=true; await carregarDados(); }
+  if(S.u.equipe===orig){ S.u.equipe=dest; S.u.equipeNome=nomeD; await DB.set(kUser(S.u.email),S.u); if(ehAdmin())S.gestao=true; await carregarDados(); }
   S.equipesDevList=null; S.equipesDisp=null;
   toast(`Fundido em ${nomeD}: ${nTr} treino(s)${nTrPula?` (${nTrPula} já existiam)`:''}, ${nCm} competição(ões), ${nU} atleta(s). Confira e apague a origem.`);
   render();
@@ -5595,7 +5627,9 @@ async function carregarAdminUsuarios(){
 function abrirAdminUsuario(email){
   const u=(S.adminUsuarios||[]).find(x=>x.email===email);if(!u)return;
   const eqs=S.equipesDevList||[];
+  const conf=u.confirmacaoEmail||null, confRot=conf?.status==='confirmado'?'Confirmado':conf?.status==='enviado'?'Envio aceito pelo Firebase':conf?.status==='falhou'?'Envio recusado pelo Firebase':'Sem diagnóstico (cadastro antigo)';
   sheet(`<h2>Gerenciar usuário</h2><div class="small muted">${esc(u.email)}</div>
+    <div class="note ${conf?.status==='falhou'?'warn':conf?.status==='confirmado'?'ok':''}" style="margin:10px 0"><b>E-mail: ${confRot}</b>${conf?.erro?`<div class="xs muted" style="margin-top:3px">Erro: ${esc(conf.erro)}</div>`:''}<div class="xs muted" style="margin-top:3px">Isto confirma o pedido de envio, não a entrega na caixa postal.</div></div>
     <div class="field"><label for="auNome">Nome</label><input id="auNome" value="${esc(u.nome||'')}"></div>
     <div class="field"><label for="auPerfil">Perfil</label><select id="auPerfil">${[['atleta','Atleta'],['pro','Atleta PRO'],['tecnico','Técnico']].map(([v,n])=>`<option value="${v}" ${u.perfil===v?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="field"><label for="auAfiliacao">Equipe ou clube do perfil (opcional)</label><input id="auAfiliacao" value="${esc(nomeAfiliacao(u)||'')}" placeholder="Atleta independente"></div>
@@ -5617,7 +5651,7 @@ function telaEquipes(){
   if(!ehDev())return`<div class="empty"><div class="big">Sem acesso</div></div>`;
   if(S.equipesDevList==null||S.adminUsuarios==null){Promise.all([carregarEquipesDevList(),carregarAdminUsuarios()]).then(()=>render());return`<div class="empty"><div class="big">Carregando administração…</div></div>`;}
   const lst=S.equipesDevList, ja=new Set(lst.map(x=>x.slug));
-  const usuarios=S.adminUsuarios||[], pendentes=usuarios.filter(u=>u.aprovado===false&&(u.equipe||u.perfil!=='atleta')), ativos=usuarios.filter(u=>u.ativo!==false), busca=(S.adminBusca||'').toLowerCase();
+  const usuarios=S.adminUsuarios||[], pendentes=usuarios.filter(u=>u.aprovado===false&&(u.equipe||u.perfil==='tecnico')), ativos=usuarios.filter(u=>u.ativo!==false), busca=(S.adminBusca||'').toLowerCase();
   const visiveis=usuarios.filter(u=>!busca||[u.nome,u.email,nomeAfiliacao(u),u.equipeNome,u.perfil].some(x=>String(x||'').toLowerCase().includes(busca)));
   const disp=CATALOGO_EQUIPES.filter(e=>!ja.has(slug(e.nome))).sort((a,b)=>a.nome.localeCompare(b.nome));
   const opts=disp.map(e=>`<option value="${esc(e.nome)}">${esc(e.nome)}${e.sigla&&e.sigla!==e.nome?' — '+esc(e.sigla):''}</option>`).join('');
@@ -5628,7 +5662,7 @@ function telaEquipes(){
   <div class="admin-kpis"><div class="kpi"><div class="v">${usuarios.length}</div><div class="l">usuários</div></div><div class="kpi"><div class="v">${pendentes.length}</div><div class="l">pendentes</div></div><div class="kpi"><div class="v">${ativos.length}</div><div class="l">ativos</div></div></div>
   <div class="card"><div class="row"><div><div class="eyebrow">usuários</div><div class="small muted">Editar perfil, equipe, aprovação e acesso.</div></div><div class="grow"></div></div>
     <div class="field"><label for="adminBusca">Buscar usuário</label><input id="adminBusca" value="${esc(S.adminBusca||'')}" placeholder="nome, e-mail, equipe ou perfil" oninput="S.adminBusca=this.value;render()"></div>
-    ${visiveis.length?visiveis.slice(0,50).map(u=>{const pend=u.aprovado===false&&(u.equipe||u.perfil!=='atleta');return`<button class="lst full" style="text-align:left" onclick="abrirAdminUsuario('${esc(u.email)}')"><span class="av">${esc((u.nome||'?')[0])}</span><span class="grow"><b>${esc(u.nome||u.email)}</b><span class="xs muted" style="display:block">${esc(u.email)} · ${esc(u.perfil||'')} · ${esc(nomeAfiliacao(u)||'independente')}${u.equipeNome?' · técnico: '+esc(u.equipeNome):''}</span></span>${pend?'<span class="tag y">pendente</span>':''}${u.ativo===false?'<span class="tag w">inativo</span>':''}</button>`}).join(''):'<div class="small muted">Nenhum usuário encontrado.</div>'}
+    ${visiveis.length?visiveis.slice(0,50).map(u=>{const pend=u.aprovado===false&&(u.equipe||u.perfil==='tecnico');return`<button class="lst full" style="text-align:left" onclick="abrirAdminUsuario('${esc(u.email)}')"><span class="av">${esc((u.nome||'?')[0])}</span><span class="grow"><b>${esc(u.nome||u.email)}</b><span class="xs muted" style="display:block">${esc(u.email)} · ${esc(u.perfil||'')} · ${esc(nomeAfiliacao(u)||'independente')}${u.equipeNome?' · técnico: '+esc(u.equipeNome):''}</span></span>${pend?'<span class="tag y">pendente</span>':''}${u.ativo===false?'<span class="tag w">inativo</span>':''}</button>`}).join(''):'<div class="small muted">Nenhum usuário encontrado.</div>'}
   </div>
   <div class="card">
     <div class="eyebrow">nova equipe</div>
@@ -5681,7 +5715,7 @@ async function criarEquipeDevTela(){
   if(!nome)return toast('Escolha uma equipe da lista ou digite o nome');
   const sg=slug(nome); if(!sg)return toast('Nome inválido');
   if(await DB.get(kEq(sg)))return toast('Essa equipe já foi criada');
-  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null,codigoPro:novoCodigoPro()});
+  await DB.set(kEq(sg),{slug:sg,nome:nome.trim(),criadoEm:Date.now(),tecnicoEmail:null});
   await DB.set(kLib(sg),[]); await DB.set(kEqUsers(sg),[]); await registrarEquipeDev(sg);
   S.equipesDisp=null; S.equipesDevList=null;
   toast(`Equipe "${nome.trim()}" criada`); render();
@@ -5763,7 +5797,7 @@ function telaAtletaDetalhe(){
       <tr><td class="muted">CPF</td><td class="n">${cpfMasc(a.cpf)||'—'}</td></tr>
       <tr><td class="muted">WhatsApp</td><td class="n">${a.telefone?telBr(a.telefone):'<span style="color:var(--clock)">não cadastrado</span>'}</td></tr>
       <tr><td class="muted">Modalidade</td><td>${a.tipo==='aguas'?'Águas abertas':'Piscina'}</td></tr>
-      <tr><td class="muted">Perfil</td><td>${a.perfil==='pro'?'Atleta PRO <span class="xs muted">(código mestre)</span>':'Atleta'}</td></tr>
+      <tr><td class="muted">Perfil</td><td>${a.perfil==='pro'?'Atleta PRO <span class="xs muted">(competitivo)</span>':'Atleta <span class="xs muted">(saúde ou lazer)</span>'}</td></tr>
       <tr><td class="muted">Equipe</td><td>${nomeAfiliacao(a)?esc(nomeAfiliacao(a)):'<span style="color:var(--clock)">sem equipe</span>'}</td></tr>
       <tr><td class="muted">Técnico no app</td><td>${a.equipeNome?esc(a.equipeNome):'<span class="muted">sem técnico</span>'}</td></tr>
       <tr><td class="muted">Na equipe desde</td><td>${a.criadoEm?brData(new Date(a.criadoEm).toISOString().slice(0,10)):'—'}</td></tr>
@@ -5787,8 +5821,8 @@ function telaAtletaDetalhe(){
     <div class="eyebrow">nível</div>
     <div class="opt" style="margin-top:8px">${NIVEIS.map(n=>`<button class="${a.nivel===n?'on':''}" onclick="mudarNivel('${a.id}','${n}')">${n}</button>`).join('')}</div>
   </div>
-  ${a.perfil!=='pro'?`<div class="card"><div class="eyebrow">liberar recursos de atleta PRO</div>
-    <p class="xs muted" style="margin:4px 0 10px">Dê a este atleta as abas do PRO. A Saúde continua privada do atleta (nem você enxerga).</p>
+  ${a.perfil!=='pro'?`<div class="card"><div class="eyebrow">recursos avançados opcionais</div>
+    <p class="xs muted" style="margin:4px 0 10px">O perfil continua sendo Atleta (saúde ou lazer), mas você pode liberar recursos específicos. A Saúde continua privada do atleta (nem você enxerga).</p>
     ${[['podeMarcas','Marcas','a aba Marcas + importação do currículo da ABMN'],
        ['podeSaude','Saúde','a aba Saúde (VFC, sono, exames, bioimpedância) — só para o próprio atleta'],
        ['podeRelatorio','Relatório','a aba Relatório de performance do próprio atleta']].map(([f,tit,desc])=>`
@@ -5911,7 +5945,7 @@ async function sairDaEquipe(){
   S.eq=null; fecharSheet(); await carregarDados(); toast('Técnico desvinculado. Seus dados pessoais continuam disponíveis.'); render();
 }
 function cardVinculosAtleta(){
-  if(!S.u||S.u.perfil!=='atleta')return'';
+  if(!S.u||!['atleta','pro'].includes(S.u.perfil))return'';
   const af=nomeAfiliacao(S.u), temTec=!!S.u.equipe, pend=temTec&&S.u.aprovado===false;
   const tecnico=!temTec?'Sem técnico — seus treinos continuam disponíveis'
     : pend?`Pedido enviado para ${S.u.equipeNome||'o técnico'} — aguardando aprovação`
@@ -6162,6 +6196,9 @@ async function apagarDadosDaConta(u,pro){
        pode morar aqui em qualquer perfil. Apagar é idempotente — se o
        documento não existe, não acontece nada. */
     await apagarChave(kPro(u.id)); feitas.push(kPro(u.id));
+    const pessoais=await DB.get(kPTrIdx(u.id))||[];
+    for(const t of pessoais)if(t&&t.id){await apagarChave(kPTr(u.id,t.id));feitas.push(kPTr(u.id,t.id));}
+    await apagarChave(kPTrIdx(u.id)); feitas.push(kPTrIdx(u.id));
     /* ⚠️ Apagar a conta tem de levar TUDO. A Saúde agora é um documento à
        parte e as versões diárias são mais sete — deixá-los para trás seria
        prometer exclusão e guardar dado de saúde assim mesmo. */
@@ -7724,7 +7761,7 @@ async function importarABMNAtleta(inp,atletaId){
   const f=inp.files&&inp.files[0]; if(!f)return; inp.value='';
   const st=document.getElementById('abmnAtSt');
   const diz=(t,c)=>{ if(st){st.className='xs '+(c||'muted');st.innerHTML=t;} };
-  if(!ehGestor())return diz('Só o técnico (ou PRO em gestão) pode enviar.','muted');
+  if(!ehGestor())return diz('Só o técnico ou o administrador pode enviar.','muted');
   const a=S.elenco.find(x=>x.id===atletaId); if(!a)return;
   diz('Lendo o PDF…');
   let txt; try{ txt=await pdfTexto(f); }catch(e){ return diz('Não consegui ler: '+esc(e.message),'muted'); }
@@ -8603,7 +8640,11 @@ async function coletarEsforcos(opts){
        seguimos. Era isto que transformava um dado estranho em "não foi
        possível montar o relatório", sem dizer de onde vinha. */
     let t=null;
-    try{ t=await DB.get(kTr(_alvoEq(),meta.id)); }
+    try{
+      /* O relatório do próprio PRO combina duas origens: prescrições recebidas
+         da equipe e treinos pessoais. O metadado identifica qual documento ler. */
+      t=await DB.get(meta._pessoal?kPTr(S.u.id,meta.id):kTr(_alvoEq(),meta.id));
+    }
     catch(e){ falhas.push(meta.id); continue; }
     if(!t)continue;
     if(!t.data&&meta.data)t.data=meta.data;      /* sem data o esforço quebra a ordenação */
@@ -8828,7 +8869,7 @@ async function calcFadigaAtleta(atId){
   /* conta quantos treinos de natação realmente entraram na carga: sem RPE e
      duração a sessão vale ZERO, e a comparação natação × fora d'água engana. */
   let nNat=0, nNatCom=0;
-  for(const meta of metas){ const t=await DB.get(kTr(S.u.equipe,meta.id)); if(!t)continue;
+  for(const meta of metas){ const t=await lerTreinoUsuario(meta.id); if(!t)continue;
     const sj=t.sessao&&t.sessao[atId]; nNat++;
     if(sj&&sj.rpe!=null&&sj.dur){ nNatCom++; push(t.data||meta.data,sj.rpe*sj.dur); } }
   const perf=await DB.get(kPerf(S.u.equipe,atId));
@@ -11996,7 +12037,7 @@ async function demo(perfil){
 async function semear(){
   if(FB)return toast('No modo em rede não há dados de demonstração — crie contas reais.');
   const eqs=slug(DEMO.eq);
-  const eq={slug:eqs,nome:DEMO.eq,criadoEm:Date.now(),tecnicoEmail:DEMO.contas[0].email,codigoPro:'A3PRO2026'};
+  const eq={slug:eqs,nome:DEMO.eq,criadoEm:Date.now(),tecnicoEmail:DEMO.contas[0].email};
   await DB.set(kEq(eqs),eq);
   await DB.set(kLib(eqs),DEMO.contas.filter(c=>c.cpf).map(c=>({cpf:c.cpf,nome:c.nome,nivel:c.nivel,usado:true,email:c.email})));
   const emails=[];
@@ -12178,11 +12219,11 @@ Soltura
     fauth.onAuthStateChanged(async user=>{
       if(user){
         await user.reload();
-        if(!user.emailVerified){S.emailPendente=user.email;S.u=null;S.vista='verificar';render();return}
+        if(!user.emailVerified){const pend=await DB.get(kUser(user.email||''));S.emailPendente=user.email;S.envioFalhou=pend?.confirmacaoEmail?.status==='falhou'?(pend.confirmacaoEmail.erro||'falhou'):null;S.u=null;S.vista='verificar';render();return}
         const s=await DB.get('sessao',false);
         const em=(s&&s.email)?s.email:(user.email||'').toLowerCase();
         const u=await DB.get(kUser(em));
-        if(u&&u.ativo!==false){await entrarSessao(u);return}
+        if(u&&u.ativo!==false){if(u.confirmacaoEmail?.status!=='confirmado'){u.confirmacaoEmail={status:'confirmado',atualizadoEm:Date.now(),erro:null};await DB.set(kUser(em),u)}await entrarSessao(u);return}
       }
       if(!S.u){S.vista='entrada';render()}
     });

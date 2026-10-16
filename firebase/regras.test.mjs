@@ -27,6 +27,8 @@ const timePublico = ({ uid, nome = 'Equipe Pública' }) => ({
 const dadosBase = {
   'u_atleta@x.com': perfil({ uid: 'UID_ATLETA', email: 'atleta@x.com', equipe: 'a3' }),
   'u_pendente@x.com': perfil({ uid: 'UID_PENDENTE', email: 'pendente@x.com', equipe: 'a3', aprovado: false }),
+  'u_pro@x.com': perfil({ uid: 'UID_PRO', email: 'pro@x.com', equipe: 'a3', tipo: 'pro' }),
+  'u_pro-pendente@x.com': perfil({ uid: 'UID_PRO_PENDENTE', email: 'pro-pendente@x.com', equipe: 'a3', tipo: 'pro', aprovado: false }),
   'u_dono-pendente@x.com': perfil({ uid: 'UID_DONO_PENDENTE', email: 'dono-pendente@x.com', equipe: 'falsa', tipo: 'tecnico', aprovado: false }),
   'u_tecnico@x.com': perfil({ uid: 'UID_TECNICO', email: 'tecnico@x.com', equipe: 'a3', tipo: 'tecnico' }),
   'u_outro@x.com': perfil({ uid: 'UID_OUTRO', email: 'outro@x.com', equipe: 'b' }),
@@ -42,6 +44,8 @@ const dadosBase = {
   'eq_a3_perf_UID_OUTRO': { v: '{}', donoEmail: 'outro@x.com', equipe: 'a3' },
   'pro_UID_ATLETA': { v: '{}', dono: 'UID_ATLETA', donoEmail: 'atleta@x.com' },
   'pro_UID_OUTRO': { v: '{}', dono: 'UID_OUTRO', donoEmail: 'outro@x.com' },
+  'pt_UID_PRO_idx': { v: '[]', dono: 'UID_PRO', donoEmail: null, equipe: null, perfil: null, aprovado: null },
+  'pt_UID_PRO_t1': { v: '{}', dono: 'UID_PRO', donoEmail: null, equipe: null, perfil: null, aprovado: null },
   'time_UID_OUTRO': timePublico({ uid: 'UID_OUTRO', nome: 'Equipe do Outro' }),
 };
 
@@ -211,5 +215,55 @@ describe('regras do PARCIAL', () => {
   test('28. outro usuário não altera a equipe pública alheia', async () => {
     const db = banco('UID_ATLETA', 'atleta@x.com');
     await assertFails(updateDoc(kv(db, 'time_UID_OUTRO'), { v: JSON.stringify({ nome: 'Tomada' }) }));
+  });
+
+  test('29. PRO é atleta competitivo e não edita a gestão da equipe', async () => {
+    const db = banco('UID_PRO', 'pro@x.com');
+    await assertFails(updateDoc(kv(db, 'eq_a3_tridx'), { v: '["tomado"]' }));
+  });
+
+  test('30. técnico aprovado pode aprovar PRO pendente da própria equipe', async () => {
+    const db = banco('UID_TECNICO', 'tecnico@x.com');
+    await assertSucceeds(updateDoc(kv(db, 'u_pro-pendente@x.com'), { aprovado: true }));
+  });
+
+  test('31. PRO pode criar cadastro pendente sem equipe', async () => {
+    const db = banco('UID_PRO_NOVO', 'pro-novo@x.com');
+    await assertSucceeds(setDoc(kv(db, 'u_pro-novo@x.com'), perfil({
+      uid: 'UID_PRO_NOVO', email: 'pro-novo@x.com', equipe: null, tipo: 'pro', aprovado: false,
+    })));
+  });
+
+  test('32. PRO lê e atualiza o próprio treino pessoal', async () => {
+    const db = banco('UID_PRO', 'pro@x.com');
+    await assertSucceeds(getDoc(kv(db, 'pt_UID_PRO_t1')));
+    await assertSucceeds(updateDoc(kv(db, 'pt_UID_PRO_t1'), { v: '{"feito":true}' }));
+  });
+
+  test('33. outro atleta não lê nem altera treino pessoal do PRO', async () => {
+    const db = banco('UID_OUTRO', 'outro@x.com');
+    await assertFails(getDoc(kv(db, 'pt_UID_PRO_t1')));
+    await assertFails(updateDoc(kv(db, 'pt_UID_PRO_t1'), { v: '{"tomado":true}' }));
+  });
+
+  test('34. usuário não cria treino pessoal em nome de outro', async () => {
+    const db = banco('UID_OUTRO', 'outro@x.com');
+    await assertFails(setDoc(kv(db, 'pt_UID_PRO_falso'), {
+      v: '{}', dono: 'UID_PRO', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
+  });
+
+  test('35. usuário não ocupa a chave pessoal de outro nem usando o próprio dono', async () => {
+    const db = banco('UID_OUTRO', 'outro@x.com');
+    await assertFails(setDoc(kv(db, 'pt_UID_VITIMA_novo'), {
+      v: '{}', dono: 'UID_OUTRO', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
+  });
+
+  test('36. usuário não ocupa o documento PRO de outro UID', async () => {
+    const db = banco('UID_OUTRO', 'outro@x.com');
+    await assertFails(setDoc(kv(db, 'pro_UID_VITIMA'), {
+      v: '{}', dono: 'UID_OUTRO', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
   });
 });

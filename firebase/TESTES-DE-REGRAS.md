@@ -1,8 +1,9 @@
 # Testes das regras do Firestore
 
-A auditoria apontou, com razão, que **não existe suíte automatizada**. Este
-documento é o meio-termo honesto enquanto ela não existe: os casos que
-**precisam** passar, escritos de forma que qualquer pessoa consiga rodar.
+A suíte automatizada está em `firebase/regras.test.mjs` e hoje cobre 36 casos
+de dono, equipe, administração, cadastro independente, PRO competitivo,
+afiliação pública e treinos pessoais. Este documento mantém também um roteiro
+manual para conferir casos críticos no Rules Playground.
 
 Há dois caminhos. O **A** não exige instalar nada e roda em 10 minutos. O **B**
 é a suíte de verdade, para quem tiver Node.
@@ -57,51 +58,18 @@ saúde; o 6 e o 7 são a escalada de privilégio que motivou toda a correção.
 
 ## B. Suíte automatizada (precisa de Node)
 
+Na pasta `firebase`:
+
 ```bash
-npm i -D @firebase/rules-unit-testing firebase-tools vitest
-npx firebase emulators:exec --only firestore "npx vitest run"
+npm install
+npx firebase emulators:exec --only firestore --project parcial-regras-test "npm run test:rules"
 ```
 
-Esqueleto para `firebase/regras.test.js`:
-
-```js
-import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { readFileSync } from 'fs';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { beforeAll, afterAll, test } from 'vitest';
-
-let env;
-beforeAll(async () => {
-  env = await initializeTestEnvironment({
-    projectId: 'parcial-cdb0e',
-    firestore: { rules: readFileSync('firebase/firestore.rules.v2', 'utf8') }
-  });
-  // semeia os cadastros SEM passar pelas regras
-  await env.withSecurityRulesDisabled(async ctx => {
-    const db = ctx.firestore();
-    await setDoc(doc(db, 'kv/u_atleta@x.com'),
-      { v: '{}', dono: 'UID_ATLETA', equipe: 'a3', perfil: 'atleta', aprovado: true, donoEmail: null });
-    await setDoc(doc(db, 'kv/pro_UID_OUTRO'), { v: '{}', dono: 'UID_OUTRO' });
-  });
-});
-afterAll(() => env.cleanup());
-
-const como = (uid, email) => env.authenticatedContext(uid, { email }).firestore();
-
-test('não lê a saúde de outro atleta', async () => {
-  const db = como('UID_ATLETA', 'atleta@x.com');
-  await assertFails(getDoc(doc(db, 'kv/pro_UID_OUTRO')));
-});
-
-test('não se promove a técnico', async () => {
-  const db = como('UID_ATLETA', 'atleta@x.com');
-  await assertFails(setDoc(doc(db, 'kv/u_atleta@x.com'),
-    { v: '{}', dono: 'UID_ATLETA', equipe: 'a3', perfil: 'tecnico', aprovado: true, donoEmail: null }));
-});
-```
-
-Converta cada linha da tabela do caminho A num `test()`. O ganho de ter isso é
-que **mudar uma regra deixa de ser um ato de fé**.
+O arquivo de teste carrega `firestore.rules.v2` diretamente no ambiente do
+emulador. Entre os casos adicionais estão: PRO não recebe gestão, técnico pode
+aprovar PRO da própria equipe, PRO pode nascer sem equipe, dono acessa os seus
+treinos pessoais e outra conta não consegue lê-los, alterá-los ou ocupar a
+chave correspondente ao UID alheio.
 
 ---
 
