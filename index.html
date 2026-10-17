@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v165';
+const VER='v166';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4775,6 +4775,46 @@ teste('medições','glicemia: repetida no mesmo momento usa a última',a=>{
   a.eq(g.delta,null,'sem "durante" não há variação a declarar');
   a.eq(g.n,2,'mas as duas coletas ficam registradas');});
 
+/* ── REIMPORTAR O GARMIN NÃO DOBRA O VOLUME (v166) ──────────────────────────
+   Achado numa auditoria externa e confirmado no código: nado, duração de
+   atividade e FC média acumulam — corretamente, porque um dia tem vários
+   treinos — mas a segunda importação do MESMO export somava tudo de novo.
+   Grave porque eu mesmo mandei reimportar o export para recuperar a Saúde. */
+const _GAR_ATIV=JSON.stringify([
+  {calendarDate:'2026-10-14',activityType:'lap_swimming',distance:3000,duration:3600,averageHR:140},
+  {calendarDate:'2026-10-14',activityType:'lap_swimming',distance:1500,duration:1800,averageHR:150}]);
+const _GAR_SONO=JSON.stringify([{calendarDate:'2026-10-14',sleepTimeSeconds:27000,restingHeartRate:48}]);
+teste('garmin','duas atividades no mesmo dia somam',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_ATIV,true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,45,'3000m + 1500m = 4500m, guardados em centenas');
+  a.eq(g.ativDur,90,'60min + 30min');
+  a.eq(g.ativFc,143,'FC média ponderada pela duração');});
+teste('garmin','reimportar o mesmo export NÃO dobra',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_ATIV,true);
+  await importarGarmin(_GAR_ATIV,true);          /* o mesmo arquivo de novo */
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,45,'continua 4500m, não 9000m');
+  a.eq(g.ativDur,90,'continua 90min, não 180min');
+  a.eq(g.ativFc,143,'e a FC média não se desloca');});
+teste('garmin','no mesmo lote, arquivos diferentes continuam somando',async a=>{
+  _atleta(); S.pro.garmin=[];
+  const lote={limpos:new Set()};
+  await importarGarmin(_GAR_ATIV,true,lote);
+  await importarGarmin(JSON.stringify([{calendarDate:'2026-10-14',activityType:'open_water_swimming',distance:2000,duration:2400}]),true,lote);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,65,'4500m + 2000m: o lote acumula, como deve');
+  a.eq(g.ativDur,130,'e as durações também');});
+teste('garmin','o que é atribuído nunca foi problema',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_SONO,true);
+  await importarGarmin(_GAR_SONO,true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.sono,7.5,'sono sobrescreve, não soma');
+  a.eq(g.fc,48,'FC de repouso idem');});
+
 /* ── QUEM FAZ GESTÃO DE EQUIPE (v165) ───────────────────────────────────────
    Decisão do dono do produto, escrita aqui para não se perder: gestão de
    equipe é do TÉCNICO da respectiva equipe, ou do administrador. PRO é atleta
@@ -8829,13 +8869,16 @@ function garminRelevante(nome){
 async function importarGarminLote(itens,diz){
   const antes=new Set(((S.pro&&S.pro.garmin)||[]).map(x=>x.data));
   const porTipo={}, tocados=new Set();
+  /* um lote só para todos os arquivos: dentro da mesma importação os dias
+     somam normalmente; entre importações, substituem */
+  const lote={limpos:new Set()};
   let lidos=0, ignorados=0, falhas=0;
   for(const it of itens){
     const rot=garminRelevante(it.nome);
     if(!rot){ ignorados++; continue; }
     if(diz)diz(`Lendo ${rot}… (${lidos+1})`);
     let txt; try{ txt=await it.texto(); }catch(_){ falhas++; continue; }
-    const r=await importarGarmin(txt,true);
+    const r=await importarGarmin(txt,true,lote);
     if(!r||!r.n){ falhas++; continue; }
     porTipo[rot]=(porTipo[rot]||0)+r.n;
     r.dias.forEach(d=>tocados.add(d));
@@ -8903,11 +8946,27 @@ async function zipGarmin(inp){
 /* devolve {n, dias} — quantos registros entraram e QUAIS datas foram tocadas.
    O lote precisa das datas para dizer quantos dias são novos e quantos foram
    atualizados; antes só havia uma contagem bruta de registros. */
-async function importarGarmin(raw,silencioso){
+/* ── REIMPORTAR NÃO PODE SOMAR DUAS VEZES ──────────────────────────────────
+   Sono, FC e VFC são atribuídos (`g.fc=...`), então reimportar sobrescreve e
+   nada muda. Mas nado, duração de atividade e FC média ACUMULAM — e têm de
+   acumular mesmo, porque um dia pode ter três treinos em arquivos diferentes.
+   O problema é a segunda importação do MESMO export: ela somava tudo de novo,
+   dobrando o volume e a carga sem nenhum aviso.
+
+   E isto não é hipótese: eu mesmo mandei o Bruno reimportar o export do
+   Garmin para recuperar a Saúde perdida em 14/10.
+
+   Conserto: o acumulador de cada dia é zerado na PRIMEIRA vez que aquele dia
+   aparece na importação corrente. Dentro da mesma importação vários arquivos
+   continuam somando; reimportar o mesmo conjunto dá exatamente o mesmo
+   resultado. `ctx` carrega quais dias já foram zerados nesta passada. */
+const CAMPOS_ACUM=['nado','ativDur','ativFc','_fcMin','_min'];
+async function importarGarmin(raw,silencioso,ctx){
   const vazio={n:0,dias:[]};
   if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return vazio}
   let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return vazio}
   S.pro=S.pro||proVazio();
+  const lote=ctx||{limpos:new Set()};    /* sem lote, cada chamada é o seu */
   const arr=Array.isArray(j)?j.flat():[j],mapa={};
   (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
   let n=0; const tocados=new Set();
@@ -8918,6 +8977,9 @@ async function importarGarmin(raw,silencioso){
     if(!d||!/^\d{4}-\d{2}-\d{2}/.test(d))return;
     const dia=d.slice(0,10);
     const g=mapa[dia]||{data:dia};
+    /* primeira vez que este dia aparece NESTA importação: zera o que acumula,
+       para que reimportar substitua em vez de somar por cima */
+    if(!lote.limpos.has(dia)){ lote.limpos.add(dia); for(const k of CAMPOS_ACUM)delete g[k]; }
     if(o.restingHeartRate!=null)g.fc=Math.round(o.restingHeartRate);
     const hrv=o.hrvWeeklyAverage??o.lastNightAvg??o.avgOvernightHrv??o.weeklyAvg;
     if(hrv!=null)g.hrv=Math.round(hrv);
