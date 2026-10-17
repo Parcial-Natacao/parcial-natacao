@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v170';
+const VER='v171';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5218,6 +5218,32 @@ teste('garmin','o que é atribuído nunca foi problema',async a=>{
 
 
 
+
+/* ── CONFERENCIA DO VOLUME DO GARMIN (v171) ──────────────────────────────── */
+teste('garmin','dia sem lista de atividades e sinalizado como modelo antigo',a=>{
+  const c=conferirVolumeGarmin({garmin:[
+    {data:'2026-10-01',nado:45,ativDur:90},
+    {data:'2026-10-02',nado:30,ativDur:60,ativs:[{k:'x',min:60}]}]});
+  a.eq(c.total,2,'dois dias com total');
+  a.eq(c.legado,1,'so o primeiro esta no modelo antigo');
+  a.eq(c.conferidos,1,'o segundo ja tem atividade identificada');});
+teste('garmin','valor improvavel entra na triagem',a=>{
+  const c=conferirVolumeGarmin({garmin:[
+    {data:'2026-10-01',nado:45,ativDur:90},
+    {data:'2026-10-02',nado:200,ativDur:380}]});
+  a.eq(c.suspeitos.length,1,'so o de 380min e 20km');
+  a.eq(c.suspeitos[0].data,'2026-10-02','o dia certo');});
+teste('garmin','dia ja convertido nao e acusado',a=>{
+  const c=conferirVolumeGarmin({garmin:[
+    {data:'2026-10-02',nado:400,ativDur:600,ativs:[{k:'x',min:600}]}]});
+  a.eq(c.legado,0,'tem lista de atividades: nao e modelo antigo');
+  a.eq(c.suspeitos.length,0,'e por isso nao entra na triagem, por mais alto que seja');});
+teste('garmin','tudo convertido vira confirmacao, nao alarme',a=>{
+  const html=(function(){const sv=S.pro; S.pro={garmin:[{data:'2026-10-02',nado:30,ativs:[{k:'x'}]}]};
+    const h=cardConferirGarmin(); S.pro=sv; return h;})();
+  a.ok(/Volume conferido/.test(html),'diz que esta tudo certo');
+  a.ok(!/modelo antigo/.test(html),'sem aviso de inflacao');});
+
 /* ── SERIE DE 12 MESES (v170) ─────────────────────────────────────────────── */
 teste('extrato','a serie vem do mais antigo para o mais novo',async a=>{
   _atleta(); S.pro.pbs={'50 peito SC25':31000}; S.tridx=[]; SESSOES=[];
@@ -8770,6 +8796,7 @@ function telaGarmin(){
     <button class="full" style="margin-top:6px" onclick="document.getElementById('fGarDir').click()">Escolher a pasta já descompactada</button>
     <div class="xs muted" style="margin-top:5px">O ZIP é o caminho de um toque. Se ele for muito grande e o navegador travar, descompacte no computador e use a <b>pasta</b> — ela não carrega tudo na memória. No celular, prefira o ZIP.</div>
     <div id="garSt" class="xs muted" style="margin-top:8px"></div>
+    ${cardConferirGarmin()}
     <button class="sm ghost full" style="margin-top:8px" onclick="document.getElementById('fGar').click()">Escolher arquivos avulsos</button>
     <button class="sm ghost full" style="margin-top:6px" onclick="S.colarJson=!S.colarJson;render()">${S.colarJson?'Cancelar':'Ou colar o JSON'}</button>
     ${S.colarJson?`<div class="field" style="margin-top:8px">
@@ -9525,6 +9552,53 @@ async function zipGarmin(inp){
    continuam somando; reimportar o mesmo conjunto dá exatamente o mesmo
    resultado. `ctx` carrega quais dias já foram zerados nesta passada. */
 const CAMPOS_ACUM=['nado','ativDur','ativFc','_fcMin','_min'];
+/* ── CONFERIR O VOLUME VINDO DO RELÓGIO ─────────────────────────────────────
+   Até a v166, reimportar o export somava de novo: nado e duração de atividade
+   dobravam. A v167 passou a guardar cada atividade com chave e a DERIVAR os
+   totais dela — então o dia se conserta sozinho assim que recebe a primeira
+   atividade identificada.
+
+   Falta saber quais dias ainda estão no modelo antigo. Dia com total mas SEM
+   lista de atividades é exatamente isso: veio do acúmulo, e pode estar
+   inflado. Esta conferência é só leitura — ela não corrige nada, porque quem
+   corrige é a reimportação, com o dado real do relógio na mão. */
+function conferirVolumeGarmin(pro){
+  const g=((pro||S.pro||{}).garmin)||[];
+  const comTotal=g.filter(x=>x&&(x.nado!=null||x.ativDur!=null));
+  const legado=comTotal.filter(x=>!Array.isArray(x.ativs)||!x.ativs.length);
+  const conferidos=comTotal.filter(x=>Array.isArray(x.ativs)&&x.ativs.length);
+  /* mais de 5h de atividade num dia, ou mais de 15 km nadados, é quase sempre
+     contagem dobrada — não é regra, é triagem para o olho humano */
+  const suspeitos=legado.filter(x=>(x.ativDur||0)>300||(x.nado||0)>150)
+    .sort((a,b)=>b.data.localeCompare(a.data));
+  const porMes={};
+  for(const x of legado){ const m=x.data.slice(0,7);
+    porMes[m]=porMes[m]||{n:0,nado:0,dur:0};
+    porMes[m].n++; porMes[m].nado+=(x.nado||0); porMes[m].dur+=(x.ativDur||0); }
+  return {total:comTotal.length,legado:legado.length,conferidos:conferidos.length,
+    suspeitos,porMes:Object.keys(porMes).sort().reverse().map(m=>Object.assign({ym:m},porMes[m]))};
+}
+function cardConferirGarmin(){
+  const c=conferirVolumeGarmin(S.pro);
+  if(!c.total)return '';
+  if(!c.legado)
+    return '<div class="note ok xs" style="margin-top:10px"><b>Volume conferido.</b> Os '+
+      c.conferidos+' dia(s) com atividade já estão no modelo por atividade — reimportar não soma de novo.</div>';
+  const meses=c.porMes.slice(0,6).map(m=>
+    '<div class="row xs" style="padding:3px 0;border-top:1px solid var(--line)">'+
+      '<span class="grow">'+(MESES[+m.ym.slice(5,7)-1]||m.ym)+' '+m.ym.slice(0,4)+'</span>'+
+      '<span class="muted" style="margin-right:10px">'+m.n+' dia(s)</span>'+
+      '<b>'+(m.nado?(m.nado/10).toFixed(1)+' km':'—')+'</b></div>').join('');
+  return '<div class="note warn xs" style="margin-top:10px">'+
+    '<b>'+c.legado+' dia(s) ainda no modelo antigo de volume.</b> '+
+    'Eles guardam só o total somado, sem a lista de atividades — se você reimportou o export do Garmin mais de uma vez antes da v167, o volume e a duração desses dias podem estar contados em dobro.'+
+    (c.suspeitos.length?'<div style="margin-top:6px"><b>'+c.suspeitos.length+' dia(s) com valor improvável</b> (mais de 5h de atividade ou 15 km): '+
+      c.suspeitos.slice(0,5).map(x=>brCurta(x.data)+(x.ativDur?' · '+x.ativDur+'min':'')+(x.nado?' · '+(x.nado/10).toFixed(1)+'km':'')).join(' | ')+'.</div>':'')+
+    '<div style="margin-top:6px">Para corrigir: <b>reimporte o export do Garmin inteiro</b> (o botão acima). Cada dia que receber atividade tem os totais recalculados do zero.</div>'+
+    (meses?'<div class="sep" style="margin:8px 0 4px"></div><div class="eyebrow">volume por mês nos dias ainda não conferidos</div>'+meses:'')+
+    '</div>';
+}
+
 /* Os totais do dia passam a ser CALCULADOS da lista de atividades. Dia antigo,
    que só tem os totais somados, continua valendo como está até receber a
    primeira atividade com chave — aí o cálculo assume e, de quebra, corrige o
