@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v169';
+const VER='v170';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4287,6 +4287,76 @@ async function extratoMes(ym){
     nSeco:(pro.seco||[]).filter(x=>dentro(x.data)).length};
 }
 
+/* ── A LINHA DOS DOZE MESES ─────────────────────────────────────────────────
+   O extrato compara com o mês anterior; esta é a vista longa, que é onde
+   temporada aparece. Duas séries no mesmo desenho porque a pergunta é uma só:
+   a carga subiu e o desempenho acompanhou, ou não?
+
+   Carga em barras, %PB em linha. As escalas são DIFERENTES e isso é dito —
+   cada série é normalizada pela sua própria faixa, senão uma esmagaria a
+   outra. O que se lê aqui é a FORMA das duas, não a distância entre elas.
+   Mês sem tiro medido não vira ponto: a linha abre buraco em vez de ligar
+   dois meses distantes e fingir continuidade. */
+async function serieMeses(ym,n){
+  n=n||12;
+  const pro=S.pro||proVazio();
+  const esf=await esforcosLongos();
+  const out=[]; let cur=ym;
+  for(let i=0;i<n;i++){
+    const L=limitesMes(cur);
+    const t=tirosDoMes(pro,esf,cur);
+    const c=cargaTotal(L.dias,L.fim);
+    out.unshift({ym:cur,n:t.length,pct:mediaPct(t),
+      cargaSem:c?Math.round((c.totalAjust||c.total)/(L.dias/7)):null,
+      cobertura:c?c.cobertura:null});
+    cur=mesAnterior(cur);
+  }
+  return out;
+}
+function graficoMeses(serie){
+  const s=(serie||[]).filter(m=>m.n||m.cargaSem);
+  if(s.length<3)return '<div class="xs muted" style="margin-top:6px">Menos de três meses com registro — a linha longa aparece quando houver histórico.</div>';
+  const W=300,H=108,base=H-18,topo=10;
+  const cargas=s.map(m=>m.cargaSem||0), maxC=Math.max.apply(null,cargas)||1;
+  const pcts=s.map(m=>m.pct).filter(v=>v!=null);
+  const mn=pcts.length?Math.min.apply(null,pcts):0, mx=pcts.length?Math.max.apply(null,pcts):1;
+  const faixa=(mx-mn)||1;
+  const larg=(W-16)/s.length, bw=Math.max(6,larg*0.52);
+  const cx=i=>8+larg*i+larg/2;
+  const by=v=>base-(v/maxC)*(base-topo);
+  const ly=v=>base-((v-mn)/faixa)*(base-topo);
+  const barras=s.map((m,i)=>{
+    const h=Math.max(1,base-by(m.cargaSem||0));
+    const fraco=m.cobertura!=null&&m.cobertura<EXTRATO_COBERTURA_MIN;
+    return '<rect x="'+(cx(i)-bw/2).toFixed(1)+'" y="'+by(m.cargaSem||0).toFixed(1)+
+      '" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="var(--water)" opacity="'+(fraco?'.22':'.42')+'"/>';
+  }).join('');
+  /* trechos contínuos: cada sequência de meses COM %PB vira um caminho */
+  const tramos=[]; let atual=[];
+  s.forEach((m,i)=>{ if(m.pct!=null)atual.push({i,v:m.pct}); else {if(atual.length)tramos.push(atual);atual=[];} });
+  if(atual.length)tramos.push(atual);
+  const linha=tramos.filter(t=>t.length>1).map(t=>
+    '<path d="'+t.map((p,k)=>(k?'L':'M')+cx(p.i).toFixed(1)+' '+ly(p.v).toFixed(1)).join(' ')+
+    '" fill="none" stroke="var(--ok)" stroke-width="2.5" stroke-linejoin="round"/>').join('');
+  const pontos=s.map((m,i)=>m.pct==null?'':
+    '<circle cx="'+cx(i).toFixed(1)+'" cy="'+ly(m.pct).toFixed(1)+'" r="3" fill="var(--ok)"/>').join('');
+  const rot=s.map((m,i)=>'<text x="'+cx(i).toFixed(1)+'" y="'+(H-4)+'" font-size="8" text-anchor="middle" fill="currentColor" opacity=".55">'+
+    (MESES[+m.ym.slice(5,7)-1]||'').slice(0,3)+'</text>').join('');
+  const fracos=s.filter(m=>m.cobertura!=null&&m.cobertura<EXTRATO_COBERTURA_MIN).length;
+  const semTiro=s.filter(m=>!m.n).length;
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;margin-top:8px">'+
+      barras+linha+pontos+rot+'</svg>'+
+    '<div class="xs muted" style="margin-top:2px">'+
+      '<span style="color:var(--water)">▇</span> carga por semana (UA) · '+
+      '<span style="color:var(--ok)">—</span> %PB médio dos tiros (<b>maior é melhor</b>). '+
+      'As duas escalas são independentes: compare o <b>formato</b> das séries, não a distância entre elas.'+
+      (fracos?' '+fracos+' mês(es) com cobertura baixa aparecem esmaecidos.':'')+
+      (semTiro?' '+semTiro+' mês(es) sem tiro medido ficam sem ponto na linha.':'')+
+    '</div>'+
+    '<div class="xs muted" style="margin-top:4px">'+s.filter(m=>m.pct!=null).map(m=>
+      (MESES[+m.ym.slice(5,7)-1]||'').slice(0,3)+' <b>'+m.pct+'%</b>').join(' · ')+'</div>';
+}
+
 /* ── O EXTRATO NA TELA ──────────────────────────────────────────────────────
    Mora dentro do mês, no calendário de Treinos: é lá que o atleta já navega
    mês a mês, então a navegação sai de graça. Vem RECOLHIDO de propósito — a
@@ -4305,6 +4375,8 @@ async function alternarExtrato(ym){
   try{
     const x=await extratoMes(ym);
     S.extratoCalc=Object.assign({},S.extratoCalc,{[ym]:x});
+    const serie=await serieMeses(ym,12);
+    S.extratoSerie=Object.assign({},S.extratoSerie,{[ym]:serie});
   }catch(e){
     S.extratoCalc=Object.assign({},S.extratoCalc,{[ym]:{erro:(e&&e.message)||'falhou'}});
   }
@@ -4365,6 +4437,8 @@ function cardExtrato(ym){
     graficoSemanas(x)+
     (sinais.length?'<div class="sep"></div><div class="eyebrow">sinais do mês</div>'+sinais.map(linhaSinal).join(''):'')+
     (t.length?'<div class="sep"></div>'+acc('ex_t_'+ym,'Todos os tiros do mês',t.length+' tiro(s)',t.map(linhaTiro).join('')):'')+
+    (function(){const sr=(S.extratoSerie||{})[ym];
+      return sr?'<div class="sep"></div><div class="eyebrow">os últimos 12 meses</div>'+graficoMeses(sr):'';})()+
     '<div class="xs muted" style="margin-top:10px">O extrato descreve e aponta padrões a partir dos seus dados. Decisão de carga é sua e do seu técnico.</div>'+
   '</div>';
 }
@@ -5142,6 +5216,44 @@ teste('garmin','o que é atribuído nunca foi problema',async a=>{
   a.eq(g.sono,7.5,'sono sobrescreve, não soma');
   a.eq(g.fc,48,'FC de repouso idem');});
 
+
+
+/* ── SERIE DE 12 MESES (v170) ─────────────────────────────────────────────── */
+teste('extrato','a serie vem do mais antigo para o mais novo',async a=>{
+  _atleta(); S.pro.pbs={'50 peito SC25':31000}; S.tridx=[]; SESSOES=[];
+  ESF_EXT=[{data:'2026-08-10',pis:'SC25',dist:50,estilo:'peito',tempo:31500,vol:50},
+           {data:'2026-10-10',pis:'SC25',dist:50,estilo:'peito',tempo:32000,vol:50}];
+  const s=await serieMeses('2026-10',4);
+  a.eq(s.length,4,'quatro meses');
+  a.eq(s[0].ym,'2026-07','comeca no mais antigo');
+  a.eq(s[3].ym,'2026-10','e termina no mes pedido');});
+teste('extrato','mes sem tiro fica sem %PB, em vez de virar zero',async a=>{
+  _atleta(); S.pro.pbs={'50 peito SC25':31000}; S.tridx=[]; SESSOES=[];
+  ESF_EXT=[{data:'2026-10-10',pis:'SC25',dist:50,estilo:'peito',tempo:32000,vol:50}];
+  const s=await serieMeses('2026-10',3);
+  a.eq(s[0].pct,null,'agosto sem tiro: nulo, nao zero');
+  a.eq(s[0].n,0,'e a contagem reflete isso');
+  a.ok(s[2].pct>0,'outubro tem o seu valor');});
+teste('extrato','a linha longa so aparece com tres meses de registro',a=>{
+  const curto=graficoMeses([{ym:'2026-10',n:2,pct:95,cargaSem:600}]);
+  a.ok(/Menos de tr/.test(curto),'com um mes, recusa desenhar');
+  const ok=graficoMeses([{ym:'2026-08',n:2,pct:97,cargaSem:500},
+                         {ym:'2026-09',n:3,pct:96,cargaSem:620},
+                         {ym:'2026-10',n:2,pct:94,cargaSem:700}]);
+  a.ok(/<svg/.test(ok),'com tres, desenha');
+  a.ok(/escalas são independentes/.test(ok),'e avisa que as escalas sao independentes');});
+teste('extrato','buraco na linha nao e emendado',a=>{
+  const g=graficoMeses([{ym:'2026-08',n:2,pct:97,cargaSem:500},
+                        {ym:'2026-09',n:0,pct:null,cargaSem:620},
+                        {ym:'2026-10',n:2,pct:94,cargaSem:700}]);
+  a.ok(!/<path/.test(g),'sem trecho continuo, nao traca linha ligando agosto a outubro');
+  a.ok(/sem tiro medido/.test(g),'e explica o buraco');});
+teste('extrato','mes de cobertura baixa e marcado, nao escondido',a=>{
+  const g=graficoMeses([{ym:'2026-08',n:2,pct:97,cargaSem:500,cobertura:0.3},
+                        {ym:'2026-09',n:3,pct:96,cargaSem:620,cobertura:1},
+                        {ym:'2026-10',n:2,pct:94,cargaSem:700,cobertura:1}]);
+  a.ok(/esmaecidos/.test(g),'avisa quantos meses tem cobertura baixa');
+  a.ok(/opacity="\.22"/.test(g),'e a barra sai apagada');});
 
 /* ── EXTRATO MENSAL (v169) ─────────────────────────────────────────────────
    O extrato responde "como foi o mes e o que isso diz do proximo". Estes
