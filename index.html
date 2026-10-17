@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v171';
+const VER='v172';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3071,6 +3071,10 @@ function calendarioTreinos(lista,cardFn,criarFn){
       <button class="sm ghost" onclick="S.calYM='${nav(1)}';S.calDia=null;render()">›</button></div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:10px;color:var(--ink-2);margin-bottom:5px">${['dom','seg','ter','qua','qui','sex','sáb'].map(n=>`<div>${n}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div></div>
+  ${/* O extrato mora AQUI, preso ao mes que o calendario esta mostrando: e
+       esta a vista padrao, e e nela que o atleta navega mes a mes. Botei na
+       lista primeiro e ele ficou invisivel para quem nunca troca de vista. */''}
+  ${botaoExtrato(S.calYM)}
   ${S.calDia?`<div class="blk" style="margin-top:12px"><h3 style="text-transform:capitalize">${brData(S.calDia)}</h3><div class="ln"></div></div>
     ${doDia.length?doDia.map(cardFn).join(''):`<div class="small muted" style="margin:10px 0;text-align:center">Nenhum treino nesse dia.${criarFn?`<br><button class="sm ghost" style="margin-top:6px" onclick="${criarFn}('${S.calDia}')">+ Adicionar treino nesse dia</button>`:''}</div>`}`
     :`<div class="small muted" style="margin-top:12px;text-align:center">Toque num dia para ver os treinos.</div>`}`;
@@ -9580,7 +9584,15 @@ function conferirVolumeGarmin(pro){
 }
 function cardConferirGarmin(){
   const c=conferirVolumeGarmin(S.pro);
-  if(!c.total)return '';
+  const nDias=((S.pro&&S.pro.garmin)||[]).length;
+  /* Silencio nao e informacao: sem nenhum dia com volume o cartao sumia da
+     tela, e quem procurava a conferencia concluia que ela nao existia. */
+  if(!c.total)
+    return nDias
+      ? '<div class="note xs" style="margin-top:10px"><b>Nenhum dia com volume de atividade vindo do relogio.</b> '+
+        'Voce tem '+nDias+' dia(s) de Saude importados (VFC, sono, FC), mas nenhuma atividade com distancia ou duracao. '+
+        'Os nados vem do arquivo <b>summarizedActivities.json</b> — confira se ele veio dentro do ZIP do export.</div>'
+      : '<div class="note xs" style="margin-top:10px">Nada importado do relogio ainda. Depois da primeira importacao esta conferencia mostra se o volume esta integro.</div>';
   if(!c.legado)
     return '<div class="note ok xs" style="margin-top:10px"><b>Volume conferido.</b> Os '+
       c.conferidos+' dia(s) com atividade já estão no modelo por atividade — reimportar não soma de novo.</div>';
