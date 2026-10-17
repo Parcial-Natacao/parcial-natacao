@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v168';
+const VER='v169';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3038,7 +3038,10 @@ function grupoTreinos(lista,cardFn){
       html+=`<button class="card tight lst" style="width:100%;border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--deck)" onclick="S.mesAberto=Object.assign({},S.mesAberto,{'${key}':${!aberto}});render()">
         <span class="grow" style="text-align:left"><b style="text-transform:capitalize">${MESES[+m-1]||m}</b> <span class="xs muted">· ${arr.length} treino${arr.length>1?'s':''}</span></span>
         <span class="tag o">${aberto?'▲ recolher':'▼ ver'}</span></button>`;
-      if(aberto)html+=arr.map(t=>`<div data-dia="${t.data||''}">${cardFn(t)}</div>`).join('');
+      /* o extrato do mes entra aqui, recolhido: a aba e consultada todo dia
+         para ver o treino de hoje, e um painel analitico aberto no topo
+         viraria ruido diario */
+      if(aberto)html+=botaoExtrato(key)+arr.map(t=>`<div data-dia="${t.data||''}">${cardFn(t)}</div>`).join('');
     }
   }
   return html;
@@ -4188,6 +4191,242 @@ async function abrirDiagnostico(){
     <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
 }
 /* ═══════════════════════════════════════════════════════════════════════════
+   EXTRATO MENSAL
+
+   A pergunta que ele responde não é "como estou hoje" — isso é o relatório.
+   É "como foi o mês, e o que isso diz sobre o próximo". Mês de calendário,
+   porque é assim que atleta e técnico pensam; comparação normalizada POR
+   SEMANA, porque fevereiro tem 28 dias e março tem 31, e somar os dois como
+   se fossem iguais produz uma "queda de carga" que não existe.
+
+   REGRA QUE VALE PARA TUDO AQUI: o extrato descreve sempre, mas só COMPARA
+   com história suficiente, e só emite leitura quando o mês está registrado.
+   Mês mal registrado não vira conclusão fraca — vira recusa explicada.
+   ═══════════════════════════════════════════════════════════════════════ */
+const EXTRATO_MIN_SEMANAS=8;
+const EXTRATO_COBERTURA_MIN=0.6;
+function limitesMes(ym){
+  const Y=+String(ym).slice(0,4), M=+String(ym).slice(5,7);
+  const dias=new Date(Y,M,0).getDate();
+  return {ini:ym+'-01',fim:ym+'-'+String(dias).padStart(2,'0'),dias,semanas:dias/7};
+}
+function mesAnterior(ym){
+  const Y=+String(ym).slice(0,4), M=+String(ym).slice(5,7);
+  const d=new Date(Y,M-2,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+/* semana 1 = dias 1-7 do mês. A semana ISO cruzaria o mês e misturaria dias de
+   fevereiro na primeira semana de março. */
+function semanaDoMes(data){ return Math.floor((+String(data).slice(8,10)-1)/7)+1; }
+
+/* Janela própria de esforços: o cache ESF é de 120 dias e serve outras telas;
+   o extrato precisa alcançar meses anteriores sem alterar aquilo. */
+let ESF_EXT=null;
+async function esforcosLongos(){
+  if(!ESF_EXT)ESF_EXT=await coletarEsforcos({dias:500});
+  return ESF_EXT;
+}
+function tirosDoMes(pro,esf,ym){
+  const L=limitesMes(ym);
+  return (esf||[]).filter(e=>e.data>=L.ini&&e.data<=L.fim&&e.tempo)
+    .map(e=>{const pb=pbDe(pro,e.dist,e.estilo,e.pis); return Object.assign({},e,{pct:pb?pb/e.tempo*100:null});})
+    .sort((a,b)=>a.data.localeCompare(b.data));
+}
+function mediaPct(arr){
+  const v=(arr||[]).map(x=>x.pct).filter(x=>x!=null);
+  return v.length?+(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):null;
+}
+async function extratoMes(ym){
+  const pro=S.pro||proVazio();
+  const L=limitesMes(ym);
+  const esf=await esforcosLongos();
+  const tiros=tirosDoMes(pro,esf,ym);
+  const ant=mesAnterior(ym), LA=limitesMes(ant);
+  const tirosAnt=tirosDoMes(pro,esf,ant);
+
+  /* história disponível: do primeiro dado registrado até o fim do mês */
+  const datas=[].concat(esf.map(e=>e.data),(pro.garmin||[]).map(g=>g.data),
+                        (pro.seco||[]).map(x=>x.data)).filter(Boolean).sort();
+  const semanasHist=datas.length?(new Date(L.fim)-new Date(datas[0]))/604800000:0;
+
+  const porSemana=[1,2,3,4,5].map(function(w){
+    const t=tiros.filter(x=>semanaDoMes(x.data)===w);
+    return {sem:w,n:t.length,pct:mediaPct(t)};
+  }).filter(x=>x.n);
+
+  const carga=cargaTotal(L.dias,L.fim), cargaAnt=cargaTotal(LA.dias,LA.fim);
+  const porSemana_=c=>c?Math.round((c.totalAjust||c.total)/(L.dias/7)):null;
+  const cargaSem=porSemana_(carga);
+  const porSemAnt=cargaAnt?Math.round((cargaAnt.totalAjust||cargaAnt.total)/(LA.dias/7)):null;
+  const deltaCarga=(cargaSem!=null&&porSemAnt)?Math.round((cargaSem-porSemAnt)/porSemAnt*100):null;
+
+  const dentro=d=>d&&d>=L.ini&&d<=L.fim;
+  const g=(pro.garmin||[]).filter(x=>dentro(x.data));
+  const sh=serieHRV(pro.garmin);
+  const med=a=>a.length?a.reduce((t,v)=>t+v,0)/a.length:null;
+  const hrvMes=g.filter(x=>x.hrv!=null&&(!sh||(x.hrvF||'legado')===sh.fonte)).map(x=>x.hrv);
+  const hrvBase=(sh?sh.serie:[]).filter(x=>x.data<L.ini).slice(0,30).map(x=>x.hrv);
+  const hrvM=med(hrvMes), hrvB=med(hrvBase);
+  const sono=g.filter(x=>x.sono!=null).map(x=>x.sono);
+  const ref=refSono(pro);
+  const ck=g.map(x=>checkinScore(x)).filter(x=>x!=null);
+
+  return {ym,ini:L.ini,fim:L.fim,dias:L.dias,
+    comparavel:semanasHist>=EXTRATO_MIN_SEMANAS,semanasHist:Math.round(semanasHist),
+    tiros,porSemana,pct:mediaPct(tiros),pctAnt:mediaPct(tirosAnt),nAnt:tirosAnt.length,
+    carga,cargaSem,porSemAnt,deltaCarga,
+    cobertura:carga?carga.cobertura:null,
+    acwr:cargaACWR(),
+    hrv:{mes:hrvM!=null?Math.round(hrvM):null,base:hrvB!=null?Math.round(hrvB):null,
+         delta:(hrvM!=null&&hrvB)?Math.round((hrvM-hrvB)/hrvB*100):null,
+         fonte:sh?sh.fonte:null},
+    sono:{media:sono.length?+med(sono).toFixed(1):null,ref:ref?ref.h:null,n:sono.length},
+    prontidao:ck.length?Math.round(med(ck)):null,
+    peso:pesoResumo(pro.garmin,L.dias),
+    dor:dorPersistente(pro.garmin),
+    nSeco:(pro.seco||[]).filter(x=>dentro(x.data)).length};
+}
+
+/* ── O EXTRATO NA TELA ──────────────────────────────────────────────────────
+   Mora dentro do mês, no calendário de Treinos: é lá que o atleta já navega
+   mês a mês, então a navegação sai de graça. Vem RECOLHIDO de propósito — a
+   aba Treinos é consultada todo dia para ver o treino de hoje, e um painel
+   analítico aberto no topo viraria ruído diário. Um toque, e ele abre.
+
+   Também é calculado só quando abre: fechar o mês custa percorrer esforços,
+   carga e Saúde, e fazer isso para todos os meses da lista travaria a tela. */
+function extratoAberto(ym){ return !!(S.extratoAberto&&S.extratoAberto[ym]); }
+async function alternarExtrato(ym){
+  S.extratoAberto=Object.assign({},S.extratoAberto);
+  if(S.extratoAberto[ym]){ delete S.extratoAberto[ym]; render(); return; }
+  S.extratoAberto[ym]=true;
+  S.extratoCalc=Object.assign({},S.extratoCalc); delete S.extratoCalc[ym];
+  render();
+  try{
+    const x=await extratoMes(ym);
+    S.extratoCalc=Object.assign({},S.extratoCalc,{[ym]:x});
+  }catch(e){
+    S.extratoCalc=Object.assign({},S.extratoCalc,{[ym]:{erro:(e&&e.message)||'falhou'}});
+  }
+  render();
+}
+function botaoExtrato(ym){
+  const ab=extratoAberto(ym);
+  return '<button class="sm ghost full" style="margin:2px 0 8px" onclick="alternarExtrato(\''+ym+'\')">'+
+    (ab?'▲ Fechar o extrato':'▼ Extrato do mês')+'</button>'+
+    (ab?cardExtrato(ym):'');
+}
+/* gráfico das semanas: %PB médio por semana do mês. Menor tempo = maior %PB,
+   então subir é melhorar — o contrário do gráfico de tempos, e por isso o
+   rótulo diz o que significa. */
+function graficoSemanas(x){
+  const pts=(x.porSemana||[]).filter(s=>s.pct!=null).map(s=>({rot:'S'+s.sem,v:s.pct}));
+  if(pts.length<2)return '<div class="xs muted" style="margin-top:6px">Menos de duas semanas com tiros medidos — sem linha para traçar.</div>';
+  const vs=pts.map(p=>p.v), mn=Math.min.apply(null,vs), mx=Math.max.apply(null,vs);
+  const faixa=(mx-mn)||1, W=280, H=70;
+  const px=(i)=>pts.length>1?(i*(W-20)/(pts.length-1))+10:W/2;
+  const py=(v)=>H-10-((v-mn)/faixa)*(H-24);
+  const d=pts.map((p,i)=>(i?'L':'M')+px(i).toFixed(1)+' '+py(p.v).toFixed(1)).join(' ');
+  const sobe=pts[pts.length-1].v>=pts[0].v;
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;margin-top:8px">'+
+    '<path d="'+d+'" fill="none" stroke="'+(sobe?'var(--ok)':'var(--clock)')+'" stroke-width="2.5" stroke-linejoin="round"/>'+
+    pts.map((p,i)=>'<circle cx="'+px(i).toFixed(1)+'" cy="'+py(p.v).toFixed(1)+'" r="3.5" fill="'+(sobe?'var(--ok)':'var(--clock)')+'"/>').join('')+
+    pts.map((p,i)=>'<text x="'+px(i).toFixed(1)+'" y="'+(H-1)+'" font-size="9" text-anchor="middle" fill="currentColor" opacity=".55">'+p.rot+'</text>').join('')+
+    '</svg>'+
+    '<div class="xs muted">'+pts.map(p=>p.rot+': <b>'+p.v+'%</b>').join(' · ')+
+    ' — %PB do tiro: <b>maior é melhor</b>.</div>';
+}
+function cardExtrato(ym){
+  const x=(S.extratoCalc||{})[ym];
+  if(!x)return '<div class="card"><div class="small muted">Fechando o mês…</div></div>';
+  if(x.erro)return '<div class="card"><div class="note warn xs">Não consegui fechar este mês: '+esc(x.erro)+'</div></div>';
+  const sinais=sinaisDoMes(x), leitura=leituraDoMes(x,sinais);
+  const cor={ok:'ok',atencao:'warn',recusa:'warn',parcial:'',dividido:''}[leitura.nivel]||'';
+  const ico={favor:'✓',contra:'!',neutro:'·'};
+  const linhaSinal=s=>'<div class="row xs" style="padding:5px 0;border-top:1px solid var(--line)">'+
+    '<span style="width:18px;font-weight:800;color:'+(s.estado==='contra'?'var(--clock)':s.estado==='favor'?'var(--ok)':'var(--ink-2)')+'">'+ico[s.estado]+'</span>'+
+    '<span class="grow">'+s.txt+'</span></div>';
+  const t=x.tiros||[];
+  const linhaTiro=e=>'<div class="row xs" style="padding:4px 0;border-top:1px solid var(--line)">'+
+    '<span class="muted" style="width:44px">'+brCurta(e.data)+'</span>'+
+    '<span class="grow">'+e.dist+'m '+esc(e.estilo||'')+' <span class="muted">'+(e.pis==='LC50'?'50m':'25m')+'</span></span>'+
+    '<b style="margin-right:8px">'+fmt(e.tempo,true)+'</b>'+
+    '<span style="width:46px;text-align:right">'+(e.pct!=null?'<b>'+e.pct.toFixed(0)+'%</b>':'—')+'</span></div>';
+  return '<div class="card" style="margin-bottom:10px">'+
+    '<div class="eyebrow">extrato · '+(MESES[+ym.slice(5,7)-1]||ym)+' '+ym.slice(0,4)+'</div>'+
+    '<div class="note '+cor+'" style="margin:8px 0">'+leitura.txt+'</div>'+
+    '<div class="grid3" style="margin:10px 0">'+
+      '<div class="kpi"><div class="v">'+t.length+'</div><div class="l">tiros medidos</div></div>'+
+      '<div class="kpi"><div class="v">'+(x.pct!=null?x.pct+'<span class="xs muted">%</span>':'—')+'</div><div class="l">%PB médio</div></div>'+
+      '<div class="kpi"><div class="v">'+(x.cargaSem!=null?x.cargaSem:'—')+'</div><div class="l">carga/semana (UA)</div></div>'+
+    '</div>'+
+    (x.deltaCarga!=null?'<div class="xs muted">Mês anterior: '+x.porSemAnt+' UA/semana ('+(x.deltaCarga>=0?'+':'')+x.deltaCarga+'%).</div>':'')+
+    (x.cobertura!=null?'<div class="xs muted" style="margin-top:2px">Cobertura de esforço registrado: <b>'+Math.round(x.cobertura*100)+'%</b>'+(x.nSeco?' · '+x.nSeco+' sessão(ões) fora d\'água':'')+'.</div>':'')+
+    graficoSemanas(x)+
+    (sinais.length?'<div class="sep"></div><div class="eyebrow">sinais do mês</div>'+sinais.map(linhaSinal).join(''):'')+
+    (t.length?'<div class="sep"></div>'+acc('ex_t_'+ym,'Todos os tiros do mês',t.length+' tiro(s)',t.map(linhaTiro).join('')):'')+
+    '<div class="xs muted" style="margin-top:10px">O extrato descreve e aponta padrões a partir dos seus dados. Decisão de carga é sua e do seu técnico.</div>'+
+  '</div>';
+}
+
+/* ── O PLACAR DE SINAIS ─────────────────────────────────────────────────────
+   Cada sinal é uma frase verificável com o dado que a sustenta. Nenhum vira
+   nota; o extrato diz quantos apontam para cada lado — e quando estão
+   divididos, DIZ que estão divididos, em vez de inventar um veredito. */
+function sinaisDoMes(x){
+  const s=[];
+  const add=(k,estado,txt)=>s.push({k,estado,txt});
+  if(x.deltaCarga!=null)
+    add('carga',x.deltaCarga>30?'contra':'favor',
+      'Carga por semana '+(x.deltaCarga>=0?'+':'')+x.deltaCarga+'% em relação ao mês anterior.');
+  if(x.acwr){
+    const r=x.acwr.acwr;
+    add('acwr',r>1.5?'contra':(r<0.8?'neutro':'favor'),
+      'Agudo:crônico em '+r.toFixed(2)+(r>1.5?' — acima de 1,5':(r<0.8?' — abaixo de 0,8':' — dentro de 0,8 a 1,3'))+'.');
+  }
+  if(x.hrv.delta!=null)
+    add('vfc',x.hrv.delta<=-8?'contra':'favor',
+      'VFC do mês '+(x.hrv.delta>=0?'+':'')+x.hrv.delta+'% em relação à sua base'+
+      (x.hrv.fonte==='semana'?' (média semanal do relógio)':'')+'.');
+  if(x.sono.media!=null&&x.sono.ref!=null){
+    const d=+(x.sono.media-x.sono.ref).toFixed(1);
+    add('sono',d<=-0.5?'contra':'favor',
+      'Sono médio de '+x.sono.media+'h contra a sua referência de '+x.sono.ref+'h.');
+  }
+  if(x.pct!=null&&x.pctAnt!=null&&x.nAnt>=5){
+    const d=+(x.pct-x.pctAnt).toFixed(1);
+    add('tiros',d<-1?'contra':'favor',
+      '%PB médio dos tiros em '+x.pct+'% contra '+x.pctAnt+'% no mês anterior.');
+  }
+  if(x.dor&&x.dor.dias>=3)
+    add('dor','contra','Dor '+x.dor.nivel+'/5 por '+x.dor.dias+' dias seguidos.');
+  else if(x.dor)add('dor','neutro','Dor alta em '+x.dor.dias+' dia(s).');
+  return s;
+}
+/* A dissociação é o padrão que mais importa: carga subindo E desempenho caindo
+   E o corpo dando sinal contrário, no mesmo mês. Nomear o padrão é diferente
+   de diagnosticar — e a frase diz exatamente isso. */
+function leituraDoMes(x,sinais){
+  if(x.cobertura!=null&&x.cobertura<EXTRATO_COBERTURA_MIN)
+    return {nivel:'recusa',txt:'Só <b>'+Math.round(x.cobertura*100)+'%</b> dos treinos de piscina do mês têm esforço registrado. Com essa cobertura, qualquer leitura sobre carga seria chute — preencha o RPE dos treinos e o extrato passa a responder.'};
+  if(!x.comparavel)
+    return {nivel:'parcial',txt:'Você tem <b>'+x.semanasHist+' semana(s)</b> de histórico. O extrato descreve o mês, mas só compara a partir de '+EXTRATO_MIN_SEMANAS+' semanas — antes disso não há base sua para dizer o que é muito ou pouco.'};
+  const contra=sinais.filter(s=>s.estado==='contra'), favor=sinais.filter(s=>s.estado==='favor');
+  const dissociacao=(x.deltaCarga!=null&&x.deltaCarga>15)&&
+    (x.pct!=null&&x.pctAnt!=null&&x.pct<x.pctAnt)&&
+    (sinais.some(s=>s.k==='vfc'&&s.estado==='contra')||!!(x.dor&&x.dor.dias>=3));
+  if(dissociacao)
+    return {nivel:'atencao',txt:'A carga subiu, o desempenho nos tiros caiu e o corpo deu sinal contrário no mesmo mês. É o conjunto que costuma preceder excesso de treino. <b>Com base no seu histórico, vale verificar a possibilidade de overtraining</b> e conversar com o seu técnico antes de subir a carga. Diagnóstico preciso é clínico; o app mostra o padrão, não conclui.'};
+  if(contra.length>favor.length)
+    return {nivel:'atencao',txt:contra.length+' sinal(is) pedindo cautela contra '+favor.length+' favorável(is). O mês não sugere aumentar carga.'};
+  if(contra.length&&contra.length===favor.length)
+    return {nivel:'dividido',txt:'Os sinais estão divididos: '+favor.length+' a favor e '+contra.length+' contra. Não dá para concluir pelo conjunto — olhe linha a linha e decida com o técnico.'};
+  if(!contra.length&&favor.length>=3)
+    return {nivel:'ok',txt:favor.length+' sinais favoráveis e nenhum contrário. As condições do mês permitem progredir a carga, com o aumento gradual de sempre.'};
+  return {nivel:'dividido',txt:'Dados insuficientes para uma leitura de conjunto neste mês.'};
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    SUÍTE DE TESTES
 
    Por que ela vive dentro do index.html: o app é UM arquivo, sem build e sem
@@ -4902,6 +5141,57 @@ teste('garmin','o que é atribuído nunca foi problema',async a=>{
   const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
   a.eq(g.sono,7.5,'sono sobrescreve, não soma');
   a.eq(g.fc,48,'FC de repouso idem');});
+
+
+/* ── EXTRATO MENSAL (v169) ─────────────────────────────────────────────────
+   O extrato responde "como foi o mes e o que isso diz do proximo". Estes
+   testes travam o que ele NAO pode fazer: comparar sem historico, concluir
+   com mes mal registrado, e transformar sinais divididos em veredito. */
+teste('extrato','mes de calendario, com os limites certos',a=>{
+  const f=limitesMes('2026-02');
+  a.eq(f.ini,'2026-02-01','primeiro dia'); a.eq(f.fim,'2026-02-28','ultimo dia de fevereiro');
+  a.eq(limitesMes('2026-10').fim,'2026-10-31','outubro tem 31');
+  a.eq(mesAnterior('2026-01'),'2025-12','vira o ano para tras');});
+teste('extrato','semana 1 sao os dias 1 a 7 do mes',a=>{
+  a.eq(semanaDoMes('2026-10-01'),1,'dia 1');
+  a.eq(semanaDoMes('2026-10-07'),1,'dia 7 ainda e a semana 1');
+  a.eq(semanaDoMes('2026-10-08'),2,'dia 8 abre a 2');
+  a.eq(semanaDoMes('2026-10-31'),5,'sobra do mes vira semana 5');});
+teste('extrato','sem historico suficiente, descreve mas nao compara',a=>{
+  const x={cobertura:1,comparavel:false,semanasHist:4};
+  const l=leituraDoMes(x,[]);
+  a.eq(l.nivel,'parcial','nao emite veredito');
+  a.ok(/4 semana/.test(l.txt),'e diz quanto historico existe');});
+teste('extrato','mes mal registrado vira recusa explicada, nao conclusao fraca',a=>{
+  const l=leituraDoMes({cobertura:0.3,comparavel:true},[{k:'carga',estado:'favor',txt:'x'}]);
+  a.eq(l.nivel,'recusa','recusa');
+  a.ok(/30%/.test(l.txt),'mostra a cobertura real');
+  a.ok(/RPE/.test(l.txt),'e diz o que fazer para destravar');});
+teste('extrato','sinais divididos sao declarados divididos',a=>{
+  const l=leituraDoMes({cobertura:1,comparavel:true},
+    [{k:'a',estado:'favor',txt:''},{k:'b',estado:'contra',txt:''}]);
+  a.eq(l.nivel,'dividido','nem favoravel nem contrario');
+  a.ok(/divididos/.test(l.txt),'e o texto admite isso');});
+teste('extrato','so conclui a favor com tres sinais e nenhum contra',a=>{
+  const tres=[{k:'a',estado:'favor',txt:''},{k:'b',estado:'favor',txt:''},{k:'c',estado:'favor',txt:''}];
+  a.eq(leituraDoMes({cobertura:1,comparavel:true},tres).nivel,'ok','tres a favor libera');
+  a.eq(leituraDoMes({cobertura:1,comparavel:true},tres.slice(0,2)).nivel,'dividido','dois nao bastam');});
+teste('extrato','a dissociacao e nomeada, sem virar diagnostico',a=>{
+  const x={cobertura:1,comparavel:true,deltaCarga:40,pct:94,pctAnt:98,dor:{dias:3,nivel:4}};
+  const l=leituraDoMes(x,[{k:'vfc',estado:'contra',txt:''}]);
+  a.eq(l.nivel,'atencao','acusa');
+  a.ok(/possibilidade de overtraining/.test(l.txt),'sugere verificar');
+  a.ok(/clinico|clínico/.test(l.txt),'e diz que diagnostico e clinico');});
+teste('extrato','carga so acusa salto acima de 30%',a=>{
+  const s1=sinaisDoMes({deltaCarga:12,hrv:{},sono:{},acwr:null});
+  a.eq(s1[0].estado,'favor','+12% e progressao normal');
+  const s2=sinaisDoMes({deltaCarga:45,hrv:{},sono:{},acwr:null});
+  a.eq(s2[0].estado,'contra','+45% e salto');});
+teste('extrato','%PB so vira sinal com amostra do mes anterior',a=>{
+  const sem=sinaisDoMes({hrv:{},sono:{},pct:94,pctAnt:98,nAnt:3});
+  a.ok(!sem.some(s=>s.k==='tiros'),'3 tiros no mes anterior nao sustentam comparacao');
+  const com=sinaisDoMes({hrv:{},sono:{},pct:94,pctAnt:98,nAnt:6});
+  a.ok(com.some(s=>s.k==='tiros'&&s.estado==='contra'),'com 6, compara');});
 
 /* ── QUEM FAZ GESTÃO DE EQUIPE (v165) ───────────────────────────────────────
    Decisão do dono do produto, escrita aqui para não se perder: gestão de
@@ -9539,8 +9829,11 @@ async function coletarEsforcos(opts){
 let ESF_FALHAS=[];
 let ESF=null, ESF_ERRO=null, SESSOES=[];
 /* Carga total (session-RPE = duração × RPE) por modalidade, últimos N dias */
-function cargaTotal(dias){
-  dias=dias||28; const h0=new Date(hoje()+'T00:00:00');
+function cargaTotal(dias,ate){
+  /* `ate` fecha a janela numa data qualquer: sem ele a conta é sempre "os
+     ultimos N dias ate hoje", e o extrato precisa fechar o mes de setembro
+     estando em outubro. Sem `ate`, nada muda para quem ja chamava. */
+  dias=dias||28; const h0=new Date((ate||hoje())+'T00:00:00');
   const dentro=d=>{const x=(h0-new Date(d+'T00:00:00'))/86400000;return x>=0&&x<dias;};
   let natacao=0,forca=0,nSeco=0;
   for(const s of (SESSOES||[]))if(dentro(s.data))natacao+=s.load;
@@ -10614,7 +10907,10 @@ function cardEstado(pro,comPct,sem){
    Só conta treino marcado como feito. */
 function cargaACWR(){
   const h0=new Date(hoje()+'T00:00:00');
-  const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&t.data);
+  /* treino pessoal nao tem lista `para` (nao foi atribuido a ninguem, e do
+     proprio) — sem esta clausula o ACWR saia nulo justamente para o atleta
+     sem equipe, que e quem mais depende dele */
+  const meus=S.tridx.filter(t=>t.data&&(t._pessoal||(t.para||[]).includes(S.u.id)));
   const dias=t=>Math.floor((h0-new Date(t.data+'T00:00:00'))/86400000);
   let ag=0,cr28=0;
   for(const t of meus){const d=dias(t); if(d<0)continue;
