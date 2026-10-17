@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v164';
+const VER='v168';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3345,12 +3345,31 @@ function linhaSerie(t,i,at,blocoSolto,tituloBloco){
   </div>`;
 }
 /* tabela de repetições com ✓/✕ por linha (rd=null série simples; número = rodada) */
+/* ── PASSAGEM SOB DEMANDA ───────────────────────────────────────────────────
+   A coluna da passagem só aparecia quando o TÉCNICO tinha ligado as parciais
+   no treino inteiro (`item.parcial`). Num 1×100 em A3 o atleta anotava só o
+   tempo final — e a passagem dos primeiros 50 é o dado que diz como foi a
+   prova: com ela e o total, o app calcula a segunda metade e o desequilíbrio.
+   Agora o próprio atleta liga a passagem naquele tiro, sem depender de
+   ninguém, e o relatório passa a ter o que analisar. */
+function podeParcialAvulsa(item,piscina){
+  return !!(piscina!=='AA'&&item&&item.dist>=100&&item.dist%2===0);
+}
+function parcialLigada(item,itemId){
+  return !!(item&&(item.parcial||(S.parcialAvulsa&&S.parcialAvulsa[itemId])));
+}
+function alternarParcialAvulsa(itemId,atletaId,rd){
+  S.parcialAvulsa=S.parcialAvulsa||{};
+  if(S.parcialAvulsa[itemId])delete S.parcialAvulsa[itemId]; else S.parcialAvulsa[itemId]=true;
+  abrirLancamento(itemId,atletaId,rd==null?undefined:rd);
+}
 function tabelaReps(item,r,itemId,atletaId,rd){
   const arg=rd==null?'':(','+rd);
+  const cp=parcialLigada(item,itemId);
   return`<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>#</th>
-      ${item.parcial?`<th style="text-align:center">${item.dist/2}m</th>`:''}<th style="text-align:center">Tempo</th><th></th></tr></thead><tbody>
+      ${cp?`<th style="text-align:center">${item.dist/2}m</th>`:''}<th style="text-align:center">Tempo</th><th></th></tr></thead><tbody>
       ${Array.from({length:item.reps},(_,i)=>`<tr><td class="n">${i+1}</td>
-        ${item.parcial?`<td><input inputmode="decimal" id="lp${i}" placeholder="—" value="${r.parciais&&r.parciais[i]!=null?fmt(r.parciais[i],true):''}"></td>`:''}
+        ${cp?`<td><input inputmode="decimal" id="lp${i}" placeholder="—" value="${r.parciais&&r.parciais[i]!=null?fmt(r.parciais[i],true):''}"></td>`:''}
         <td><input inputmode="decimal" id="lt${i}" placeholder="—" value="${r.tempos&&r.tempos[i]!=null?fmt(r.tempos[i],true):''}"></td>
         <td style="white-space:nowrap;text-align:right">
           <button class="sm" style="background:var(--ok);color:var(--sobre-acento);padding:6px 11px;font-weight:800" onclick="confTempo('${itemId}','${atletaId}',${i}${arg})">✓</button>
@@ -3616,6 +3635,9 @@ function abrirLancamento(itemId,atletaId){
         ${Array.from({length:nrd},(_,ri)=>{const feito=rec.rd&&rec.rd[ri]&&(rec.rd[ri].tempos||[]).some(x=>x!=null);return`<button class="sm ${ri===rd?'primary':'ghost'}" onclick="S.rd=${ri};abrirLancamento('${itemId}','${atletaId}')">Rodada ${ri+1}${feito?' ✓':''}</button>`}).join('')}
       </div>
       <div class="xs muted" style="margin-top:8px">Cada rodada guarda seus próprios tempos. Toque no <b style="color:var(--ok)">✓</b> para salvar — grava na hora; o <b style="color:var(--clock)">✕</b> apaga.</div>
+      ${podeParcialAvulsa(item,S.treino&&S.treino.piscina)&&!item.parcial?`
+      <button class="sm ghost full" style="margin-top:8px" onclick="alternarParcialAvulsa('${itemId}','${atletaId}',${rd})">${parcialLigada(item,itemId)?`Ocultar a passagem dos ${item.dist/2}m`:`+ Marcar a passagem dos ${item.dist/2}m`}</button>
+      ${parcialLigada(item,itemId)?`<div class="xs muted" style="margin-top:4px">Com a passagem e o tempo final o app calcula a segunda metade e o desequilíbrio entre elas.</div>`:''}`:''}
       ${tabelaReps(item,rr,itemId,atletaId,rd)}
       ${rodInfo}`);
     return;
@@ -3624,6 +3646,9 @@ function abrirLancamento(itemId,atletaId){
   sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
     <div class="small muted">${esc(at.nome)}${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
     <div class="xs muted" style="margin-top:6px">Toque no <b style="color:var(--ok)">✓</b> para salvar cada tempo — grava na hora. O <b style="color:var(--clock)">✕</b> apaga. Use <b>+ adicionar rodada</b> se a série se repete (ex.: bloco 2×).</div>
+    ${podeParcialAvulsa(item,S.treino&&S.treino.piscina)&&!item.parcial?`
+      <button class="sm ghost full" style="margin-top:8px" onclick="alternarParcialAvulsa('${itemId}','${atletaId}')">${parcialLigada(item,itemId)?`Ocultar a passagem dos ${item.dist/2}m`:`+ Marcar a passagem dos ${item.dist/2}m`}</button>
+      ${parcialLigada(item,itemId)?`<div class="xs muted" style="margin-top:4px">Com a passagem e o tempo final o app calcula a segunda metade e o desequilíbrio entre elas.</div>`:''}`:''}
     ${tabelaReps(item,r,itemId,atletaId,null)}
     ${rodInfo}`);
 }
@@ -3758,7 +3783,7 @@ async function gravarReg(itemId,atletaId,rd,tempos,parciais,extra){
 /* ✓ verde: grava o tempo daquela linha (e tudo que estiver digitado) na hora */
 async function confTempo(itemId,atletaId,i,rd){
   const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId); if(!item)return;
-  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial,item.dist);
+  const {tempos,parciais}=lerCamposLancamento(item.reps,parcialLigada(item,itemId),item.dist);
   if(tempos[i]==null)return toast('Digite o tempo da linha '+(i+1)+' antes do ✓');
   await gravarReg(itemId,atletaId,rd==null?null:rd,tempos,parciais);
   toast('Tempo '+(i+1)+' salvo');
@@ -3767,7 +3792,7 @@ async function confTempo(itemId,atletaId,i,rd){
 /* ✕ vermelho: apaga o tempo daquela linha */
 async function delTempo(itemId,atletaId,i,rd){
   const item=(S.treino.blocos.flatMap(b=>b.itens)).find(x=>x.id===itemId); if(!item)return;
-  const {tempos,parciais}=lerCamposLancamento(item.reps,!!item.parcial,item.dist);
+  const {tempos,parciais}=lerCamposLancamento(item.reps,parcialLigada(item,itemId),item.dist);
   tempos[i]=null; if(item.parcial)parciais[i]=null;
   await gravarReg(itemId,atletaId,rd==null?null:rd,tempos,parciais);
   toast('Tempo '+(i+1)+' apagado');
@@ -4774,6 +4799,150 @@ teste('medições','glicemia: repetida no mesmo momento usa a última',a=>{
   a.eq(g.antes,90,'a mais recente do momento');
   a.eq(g.delta,null,'sem "durante" não há variação a declarar');
   a.eq(g.n,2,'mas as duas coletas ficam registradas');});
+
+/* ── REIMPORTAR O GARMIN NÃO DOBRA O VOLUME (v166) ──────────────────────────
+   Achado numa auditoria externa e confirmado no código: nado, duração de
+   atividade e FC média acumulam — corretamente, porque um dia tem vários
+   treinos — mas a segunda importação do MESMO export somava tudo de novo.
+   Grave porque eu mesmo mandei reimportar o export para recuperar a Saúde. */
+const _GAR_ATIV=JSON.stringify([
+  {calendarDate:'2026-10-14',activityType:'lap_swimming',distance:3000,duration:3600,averageHR:140},
+  {calendarDate:'2026-10-14',activityType:'lap_swimming',distance:1500,duration:1800,averageHR:150}]);
+const _GAR_SONO=JSON.stringify([{calendarDate:'2026-10-14',sleepTimeSeconds:27000,restingHeartRate:48}]);
+teste('garmin','duas atividades no mesmo dia somam',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_ATIV,true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,45,'3000m + 1500m = 4500m, guardados em centenas');
+  a.eq(g.ativDur,90,'60min + 30min');
+  a.eq(g.ativFc,143,'FC média ponderada pela duração');});
+teste('garmin','reimportar o mesmo export NÃO dobra',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_ATIV,true);
+  await importarGarmin(_GAR_ATIV,true);          /* o mesmo arquivo de novo */
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,45,'continua 4500m, não 9000m');
+  a.eq(g.ativDur,90,'continua 90min, não 180min');
+  a.eq(g.ativFc,143,'e a FC média não se desloca');
+  a.eq((g.ativs||[]).length,2,'duas atividades, não quatro');});
+teste('garmin','cada atividade vira um registro com chave',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_ATIV,true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.ativs.length,2,'uma por atividade');
+  a.ok(g.ativs.every(x=>x.k&&x.origem==='garmin'),'com chave e procedência');
+  a.eq(g.ativs[0].dist,3000,'distância em metros, como veio');
+  a.eq(g.nado,45,'e o total do dia é DERIVADO dela');});
+teste('garmin','dia antigo inflado é corrigido ao receber atividade',async a=>{
+  /* quem reimportou antes do conserto tem o total dobrado; a primeira
+     importação nova recalcula a partir das atividades e endireita */
+  _atleta();
+  S.pro.garmin=[{data:'2026-10-14',nado:90,ativDur:180,_fcMin:99,_min:1}];
+  await importarGarmin(_GAR_ATIV,true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,45,'volta ao valor real');
+  a.eq(g.ativDur,90,'idem a duração');
+  a.eq(g._fcMin,undefined,'e a herança do modelo somado sai');});
+teste('vfc','a medida da noite tem precedência sobre a média semanal',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(JSON.stringify([{calendarDate:'2026-10-14',hrvWeeklyAverage:52,lastNightAvg:44}]),true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.hrv,44,'a da noite, não a semanal');
+  a.eq(g.hrvF,'noite','e a procedência fica gravada');});
+teste('vfc','sem a noite, usa a semanal e diz que é semanal',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(JSON.stringify([{calendarDate:'2026-10-14',hrvWeeklyAverage:52}]),true);
+  a.eq(S.pro.garmin[0].hrv,52,'usa o que há');
+  a.eq(S.pro.garmin[0].hrvF,'semana','declarada como semanal');});
+/* ── PASSAGEM SOB DEMANDA (v167) ────────────────────────────────────────────
+   Num 1×100 em A3 o atleta só conseguia anotar o tempo final: a coluna da
+   passagem dependia de o técnico ter ligado as parciais no treino inteiro. */
+teste('passagem','o atleta liga a passagem no tiro, sem depender do técnico',a=>{
+  const item={dist:100,reps:1,estilo:'peito',parcial:false};
+  S.parcialAvulsa={};
+  a.ok(!parcialLigada(item,'t1'),'começa desligada');
+  S.parcialAvulsa={t1:true};
+  a.ok(parcialLigada(item,'t1'),'ligada só para aquele tiro');
+  a.ok(!parcialLigada(item,'t2'),'e não vaza para os outros');
+  S.parcialAvulsa={};});
+teste('passagem','o treino do técnico continua mandando quando ele ligou',a=>{
+  S.parcialAvulsa={};
+  a.ok(parcialLigada({dist:100,parcial:true},'t9'),'parcial do treino vale sozinha');});
+teste('passagem','só onde a passagem faz sentido',a=>{
+  a.ok(podeParcialAvulsa({dist:100},'SC25'),'100m tem metade');
+  a.ok(podeParcialAvulsa({dist:200},'LC50'),'200m também');
+  a.ok(!podeParcialAvulsa({dist:50},'SC25'),'num 50 a metade é 25 — é outro recurso');
+  a.ok(!podeParcialAvulsa({dist:100},'AA'),'águas abertas não tem passagem de piscina');});
+teste('passagem','passagem + tempo final viram as duas metades',a=>{
+  /* é o cálculo que o relatório usa: o tiro do Bruno, 1:16.61 com passagem */
+  const m=metadesDe({tempo:parseTempo('1:16.61'),parciais:[parseTempo('36.20'),parseTempo('1:16.61')]},100);
+  a.eq(m.h1,parseTempo('36.20'),'primeiros 50');
+  a.eq(m.h2,parseTempo('1:16.61')-parseTempo('36.20'),'segundos 50 por subtração');
+  a.ok(m.dif>0,'positivo: a segunda metade foi mais lenta, como é a regra');});
+teste('vfc','a leitura não mistura procedências',a=>{
+  const g=[];
+  for(let i=0;i<6;i++)g.push({data:'2026-10-'+String(20-i).padStart(2,'0'),hrv:44,hrvF:'noite'});
+  for(let i=0;i<6;i++)g.push({data:'2026-10-'+String(14-i).padStart(2,'0'),hrv:52,hrvF:'semana'});
+  const s=serieHRV(g);
+  a.eq(s.fonte,'noite','prefere a medida do dia');
+  a.ok(s.serie.every(x=>x.hrvF==='noite'),'e a série sai limpa');
+  a.ok(s.misturado,'mas avisa que há outra procedência guardada');});
+teste('garmin','no mesmo lote, arquivos diferentes continuam somando',async a=>{
+  _atleta(); S.pro.garmin=[];
+  const lote={limpos:new Set()};
+  await importarGarmin(_GAR_ATIV,true,lote);
+  await importarGarmin(JSON.stringify([{calendarDate:'2026-10-14',activityType:'open_water_swimming',distance:2000,duration:2400}]),true,lote);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.nado,65,'4500m + 2000m: o lote acumula, como deve');
+  a.eq(g.ativDur,130,'e as durações também');});
+teste('garmin','o que é atribuído nunca foi problema',async a=>{
+  _atleta(); S.pro.garmin=[];
+  await importarGarmin(_GAR_SONO,true);
+  await importarGarmin(_GAR_SONO,true);
+  const g=S.pro.garmin.find(x=>x.data==='2026-10-14');
+  a.eq(g.sono,7.5,'sono sobrescreve, não soma');
+  a.eq(g.fc,48,'FC de repouso idem');});
+
+/* ── QUEM FAZ GESTÃO DE EQUIPE (v165) ───────────────────────────────────────
+   Decisão do dono do produto, escrita aqui para não se perder: gestão de
+   equipe é do TÉCNICO da respectiva equipe, ou do administrador. PRO é atleta
+   competitivo — tem espaço próprio, treino pessoal e relatório, e não
+   administra ninguém.
+
+   Isto não é preferência de tela: as regras do Firestore publicadas exigem
+   `perfil == 'tecnico'` para escrever documentos de equipe. Se o cliente
+   voltar a oferecer gestão ao PRO, ele passa a mostrar um botão que o
+   servidor recusa — a pior combinação possível, porque falha depois do
+   usuário já ter feito o trabalho. */
+/* ⚠️ _atleta() cria o usuário com o e-mail do ADMINISTRADOR, então todo teste
+   daqui precisa dizer explicitamente de quem está falando — e zerar gestão e
+   contexto administrativo, que são estado global e vazam de um teste para o
+   outro (foi o que me pegou ao escrever estes). */
+function _naoAdmin(perfil){
+  _atleta(); S.u.perfil=perfil; S.u.email='rene@x.com'; S.u.equipe='a3';
+  S.gestao=false; S.adminOrig=null; S.modoAtleta=false; return S.u;
+}
+teste('gestão','PRO não administra equipe, nem forçando o estado',a=>{
+  _naoAdmin('pro');
+  a.ok(!ehAdmin(),'PRO comum não é administrador');
+  S.gestao=true;
+  a.ok(!ehGestor(),'não vira gestor com S.gestao ligado na marra');
+  S.adminOrig={equipe:'a3'};
+  a.ok(!ehGestor(),'nem com contexto administrativo forjado');
+  S.gestao=false; S.adminOrig=null;});
+teste('gestão','o técnico administra a própria equipe',a=>{
+  _naoAdmin('tecnico');
+  a.ok(ehGestor(),'técnico no comando é gestor');
+  S.modoAtleta=true;
+  a.ok(!ehGestor(),'e deixa de ser enquanto está na própria área de atleta');
+  S.modoAtleta=false;});
+teste('gestão','o administrador administra, mesmo sendo PRO',a=>{
+  _naoAdmin('pro'); S.u.email=ADMIN_EMAILS[0];
+  a.ok(ehAdmin(),'reconhecido pelo e-mail, não pelo perfil');
+  a.ok(!ehGestor(),'mas só quando LIGA a gestão — ser admin não tira o chapéu de atleta');
+  S.gestao=true;
+  a.ok(ehGestor(),'ligou, administra');
+  S.gestao=false;});
 
 /* ── DOIS APARELHOS, UM DOCUMENTO (v164) ────────────────────────────────────
    Reproduzido com banco simulado antes do conserto: o celular fazia o
@@ -8264,16 +8433,20 @@ function telaGarmin(){
 }
 function prontidao(){
   const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
-  const h=g.filter(x=>x.hrv!=null),f=g.filter(x=>x.fc!=null);
+  /* uma fonte só de VFC: comparar média semanal com medida da noite produz
+     "variação" que não existe */
+  const sh=serieHRV(S.pro&&S.pro.garmin), h=sh?sh.serie:[], f=g.filter(x=>x.fc!=null);
   if(h.length<4&&f.length<4)return'<div class="small muted">Poucos dias para uma leitura confiável.</div>';
   const m=[];let alerta=false;
   if(h.length>=4){
     const rec=h.slice(0,3).reduce((t,x)=>t+x.hrv,0)/3;
     const base=h.slice(3,17).reduce((t,x)=>t+x.hrv,0)/Math.max(1,h.slice(3,17).length);
     const d=((rec-base)/base)*100;
-    if(d<-8){m.push(`VFC ${Math.abs(d).toFixed(0)}% abaixo da linha de base.`);alerta=true}
-    else if(d>8)m.push(`VFC ${d.toFixed(0)}% acima da linha de base — boa janela para intensidade.`);
-    else m.push('VFC estável em relação à linha de base.');
+    const qual=sh.fonte==='semana'?' <span class="xs muted">(média semanal do relógio — menos sensível que a medida da noite)</span>':'';
+    if(d<-8){m.push(`VFC ${Math.abs(d).toFixed(0)}% abaixo da linha de base.${qual}`);alerta=true}
+    else if(d>8)m.push(`VFC ${d.toFixed(0)}% acima da linha de base — boa janela para intensidade.${qual}`);
+    else m.push(`VFC estável em relação à linha de base.${qual}`);
+    if(sh.misturado)m.push('<span class="xs muted">Há dias com procedência diferente de VFC; a leitura usa só uma.</span>');
   }
   if(f.length>=4){
     const rec=f.slice(0,3).reduce((t,x)=>t+x.fc,0)/3;
@@ -8577,7 +8750,11 @@ function cardMedicoes(){
     <p class="xs muted" style="margin:2px 0 10px">Entram no mesmo dia do check-in e do relógio. Registro e cálculo — <b>leitura clínica é do seu médico</b>.</p>
 
     <div class="eyebrow">hidratação ao acordar</div>
-    <div class="opt" style="margin:6px 0 2px">${HID.map(v=>`<button class="${rec.hid===v?'on':''}" onclick="setHidratacao(${v})">${v}ml</button>`).join('')}</div>
+    ${leituraUrina(rec)}
+    <div class="row" style="gap:8px;margin-top:6px">
+      <button class="sm primary grow" onclick="abrirUrina()">${rec.uDens!=null||rec.uCor!=null?'Alterar urinálise':'+ Urinálise'}</button></div>
+    <div class="xs muted" style="margin:8px 0 2px">volume de líquido (opcional)</div>
+    <div class="opt" style="margin:2px 0">${HID.map(v=>`<button class="${rec.hid===v?'on':''}" onclick="setHidratacao(${v})">${v}ml</button>`).join('')}</div>
     <div class="row" style="gap:8px;margin-top:4px">
       <button class="sm ghost grow" onclick="abrirHidratacao()">Outro valor</button>
       ${rec.hid!=null?`<button class="sm ghost" onclick="setHidratacao(null)">Limpar</button>`:''}</div>
@@ -8622,6 +8799,8 @@ function medicoesSub(){
   const dp=dorPersistente(S.pro?.garmin);
   if(dp&&dp.dias>=3)return `⚠ dor há ${dp.dias} dias seguidos`;
   const p=[]; if(rec.peso!=null)p.push(`${rec.peso} kg`);
+  if(rec.uDens!=null)p.push(`urina ${rec.uDens.toFixed(3)}`);
+  else if(rec.uCor!=null)p.push(`urina ${rec.uCor}/8`);
   if(rec.hid!=null)p.push('hidratação');
   if((rec.gli||[]).length)p.push(`${rec.gli.length} glicemia`);
   const lr=lactatoResumo(rec); if(lr)p.push(`lactato pico ${lr.pico}`);
@@ -8632,6 +8811,69 @@ function mediaHidratacao(){
   if(g.length<3)return'';
   const m=Math.round(g.reduce((t,x)=>t+x.hid,0)/g.length);
   return ` Média de ${g.length} dias: <b>${m} ml</b>.`;
+}
+/* ── URINÁLISE ──────────────────────────────────────────────────────────────
+   Perguntaram ao Nicholas como ele acompanha hidratação e glicemia, e ele
+   respondeu: "Urinálise e Glicosímetro". Volume de líquido ao acordar é o que
+   se BEBE; urinálise é o que o corpo mostra — e é esta que os atletas de
+   ponta usam. O app passa a aceitar as duas, com a urinálise na frente.
+
+   Referências (não são diagnóstico, e a tela diz isso):
+   • densidade ≤ 1.020 é o corte de euidratação adotado pela NATA e pela NCAA;
+     há quem proponha 1.025 para ganhar especificidade, e amostra da primeira
+     urina do dia é naturalmente mais concentrada;
+   • a escala de cor de 8 tons é a de Armstrong (1994). Cor e densidade NÃO
+     concordam sempre, e a iluminação do banheiro desloca a leitura da cor em
+     até dois tons — por isso as duas aparecem lado a lado, sem fundir numa
+     nota só. */
+const UCOR=['#f6f3c8','#f2eca3','#ede07a','#e8d24f','#ddbf35','#cfa32a','#b5831f','#8d5a14'];
+function leituraUrina(rec){
+  if(rec.uDens==null&&rec.uCor==null)
+    return'<div class="xs muted" style="margin:4px 0">Sem urinálise hoje. É o marcador que o atleta de ponta usa — mais informativo que o volume bebido.</div>';
+  const p=[];
+  if(rec.uDens!=null){
+    const d=rec.uDens;
+    const nota=d<=1.020?'dentro do corte de euidratação (≤ 1.020)'
+      :d<=1.025?'acima de 1.020 — zona em que as referências divergem'
+      :'acima de 1.025, onde as referências convergem para desidratação';
+    p.push(`<div class="row"><span class="grow">Densidade</span><b>${d.toFixed(3)}</b></div>
+      <div class="muted" style="margin-top:2px">${nota}</div>`);
+  }
+  if(rec.uCor!=null)
+    p.push(`<div class="row" style="margin-top:6px"><span class="grow">Cor</span>
+      <span style="display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid var(--line);background:${UCOR[rec.uCor-1]};margin-right:6px;vertical-align:-3px"></span>
+      <b>${rec.uCor}/8</b></div>
+      <div class="muted" style="margin-top:2px">${rec.uCor<=3?'tons 1–3 indicam bem hidratado':'tons 4 ou mais pedem atenção'} · a iluminação desloca esta leitura</div>`);
+  return`<div class="note xs" style="margin:4px 0">${p.join('')}</div>`;
+}
+function abrirUrina(){
+  const rec=(S.pro?.garmin||[]).find(x=>x.data===hoje())||{};
+  sheet(`<h2>Urinálise</h2>
+    <p class="xs muted" style="margin:4px 0 10px">Preencha o que você mediu — um dos dois já serve. <b>Registro, não diagnóstico:</b> leitura clínica é do seu médico.</p>
+    <div class="field"><label>Densidade <span class="xs muted">refratômetro · ex.: 1,018</span></label>
+      <input id="urD" inputmode="decimal" value="${rec.uDens!=null?String(rec.uDens).replace('.',','):''}" placeholder="1,018"></div>
+    <div class="field"><label>Cor <span class="xs muted">escala de 8 tons</span></label>
+      <div class="opt">${UCOR.map((c,i)=>`<button type="button" class="${rec.uCor===i+1?'on':''}" style="background:${c};color:#111" onclick="S.urCor=${i+1};[...this.parentNode.children].forEach(b=>b.classList.remove('on'));this.classList.add('on')">${i+1}</button>`).join('')}</div>
+      <div class="xs muted" style="margin-top:4px">1 é quase transparente, 8 é bem escuro. Olhe sob luz natural quando der.</div></div>
+    <button class="primary full" onclick="salvarUrina()">Salvar</button>
+    ${rec.uDens!=null||rec.uCor!=null?`<button class="ghost full" style="margin-top:8px" onclick="salvarUrina(true)">Limpar o de hoje</button>`:''}`);
+  S.urCor=rec.uCor||null;
+}
+async function salvarUrina(limpar){
+  const r=regDia(hoje());
+  if(limpar){ delete r.uDens; delete r.uCor; }
+  else{
+    const s=String(val('urD')||'').trim();
+    if(s){
+      const v=parseFloat(s.replace(',','.'));
+      if(!isFinite(v)||v<1.000||v>1.040)return toast('Densidade fora da faixa plausível (1,000 a 1,040)');
+      r.uDens=+v.toFixed(3);
+    } else delete r.uDens;
+    if(S.urCor)r.uCor=S.urCor; else delete r.uCor;
+    if(r.uDens==null&&r.uCor==null)return toast('Informe a densidade ou a cor');
+  }
+  if(await salvarSaude(limpar?{apagando:true}:undefined)===false)return;
+  fecharSheet(); render();
 }
 function abrirHidratacao(){
   const rec=(S.pro?.garmin||[]).find(x=>x.data===hoje())||{};
@@ -8743,6 +8985,7 @@ function cardHistoricoMedicoes(pro){
   const g=[...(pro.garmin||[])].sort((a,b)=>a.data.localeCompare(b.data));
   const series=[
     ['peso','kg',g.filter(x=>x.peso!=null).map(x=>({d:x.data,v:x.peso}))],
+    ['densidade urinária','',g.filter(x=>x.uDens!=null).map(x=>({d:x.data,v:x.uDens.toFixed(3)}))],
     ['hidratação','ml',g.filter(x=>x.hid!=null).map(x=>({d:x.data,v:x.hid}))],
     ['glicemia antes','mg/dL',g.map(x=>{const a=(x.gli||[]).filter(y=>y.q==='antes');return a.length?{d:x.data,v:a[a.length-1].v}:null}).filter(Boolean)],
     ['lactato pico','mmol/L',g.map(x=>{const l=lactatoResumo(x);return l?{d:x.data,v:l.pico}:null}).filter(Boolean)]
@@ -8788,13 +9031,16 @@ function garminRelevante(nome){
 async function importarGarminLote(itens,diz){
   const antes=new Set(((S.pro&&S.pro.garmin)||[]).map(x=>x.data));
   const porTipo={}, tocados=new Set();
+  /* um lote só para todos os arquivos: dentro da mesma importação os dias
+     somam normalmente; entre importações, substituem */
+  const lote={limpos:new Set()};
   let lidos=0, ignorados=0, falhas=0;
   for(const it of itens){
     const rot=garminRelevante(it.nome);
     if(!rot){ ignorados++; continue; }
     if(diz)diz(`Lendo ${rot}… (${lidos+1})`);
     let txt; try{ txt=await it.texto(); }catch(_){ falhas++; continue; }
-    const r=await importarGarmin(txt,true);
+    const r=await importarGarmin(txt,true,lote);
     if(!r||!r.n){ falhas++; continue; }
     porTipo[rot]=(porTipo[rot]||0)+r.n;
     r.dias.forEach(d=>tocados.add(d));
@@ -8862,11 +9108,60 @@ async function zipGarmin(inp){
 /* devolve {n, dias} — quantos registros entraram e QUAIS datas foram tocadas.
    O lote precisa das datas para dizer quantos dias são novos e quantos foram
    atualizados; antes só havia uma contagem bruta de registros. */
-async function importarGarmin(raw,silencioso){
+/* ── REIMPORTAR NÃO PODE SOMAR DUAS VEZES ──────────────────────────────────
+   Sono, FC e VFC são atribuídos (`g.fc=...`), então reimportar sobrescreve e
+   nada muda. Mas nado, duração de atividade e FC média ACUMULAM — e têm de
+   acumular mesmo, porque um dia pode ter três treinos em arquivos diferentes.
+   O problema é a segunda importação do MESMO export: ela somava tudo de novo,
+   dobrando o volume e a carga sem nenhum aviso.
+
+   E isto não é hipótese: eu mesmo mandei o Bruno reimportar o export do
+   Garmin para recuperar a Saúde perdida em 14/10.
+
+   Conserto: o acumulador de cada dia é zerado na PRIMEIRA vez que aquele dia
+   aparece na importação corrente. Dentro da mesma importação vários arquivos
+   continuam somando; reimportar o mesmo conjunto dá exatamente o mesmo
+   resultado. `ctx` carrega quais dias já foram zerados nesta passada. */
+const CAMPOS_ACUM=['nado','ativDur','ativFc','_fcMin','_min'];
+/* Os totais do dia passam a ser CALCULADOS da lista de atividades. Dia antigo,
+   que só tem os totais somados, continua valendo como está até receber a
+   primeira atividade com chave — aí o cálculo assume e, de quebra, corrige o
+   número inflado por reimportações anteriores. */
+function derivarTotaisDoDia(g){
+  const a=(g&&g.ativs)||[];
+  if(!a.length)return g;
+  const nado=a.filter(x=>/swim|nata/i.test(x.tipo||'')).reduce((t,x)=>t+(x.dist||0),0);
+  if(nado)g.nado=Math.round(nado/100); else delete g.nado;
+  const min=a.reduce((t,x)=>t+(x.min||0),0);
+  if(min)g.ativDur=Math.round(min); else delete g.ativDur;
+  const comFc=a.filter(x=>x.fc!=null&&x.min);
+  if(comFc.length){
+    const tot=comFc.reduce((t,x)=>t+x.min,0);
+    g.ativFc=Math.round(comFc.reduce((t,x)=>t+x.fc*x.min,0)/tot);
+  } else delete g.ativFc;
+  delete g._fcMin; delete g._min;      /* herança do modelo somado */
+  return g;
+}
+/* ── QUAL VFC ESTOU COMPARANDO ──────────────────────────────────────────────
+   Média semanal e medida da noite não são a mesma grandeza, e comparar uma
+   com a outra inventa variação. Esta função escolhe UMA fonte — a da noite,
+   se houver o bastante — e diz qual é, para a tela poder declarar. */
+function serieHRV(garmin){
+  const g=[...(garmin||[])].filter(x=>x&&x.hrv!=null).sort((a,b)=>b.data.localeCompare(a.data));
+  if(!g.length)return null;
+  const cont={};
+  g.slice(0,30).forEach(x=>{ const f=x.hrvF||'legado'; cont[f]=(cont[f]||0)+1; });
+  const fonte=['noite','legado','semana'].find(f=>(cont[f]||0)>=4)
+    ||Object.keys(cont).sort((a,b)=>cont[b]-cont[a])[0];
+  return {serie:g.filter(x=>(x.hrvF||'legado')===fonte),fonte,
+          misturado:Object.keys(cont).length>1};
+}
+async function importarGarmin(raw,silencioso,ctx){
   const vazio={n:0,dias:[]};
   if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return vazio}
   let j; try{j=JSON.parse(raw)}catch(e){if(!silencioso)toast('JSON inválido');return vazio}
   S.pro=S.pro||proVazio();
+  const lote=ctx||{limpos:new Set()};    /* sem lote, cada chamada é o seu */
   const arr=Array.isArray(j)?j.flat():[j],mapa={};
   (S.pro.garmin||[]).forEach(x=>mapa[x.data]=x);
   let n=0; const tocados=new Set();
@@ -8877,24 +9172,48 @@ async function importarGarmin(raw,silencioso){
     if(!d||!/^\d{4}-\d{2}-\d{2}/.test(d))return;
     const dia=d.slice(0,10);
     const g=mapa[dia]||{data:dia};
+    /* primeira vez que este dia aparece NESTA importação: zera o que acumula,
+       para que reimportar substitua em vez de somar por cima */
+    if(!lote.limpos.has(dia)){ lote.limpos.add(dia); for(const k of CAMPOS_ACUM)delete g[k]; }
     if(o.restingHeartRate!=null)g.fc=Math.round(o.restingHeartRate);
-    const hrv=o.hrvWeeklyAverage??o.lastNightAvg??o.avgOvernightHrv??o.weeklyAvg;
-    if(hrv!=null)g.hrv=Math.round(hrv);
+    /* ── DE ONDE VEIO A VFC ────────────────────────────────────────────────
+       Estava assim: `o.hrvWeeklyAverage ?? o.lastNightAvg ?? ...` — a MÉDIA
+       SEMANAL tinha precedência sobre a medida da noite, e as duas caíam no
+       mesmo campo sem rótulo. Como prontidao() compara os 3 dias recentes
+       contra a base dos dias 4 a 17, dava para estar comparando média de sete
+       dias com medição de uma noite e chamar a diferença de "variação".
+       É o mesmo erro de misturar SDNN com RMSSD, dentro de uma fonte só.
+       Agora a noite vem primeiro, e a procedência viaja junto. */
+    const hrvNoite=o.lastNightAvg??o.avgOvernightHrv;
+    const hrvSemana=o.hrvWeeklyAverage??o.weeklyAvg;
+    if(hrvNoite!=null){ g.hrv=Math.round(hrvNoite); g.hrvF='noite'; }
+    else if(hrvSemana!=null&&g.hrvF!=='noite'){ g.hrv=Math.round(hrvSemana); g.hrvF='semana'; }
     if(o.sleepTimeSeconds!=null)g.sono=+(o.sleepTimeSeconds/3600).toFixed(1);
     if(o.deepSleepSeconds!=null&&o.sleepTimeSeconds==null)g.sono=+((o.deepSleepSeconds+(o.lightSleepSeconds||0)+(o.remSleepSeconds||0))/3600).toFixed(1);
-    if((o.activityType==='lap_swimming'||o.activityType==='open_water_swimming')&&o.distance!=null)
-      g.nado=(g.nado||0)+Math.round(o.distance/100);
-    /* DURAÇÃO e FC MÉDIA da atividade: o relógio não tem RPE (é subjetivo),
-       mas com estes dois dá para estimar o esforço e salvar a carga dos dias
-       em que o atleta não preencheu nada. Acumula o dia inteiro. */
+    /* ── REGISTRO POR ATIVIDADE, NÃO CAMPO SOMADO NO DIA ───────────────────
+       O dia guardava só os totais (`nado`, `ativDur`, `ativFc`), e total não
+       tem identidade: não dá para saber o que já entrou, de onde veio, nem
+       corrigir uma atividade sem refazer tudo. Era isso que fazia reimportar
+       somar de novo, e é o que impediria qualquer integração automática —
+       a mesma atividade chegando pelo relógio e pelo celular contaria duas
+       vezes, sem jeito de perceber.
+       Agora cada atividade é um registro com CHAVE própria, e os totais do
+       dia são DERIVADOS dela. Reimportar substitui pela chave; dois arquivos
+       do mesmo lote somam; e amanhã dá para acrescentar origem e dispositivo
+       sem mexer em mais nada. */
     const durB=o.duration??o.movingDuration??o.elapsedDuration;
     const fcAt=o.averageHR??o.avgHr??o.averageHeartRate;
     if(durB!=null&&o.activityType){
       const min=durB>100000?durB/60000:durB/60;          /* aceita ms ou s */
       if(min>3&&min<600){
-        g.ativDur=Math.round((g.ativDur||0)+min);
-        if(fcAt!=null){ g._fcMin=(g._fcMin||0)+fcAt*min; g._min=(g._min||0)+min;
-          g.ativFc=Math.round(g._fcMin/g._min); }
+        const k=o.activityId??o.activityUuid??
+          (o.startTimeLocal?`${String(o.startTimeLocal).slice(0,19)}|${o.activityType}`
+                           :`${dia}|${o.activityType}|${Math.round(min)}|${Math.round(o.distance||0)}`);
+        const at={k:String(k),tipo:o.activityType,min:+min.toFixed(1),origem:'garmin'};
+        if(fcAt!=null)at.fc=Math.round(fcAt);
+        if(o.distance!=null)at.dist=Math.round(o.distance);
+        g.ativs=[...(g.ativs||[]).filter(x=>x.k!==at.k),at];
+        derivarTotaisDoDia(g);
       }
     }
     mapa[dia]=g;n++;tocados.add(dia);
