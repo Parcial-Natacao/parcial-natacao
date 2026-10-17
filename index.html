@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v164';
+const VER='v165';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4774,6 +4774,47 @@ teste('medições','glicemia: repetida no mesmo momento usa a última',a=>{
   a.eq(g.antes,90,'a mais recente do momento');
   a.eq(g.delta,null,'sem "durante" não há variação a declarar');
   a.eq(g.n,2,'mas as duas coletas ficam registradas');});
+
+/* ── QUEM FAZ GESTÃO DE EQUIPE (v165) ───────────────────────────────────────
+   Decisão do dono do produto, escrita aqui para não se perder: gestão de
+   equipe é do TÉCNICO da respectiva equipe, ou do administrador. PRO é atleta
+   competitivo — tem espaço próprio, treino pessoal e relatório, e não
+   administra ninguém.
+
+   Isto não é preferência de tela: as regras do Firestore publicadas exigem
+   `perfil == 'tecnico'` para escrever documentos de equipe. Se o cliente
+   voltar a oferecer gestão ao PRO, ele passa a mostrar um botão que o
+   servidor recusa — a pior combinação possível, porque falha depois do
+   usuário já ter feito o trabalho. */
+/* ⚠️ _atleta() cria o usuário com o e-mail do ADMINISTRADOR, então todo teste
+   daqui precisa dizer explicitamente de quem está falando — e zerar gestão e
+   contexto administrativo, que são estado global e vazam de um teste para o
+   outro (foi o que me pegou ao escrever estes). */
+function _naoAdmin(perfil){
+  _atleta(); S.u.perfil=perfil; S.u.email='rene@x.com'; S.u.equipe='a3';
+  S.gestao=false; S.adminOrig=null; S.modoAtleta=false; return S.u;
+}
+teste('gestão','PRO não administra equipe, nem forçando o estado',a=>{
+  _naoAdmin('pro');
+  a.ok(!ehAdmin(),'PRO comum não é administrador');
+  S.gestao=true;
+  a.ok(!ehGestor(),'não vira gestor com S.gestao ligado na marra');
+  S.adminOrig={equipe:'a3'};
+  a.ok(!ehGestor(),'nem com contexto administrativo forjado');
+  S.gestao=false; S.adminOrig=null;});
+teste('gestão','o técnico administra a própria equipe',a=>{
+  _naoAdmin('tecnico');
+  a.ok(ehGestor(),'técnico no comando é gestor');
+  S.modoAtleta=true;
+  a.ok(!ehGestor(),'e deixa de ser enquanto está na própria área de atleta');
+  S.modoAtleta=false;});
+teste('gestão','o administrador administra, mesmo sendo PRO',a=>{
+  _naoAdmin('pro'); S.u.email=ADMIN_EMAILS[0];
+  a.ok(ehAdmin(),'reconhecido pelo e-mail, não pelo perfil');
+  a.ok(!ehGestor(),'mas só quando LIGA a gestão — ser admin não tira o chapéu de atleta');
+  S.gestao=true;
+  a.ok(ehGestor(),'ligou, administra');
+  S.gestao=false;});
 
 /* ── DOIS APARELHOS, UM DOCUMENTO (v164) ────────────────────────────────────
    Reproduzido com banco simulado antes do conserto: o celular fazia o
