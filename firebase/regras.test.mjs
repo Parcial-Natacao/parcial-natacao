@@ -266,4 +266,33 @@ describe('regras do PARCIAL', () => {
       v: '{}', dono: 'UID_OUTRO', donoEmail: null, equipe: null, perfil: null, aprovado: null,
     }));
   });
+
+  // Os dados pessoais não cabem mais num documento só: a Saúde fica em
+  // pro_<uid>_sau e as versões diárias em pro_<uid>_bk<N> (v159/v160). Uma
+  // regra que exija a chave EXATA `pro_<uid>` bloqueia os dois — e com eles a
+  // separação que protege VFC/sono/check-in e o único histórico que o plano
+  // gratuito permite. Estes três casos existem para que isso não volte.
+  test('37. atleta grava o próprio documento de Saúde', async () => {
+    const db = banco('UID_ATLETA', 'atleta@x.com');
+    await assertSucceeds(setDoc(kv(db, 'pro_UID_ATLETA_sau'), {
+      v: '{}', dono: 'UID_ATLETA', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
+  });
+
+  test('38. atleta grava as próprias versões diárias', async () => {
+    const db = banco('UID_ATLETA', 'atleta@x.com');
+    await assertSucceeds(setDoc(kv(db, 'pro_UID_ATLETA_bk3'), {
+      v: '{}', dono: 'UID_ATLETA', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
+  });
+
+  test('39. usuário não grava a Saúde nem as versões de outro UID', async () => {
+    const db = banco('UID_OUTRO', 'outro@x.com');
+    await assertFails(setDoc(kv(db, 'pro_UID_VITIMA_sau'), {
+      v: '{}', dono: 'UID_OUTRO', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
+    await assertFails(setDoc(kv(db, 'pro_UID_VITIMA_bk0'), {
+      v: '{}', dono: 'UID_OUTRO', donoEmail: null, equipe: null, perfil: null, aprovado: null,
+    }));
+  });
 });

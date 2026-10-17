@@ -75,7 +75,15 @@ service cloud.firestore {
       function ehDev() { return ehAdmin(); }
 
       function ehPro() { return chave.matches('pro_.*'); }
-      function ehMeuPro() { return logado() && chave == 'pro_' + meuUid(); }
+      // Os dados pessoais não cabem mais num documento só: a Saúde mora em
+      // pro_<uid>_sau e as versões diárias em pro_<uid>_bk<0-6>/_bkundo (v159,
+      // v160). Exigir a chave EXATA `pro_<uid>` bloquearia os dois — e com
+      // eles a separação que impede um defeito em Marcas de alcançar VFC,
+      // sono e check-in, e o único histórico que o plano Spark permite.
+      // O escopo continua sendo só o do próprio usuário: o prefixo é o uid do
+      // token, e o `dono` do conteúdo é conferido do mesmo jeito.
+      function ehMeuPro() { return logado()
+        && ( chave == 'pro_' + meuUid() || chave.matches('pro_' + meuUid() + '_.*') ); }
       function ehTreinoPessoal() { return chave.matches('pt_.*'); }
       function ehMinhaChaveTreinoPessoal() {
         return logado() && chave.matches('pt_' + meuUid() + '_.*');
