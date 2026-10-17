@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v161';
+const VER='v162';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4657,6 +4657,42 @@ teste('dono','o espelho carrega o uid do atleta espelhado',a=>{
   a.eq(camposSeguranca('pro_EU',espelho).dono,'ATLETA','vai com o dono errado de propósito');
   a.ok(camposSeguranca('pro_EU',espelho).dono!=='EU','e por isso o servidor recusa');});
 
+/* ── MEDIÇÕES DO DIA (v162) ─────────────────────────────────────────────────
+   Hidratação, glicemia e lactato. O valor do app não é guardar o número — é
+   o que ele tira dele: pico e remoção do lactato, variação da glicemia. */
+teste('medições','lactato: pico e remoção',a=>{
+  /* série real de um 50 máximo: sobe, pica e começa a cair */
+  const rec={lac:[{h:'10:00',v:2.1},{h:'10:03',v:12.4},{h:'10:13',v:8.4}]};
+  const r=lactatoResumo(rec);
+  a.eq(r.pico,12.4,'o pico é o maior, não o último');
+  a.eq(r.hPico,'10:03','com a hora dele');
+  a.eq(r.ultimo,8.4,'e a última coleta à parte');
+  a.eq(r.minutos,10,'a janela conta do PICO até a última');
+  a.eq(r.remocao,0.4,'(12,4 − 8,4) / 10 min = 0,4 mmol/L por minuto');});
+teste('medições','lactato fora de ordem é ordenado pela hora',a=>{
+  const r=lactatoResumo({lac:[{h:'10:13',v:8.4},{h:'10:03',v:12.4}]});
+  a.eq(r.pico,12.4,'pico certo'); a.eq(r.ultimo,8.4,'última é a mais tardia');
+  a.eq(r.remocao,0.4,'e a conta sai igual');});
+teste('medições','sem queda, não inventa remoção',a=>{
+  a.eq(lactatoResumo({lac:[{h:'10:00',v:4},{h:'10:05',v:9}]}).remocao,null,
+       'ainda subindo — remoção não existe');
+  a.eq(lactatoResumo({lac:[{h:'10:00',v:9}]}).remocao,null,'uma coleta só não basta');
+  a.eq(lactatoResumo({lac:[{h:'10:00',v:9},{h:'10:00',v:5}]}).remocao,null,
+       'mesma hora: dividir por zero minutos seria um número inventado');});
+teste('medições','sem lactato, sem resumo',a=>{
+  a.eq(lactatoResumo({}),null,'dia sem coleta');
+  a.eq(lactatoResumo({lac:[]}),null,'lista vazia');
+  a.eq(lactatoResumo({lac:[{h:'10:00'}]}),null,'coleta sem valor é descartada');});
+teste('medições','glicemia: variação de antes para durante',a=>{
+  const g=glicemiaResumo({gli:[{h:'08:00',v:96,q:'antes'},{h:'08:40',v:118,q:'durante'}]});
+  a.eq(g.antes,96,'antes'); a.eq(g.durante,118,'durante');
+  a.eq(g.delta,22,'a variação é o que interessa, não o valor solto');});
+teste('medições','glicemia: repetida no mesmo momento usa a última',a=>{
+  const g=glicemiaResumo({gli:[{h:'08:00',v:96,q:'antes'},{h:'08:20',v:90,q:'antes'}]});
+  a.eq(g.antes,90,'a mais recente do momento');
+  a.eq(g.delta,null,'sem "durante" não há variação a declarar');
+  a.eq(g.n,2,'mas as duas coletas ficam registradas');});
+
 /* ── SAÚDE EM DOCUMENTO PRÓPRIO (v160) ──────────────────────────────────────
    Em 14/10 um problema de currículo da ABMN levou junto VFC, sono, check-in,
    exames e fora d'água — não por terem relação, mas por morarem no mesmo
@@ -8059,6 +8095,7 @@ function telaGarmin(){
   return`
   <div class="row" style="margin:16px 0 10px"><h2>Saúde</h2></div>
   ${acc('sa_ck','Check-in diário',checkinSub(),cardCheckin())}
+  ${acc('sa_med','Medições do dia',medicoesSub(),cardMedicoes())}
   ${acc('sa_pr','Prontidão',g.length?`${g.length} dia(s) de VFC/FC/sono`:'sem dados ainda',cProntidao+cardConcordancia(S.pro))}
   ${acc('sa_imp','Importar / lançar à mão','do Garmin ou manual',cImportar)}
   ${acc('sa_ex','Exames laboratoriais',nEx?`${nEx} exame(s)`:'nenhum ainda',cExames)}
@@ -8226,6 +8263,175 @@ function checkinSub(){
   return sc!=null?`✓ feito hoje · prontidão ${sc}`:'responda 5 perguntas rápidas';
 }
 function setCheckin(k,v,re){ S.checkinDraft=S.checkinDraft||{}; S.checkinDraft[k]=v; if(re)render(); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MEDIÇÕES DO DIA — hidratação, glicemia e lactato
+
+   Vieram de uma lista de um atleta de ponta: do que ele acompanha no dia a
+   dia, o app já tinha sono, FC, VFC, prontidão e carga — faltavam estes três.
+
+   Moram no MESMO registro diário do check-in e do relógio (pro.garmin[data]),
+   que desde a v160 fica no documento de Saúde separado. Um registro por dia,
+   com as coletas dentro: glicemia e lactato não são medidos uma vez — a
+   glicemia é antes E durante o treino, e o lactato sai em série depois do
+   esforço, que é justamente onde está a informação.
+
+   O que o app calcula a partir disso:
+     • lactato PICO do dia e, com duas ou mais coletas, a REMOÇÃO
+       (mmol/L por minuto) — é ela que diz como o organismo está limpando o
+       esforço, e para um velocista vale mais que o valor isolado;
+     • glicemia: a variação de antes para durante o treino.
+   O resto é série temporal, como os exames já fazem.
+
+   Nada aqui é diagnóstico. O app registra, calcula e mostra; interpretação
+   clínica é do médico, e a tela diz isso. ═══════════════════════════════ */
+const MOMENTOS_GLI=[['antes','antes do treino'],['durante','durante'],['depois','depois']];
+function regDia(d){
+  S.pro=S.pro||proVazio();
+  S.pro.garmin=S.pro.garmin||[];
+  let r=S.pro.garmin.find(x=>x.data===d);
+  if(!r){ r={data:d}; S.pro.garmin.push(r); }
+  return r;
+}
+/* pico e remoção: a remoção só existe com duas coletas em horários diferentes,
+   e é calculada do PICO para a última — é a janela que interessa. */
+function lactatoResumo(rec){
+  const l=[...((rec&&rec.lac)||[])].filter(x=>x&&x.v!=null&&x.h).sort((a,b)=>a.h.localeCompare(b.h));
+  if(!l.length)return null;
+  const pico=l.reduce((a,b)=>b.v>a.v?b:a);
+  const ult=l[l.length-1];
+  const min=(h1,h2)=>{const p=s=>{const [a,b]=String(s).split(':').map(Number);return a*60+(b||0)};return p(h2)-p(h1)};
+  const dt=min(pico.h,ult.h);
+  const remocao=(l.length>1&&dt>0&&ult.v<pico.v)?+((pico.v-ult.v)/dt).toFixed(3):null;
+  return {n:l.length,pico:pico.v,hPico:pico.h,ultimo:ult.v,hUltimo:ult.h,minutos:dt,remocao};
+}
+function glicemiaResumo(rec){
+  const g=((rec&&rec.gli)||[]).filter(x=>x&&x.v!=null);
+  if(!g.length)return null;
+  const de=q=>{const a=g.filter(x=>x.q===q); return a.length?a[a.length-1].v:null;};
+  const antes=de('antes'), durante=de('durante');
+  return {n:g.length,antes,durante,
+          delta:(antes!=null&&durante!=null)?+(durante-antes).toFixed(0):null};
+}
+function cardMedicoes(){
+  const d=hoje(), rec=(S.pro?.garmin||[]).find(x=>x.data===d)||{};
+  const lr=lactatoResumo(rec), gr=glicemiaResumo(rec);
+  const HID=[250,500,750,1000];
+  const linha=(x,i,tipo)=>`<div class="row xs" style="padding:6px 0;border-top:1px solid var(--line)">
+      <span style="width:46px" class="muted">${esc(x.h||'—')}</span>
+      <b class="grow">${x.v}${tipo==='lac'?' mmol/L':' mg/dL'}</b>
+      <span class="muted" style="margin-right:8px">${esc(x.q||x.obs||'')}</span>
+      <button class="sm ghost" onclick="apagarMedicao('${tipo}',${i})">✕</button></div>`;
+  return`
+    <p class="xs muted" style="margin:2px 0 10px">Entram no mesmo dia do check-in e do relógio. Registro e cálculo — <b>leitura clínica é do seu médico</b>.</p>
+
+    <div class="eyebrow">hidratação ao acordar</div>
+    <div class="opt" style="margin:6px 0 2px">${HID.map(v=>`<button class="${rec.hid===v?'on':''}" onclick="setHidratacao(${v})">${v}ml</button>`).join('')}</div>
+    <div class="row" style="gap:8px;margin-top:4px">
+      <button class="sm ghost grow" onclick="abrirHidratacao()">Outro valor</button>
+      ${rec.hid!=null?`<button class="sm ghost" onclick="setHidratacao(null)">Limpar</button>`:''}</div>
+    ${rec.hid!=null?`<div class="xs muted" style="margin-top:4px">Hoje: <b>${rec.hid} ml</b>.${mediaHidratacao()}</div>`:''}
+
+    <div class="sep"></div><div class="eyebrow">glicemia</div>
+    ${gr?`<div class="xs muted" style="margin:4px 0 2px">${gr.n} coleta(s) hoje${gr.delta!=null?` · de antes para durante: <b>${gr.delta>0?'+':''}${gr.delta} mg/dL</b>`:''}</div>`:''}
+    ${((rec.gli)||[]).map((x,i)=>linha(x,i,'gli')).join('')}
+    <button class="sm primary full" style="margin-top:8px" onclick="abrirMedicao('gli')">+ Glicemia</button>
+
+    <div class="sep"></div><div class="eyebrow">lactato</div>
+    ${lr?`<div class="note" style="margin:4px 0 2px"><div class="xs">
+        <b>Pico ${lr.pico} mmol/L</b> às ${esc(lr.hPico)}${lr.n>1?` · última ${lr.ultimo} às ${esc(lr.hUltimo)}`:''}
+        ${lr.remocao!=null?`<br>Remoção: <b>${lr.remocao} mmol/L por minuto</b> em ${lr.minutos} min.`
+          :(lr.n>1?'<br>Sem queda entre as coletas — a remoção precisa de uma coleta mais baixa depois do pico.':'<br>Com uma segunda coleta o app calcula a remoção.')}
+      </div></div>`:''}
+    ${((rec.lac)||[]).map((x,i)=>linha(x,i,'lac')).join('')}
+    <button class="sm primary full" style="margin-top:8px" onclick="abrirMedicao('lac')">+ Lactato</button>
+    ${cardHistoricoMedicoes(S.pro||{})}`;
+}
+function medicoesSub(){
+  const rec=(S.pro?.garmin||[]).find(x=>x.data===hoje())||{};
+  const p=[]; if(rec.hid!=null)p.push('hidratação');
+  if((rec.gli||[]).length)p.push(`${rec.gli.length} glicemia`);
+  const lr=lactatoResumo(rec); if(lr)p.push(`lactato pico ${lr.pico}`);
+  return p.length?p.join(' · '):'hidratação, glicemia e lactato';
+}
+function mediaHidratacao(){
+  const g=(S.pro?.garmin||[]).filter(x=>x.hid!=null).sort((a,b)=>b.data.localeCompare(a.data)).slice(0,7);
+  if(g.length<3)return'';
+  const m=Math.round(g.reduce((t,x)=>t+x.hid,0)/g.length);
+  return ` Média de ${g.length} dias: <b>${m} ml</b>.`;
+}
+function abrirHidratacao(){
+  const rec=(S.pro?.garmin||[]).find(x=>x.data===hoje())||{};
+  sheet(`<h2>Hidratação ao acordar</h2>
+    <div class="field"><label>Quantidade <span class="xs muted">ml</span></label>
+      <input id="hidMl" inputmode="numeric" value="${rec.hid!=null?rec.hid:''}" placeholder="ex.: 600"></div>
+    <button class="primary full" onclick="setHidratacao(val('hidMl')?+val('hidMl'):null)">Salvar</button>`);
+}
+async function setHidratacao(ml){
+  if(ml!=null&&(!isFinite(ml)||ml<0||ml>5000))return toast('Valor fora do razoável (0 a 5000 ml)');
+  const r=regDia(hoje());
+  if(ml==null)delete r.hid; else r.hid=Math.round(ml);
+  if(await salvarSaude()===false)return;
+  fecharSheet(); render();
+}
+/* folha, e não campo inline: a sincronia de 12 s re-renderiza a tela e
+   apagaria o que estivesse sendo digitado — com a folha aberta ela não roda */
+function abrirMedicao(tipo){
+  const agora=new Date().toTimeString().slice(0,5);
+  const lac=tipo==='lac';
+  sheet(`<h2>${lac?'Lactato':'Glicemia'}</h2>
+    <div class="grid2">
+      <div class="field"><label>Hora</label><input id="mdH" type="time" value="${agora}"></div>
+      <div class="field"><label>Valor <span class="xs muted">${lac?'mmol/L':'mg/dL'}</span></label>
+        <input id="mdV" inputmode="decimal" placeholder="${lac?'ex.: 12,4':'ex.: 96'}"></div>
+    </div>
+    ${lac?`<div class="field"><label>Observação <span class="xs muted">opcional</span></label>
+        <input id="mdO" placeholder="ex.: 3' após 50 borboleta máximo"></div>
+      <div class="xs muted" style="margin:-4px 0 10px">Registre a série toda — é a sequência de coletas que mostra a remoção, não um número solto.</div>`
+     :`<div class="field"><label>Momento</label>
+        <div class="opt">${MOMENTOS_GLI.map(([v,r])=>`<button type="button" class="${v==='antes'?'on':''}" onclick="S.mdQ='${v}';[...this.parentNode.children].forEach(b=>b.classList.remove('on'));this.classList.add('on')">${r}</button>`).join('')}</div></div>`}
+    <button class="primary full" onclick="salvarMedicao('${tipo}')">Adicionar</button>`);
+  S.mdQ='antes';
+}
+async function salvarMedicao(tipo){
+  const lac=tipo==='lac';
+  const v=parseFloat(String(val('mdV')).replace(',','.'));
+  if(!isFinite(v))return toast('Informe o valor');
+  /* limites largos, só para barrar dedo trocado: 25 mmol/L já é extremo e
+     glicemia fora de 20–600 não é medida, é erro de digitação */
+  if(lac&&(v<=0||v>30))return toast('Lactato fora da faixa plausível (0 a 30 mmol/L)');
+  if(!lac&&(v<20||v>600))return toast('Glicemia fora da faixa plausível (20 a 600 mg/dL)');
+  const r=regDia(hoje()), item={h:val('mdH')||new Date().toTimeString().slice(0,5),v:+v.toFixed(2)};
+  if(lac){ const o=val('mdO'); if(o)item.obs=o.slice(0,60); r.lac=[...(r.lac||[]),item]; }
+  else { item.q=S.mdQ||'antes'; r.gli=[...(r.gli||[]),item]; }
+  if(await salvarSaude()===false)return;
+  fecharSheet(); toast(lac?'Lactato registrado':'Glicemia registrada'); render();
+}
+async function apagarMedicao(tipo,i){
+  const r=(S.pro?.garmin||[]).find(x=>x.data===hoje()); if(!r)return;
+  const campo=tipo==='lac'?'lac':'gli';
+  r[campo]=(r[campo]||[]).filter((_,k)=>k!==i);
+  if(!r[campo].length)delete r[campo];
+  if(await salvarSaude({apagando:true})===false)return;
+  render();
+}
+/* série dos últimos dias, no mesmo formato dos exames e da bioimpedância */
+function cardHistoricoMedicoes(pro){
+  const g=[...(pro.garmin||[])].sort((a,b)=>a.data.localeCompare(b.data));
+  const series=[
+    ['hidratação','ml',g.filter(x=>x.hid!=null).map(x=>({d:x.data,v:x.hid}))],
+    ['glicemia antes','mg/dL',g.map(x=>{const a=(x.gli||[]).filter(y=>y.q==='antes');return a.length?{d:x.data,v:a[a.length-1].v}:null}).filter(Boolean)],
+    ['lactato pico','mmol/L',g.map(x=>{const l=lactatoResumo(x);return l?{d:x.data,v:l.pico}:null}).filter(Boolean)]
+  ].filter(([,,s])=>s.length);
+  if(!series.length)return'';
+  return`<div class="sep"></div><div class="eyebrow">histórico</div>
+    ${series.map(([nome,un,s])=>{
+      const ult=s.slice(-8), tr=s.length>1?(s[s.length-1].v>s[0].v?'▲':(s[s.length-1].v<s[0].v?'▼':'→')):'';
+      return`<div class="xs" style="padding:7px 0;border-top:1px solid var(--line)">
+        <div class="row"><b class="grow">${nome}</b><span class="muted">${un} ${tr}</span></div>
+        <div class="muted" style="margin-top:2px">${ult.map(p=>`${brCurta(p.d)}: <b>${p.v}</b>`).join(' · ')}</div></div>`;
+    }).join('')}`;
+}
 async function salvarCheckin(){
   const d=S.checkinDraft||{};
   if(['sonoQ','energia','dor','estresse','humor'].some(k=>d[k]==null))return toast('Responda as 5 perguntas do check-in');
