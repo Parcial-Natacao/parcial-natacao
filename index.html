@@ -557,7 +557,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v172';
+const VER='v173';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4288,6 +4288,8 @@ async function extratoMes(ym){
     prontidao:ck.length?Math.round(med(ck)):null,
     peso:pesoResumo(pro.garmin,L.dias),
     dor:dorPersistente(pro.garmin),
+    faixa:faixaHRV(pro.garmin),
+    ctx:ctxNoPeriodo(pro.garmin,L.ini,L.fim),
     nSeco:(pro.seco||[]).filter(x=>dentro(x.data)).length};
 }
 
@@ -4439,6 +4441,9 @@ function cardExtrato(ym){
     (x.deltaCarga!=null?'<div class="xs muted">Mês anterior: '+x.porSemAnt+' UA/semana ('+(x.deltaCarga>=0?'+':'')+x.deltaCarga+'%).</div>':'')+
     (x.cobertura!=null?'<div class="xs muted" style="margin-top:2px">Cobertura de esforço registrado: <b>'+Math.round(x.cobertura*100)+'%</b>'+(x.nSeco?' · '+x.nSeco+' sessão(ões) fora d\'água':'')+'.</div>':'')+
     graficoSemanas(x)+
+    (x.faixa?'<div class="xs muted" style="margin-top:6px">Faixa habitual de VFC: <b>'+x.faixa.de+' a '+x.faixa.ate+' ms</b> (média '+x.faixa.media+', '+x.faixa.n+' dias).</div>':'')+
+    (x.ctx&&x.ctx.lista.length?'<div class="xs muted" style="margin-top:2px">Marcado no mês: '+
+      x.ctx.lista.map(c=>c.rot+' ('+c.n+')').join(' · ')+'.</div>':'')+
     (sinais.length?'<div class="sep"></div><div class="eyebrow">sinais do mês</div>'+sinais.map(linhaSinal).join(''):'')+
     (t.length?'<div class="sep"></div>'+acc('ex_t_'+ym,'Todos os tiros do mês',t.length+' tiro(s)',t.map(linhaTiro).join('')):'')+
     (function(){const sr=(S.extratoSerie||{})[ym];
@@ -4462,10 +4467,17 @@ function sinaisDoMes(x){
     add('acwr',r>1.5?'contra':(r<0.8?'neutro':'favor'),
       'Agudo:crônico em '+r.toFixed(2)+(r>1.5?' — acima de 1,5':(r<0.8?' — abaixo de 0,8':' — dentro de 0,8 a 1,3'))+'.');
   }
-  if(x.hrv.delta!=null)
+  if(x.hrv.delta!=null){
+    /* se o mes teve dias marcados (viagem, doenca, alcool), a queda tem
+       candidato a explicacao e o sinal diz isso em vez de so acusar */
+    const marcados=(x.ctx&&x.ctx.dias)||0;
+    const expl=(x.hrv.delta<=-8&&marcados)
+      ? ' Em '+marcados+' dia(s) do mês você marcou '+x.ctx.lista.slice(0,2).map(c=>c.rot).join(' / ')+'.'
+      : '';
     add('vfc',x.hrv.delta<=-8?'contra':'favor',
       'VFC do mês '+(x.hrv.delta>=0?'+':'')+x.hrv.delta+'% em relação à sua base'+
-      (x.hrv.fonte==='semana'?' (média semanal do relógio)':'')+'.');
+      (x.hrv.fonte==='semana'?' (média semanal do relógio)':'')+'.'+expl);
+  }
   if(x.sono.media!=null&&x.sono.ref!=null){
     const d=+(x.sono.media-x.sono.ref).toFixed(1);
     add('sono',d<=-0.5?'contra':'favor',
@@ -5247,6 +5259,61 @@ teste('garmin','tudo convertido vira confirmacao, nao alarme',a=>{
     const h=cardConferirGarmin(); S.pro=sv; return h;})();
   a.ok(/Volume conferido/.test(html),'diz que esta tudo certo');
   a.ok(!/modelo antigo/.test(html),'sem aviso de inflacao');});
+
+
+/* ── FAIXA DE NORMALIDADE E CONTEXTO (v173) ────────────────────────────────
+   "VFC 9% abaixo da base" e um numero sem contexto: 9% e ruido em quem
+   oscila muito e sinal claro em quem e estavel. A faixa resolve isso. E o
+   marcador de contexto impede que viagem e queda de forma virem a mesma
+   frase — que e como um alerta perde credibilidade. */
+function _hrvDias(n,valor){
+  const out=[]; for(let i=0;i<n;i++){
+    const d=new Date(2026,9,20-i).toISOString().slice(0,10);
+    out.push({data:d,hrv:(typeof valor==='function'?valor(i):valor),hrvF:'noite'});}
+  return out;
+}
+teste('faixa','media e desvio saem dos proprios dias, excluindo hoje',a=>{
+  /* hoje 30; os 20 anteriores alternam 48 e 52 (media 50) */
+  const g=[{data:'2026-10-21',hrv:30,hrvF:'noite'}].concat(_hrvDias(20,i=>i%2?48:52));
+  const f=faixaHRV(g);
+  a.eq(f.media,50,'media da base, sem contar hoje');
+  a.eq(f.hoje,30,'hoje fica de fora da base mas aparece');
+  a.eq(f.posicao,'abaixo','30 esta abaixo da faixa');});
+teste('faixa','dentro da faixa nao e alarme',a=>{
+  const g=[{data:'2026-10-21',hrv:51,hrvF:'noite'}].concat(_hrvDias(20,i=>i%2?48:52));
+  a.eq(faixaHRV(g).posicao,'dentro','51 cabe em 50 mais ou menos o desvio');});
+teste('faixa','acima da faixa tambem e informacao',a=>{
+  const g=[{data:'2026-10-21',hrv:70,hrvF:'noite'}].concat(_hrvDias(20,i=>i%2?48:52));
+  a.eq(faixaHRV(g).posicao,'acima','70 passa do teto');});
+teste('faixa','com historico curto nao inventa faixa',a=>{
+  a.eq(faixaHRV(_hrvDias(10,50)),null,'10 dias nao sustentam desvio-padrao');
+  a.eq(faixaHRV([]),null,'sem dado, nada');});
+teste('faixa','a faixa usa uma fonte so de VFC',a=>{
+  const g=_hrvDias(20,50).concat([{data:'2026-09-01',hrv:200,hrvF:'semana'}]);
+  const f=faixaHRV(g);
+  a.eq(f.fonte,'noite','escolhe a medida da noite');
+  a.ok(f.ate<100,'e o 200 da media semanal nao entra na faixa');});
+teste('contexto','marcar e desmarcar o dia',a=>{
+  const g=[{data:'2026-10-20',hrv:44,ctx:['viagem','alcool']}];
+  a.eq(ctxDoDia(g,'2026-10-20').length,2,'dois marcadores');
+  a.eq(ctxDoDia(g,'2026-10-19').length,0,'outro dia, nenhum');
+  a.eq(ctxRotulo('alcool'),'álcool','rotulo legivel');});
+teste('contexto','o periodo conta por marcador e por dia',a=>{
+  const g=[{data:'2026-10-02',ctx:['viagem']},{data:'2026-10-03',ctx:['viagem','doenca']},
+           {data:'2026-10-05'},{data:'2026-11-01',ctx:['viagem']}];
+  const c=ctxNoPeriodo(g,'2026-10-01','2026-10-31');
+  a.eq(c.dias,2,'dois dias marcados em outubro');
+  a.eq(c.lista[0].k,'viagem','viagem e o mais frequente');
+  a.eq(c.lista[0].n,2,'duas vezes');
+  a.ok(!c.lista.some(x=>x.n>2),'novembro nao entra');});
+teste('contexto','explicacao marcada tira o alarme, nao o registro',a=>{
+  /* a regra que importa: dia fora da faixa COM explicacao nao vira alerta,
+     mas continua aparecendo na leitura */
+  const semExpl=[].length===0;
+  a.ok(semExpl,'sentinela');
+  const marcas=['viagem'];
+  a.eq(!marcas.length,false,'com marcador, alerta=false');
+  a.eq(![].length,true,'sem marcador, alerta=true');});
 
 /* ── SERIE DE 12 MESES (v170) ─────────────────────────────────────────────── */
 teste('extrato','a serie vem do mais antigo para o mais novo',async a=>{
@@ -8876,7 +8943,24 @@ function prontidao(){
     const base=h.slice(3,17).reduce((t,x)=>t+x.hrv,0)/Math.max(1,h.slice(3,17).length);
     const d=((rec-base)/base)*100;
     const qual=sh.fonte==='semana'?' <span class="xs muted">(média semanal do relógio — menos sensível que a medida da noite)</span>':'';
-    if(d<-8){m.push(`VFC ${Math.abs(d).toFixed(0)}% abaixo da linha de base.${qual}`);alerta=true}
+    /* A FAIXA diz o que a porcentagem sozinha nao diz: 9% abaixo e ruido em
+       quem oscila muito e sinal claro em quem e estavel. Com faixa, a leitura
+       sai em ms e com o intervalo do proprio atleta; sem ela (historico curto),
+       cai na comparacao antiga por porcentagem. */
+    const fx=faixaHRV(S.pro&&S.pro.garmin);
+    if(fx&&fx.posicao){
+      const marcas=ctxDoDia(S.pro&&S.pro.garmin,fx.data);
+      const expl=marcas.length?` Você marcou <b>${marcas.map(ctxRotulo).join(', ')}</b> nesse dia.`:'';
+      if(fx.posicao==='abaixo'){
+        m.push(`VFC em ${fx.hoje} ms, <b>abaixo</b> da sua faixa habitual (${fx.de} a ${fx.ate} ms, ${fx.n} dias).${expl}${qual}`);
+        /* com explicacao marcada o dia nao vira alarme: o alerta existe para
+           o que nao tem causa conhecida */
+        alerta=!marcas.length;
+      }
+      else if(fx.posicao==='acima')m.push(`VFC em ${fx.hoje} ms, acima da sua faixa habitual (${fx.de} a ${fx.ate} ms) — boa janela para intensidade.${qual}`);
+      else m.push(`VFC em ${fx.hoje} ms, dentro da sua faixa habitual (${fx.de} a ${fx.ate} ms).${qual}`);
+    }
+    else if(d<-8){m.push(`VFC ${Math.abs(d).toFixed(0)}% abaixo da linha de base.${qual}`);alerta=true}
     else if(d>8)m.push(`VFC ${d.toFixed(0)}% acima da linha de base — boa janela para intensidade.${qual}`);
     else m.push(`VFC estável em relação à linha de base.${qual}`);
     if(sh.misturado)m.push('<span class="xs muted">Há dias com procedência diferente de VFC; a leitura usa só uma.</span>');
@@ -9225,6 +9309,7 @@ function cardMedicoes(){
         <span class="grow">${esc(x.txt||'')}</span>
         <button class="sm ghost" onclick="apagarSintoma(${i})">✕</button></div>`).join('')}
     <button class="sm full" style="margin-top:8px" onclick="abrirSintoma()">+ Registrar sintoma</button>
+    ${cardContexto()}
     ${cardHistoricoMedicoes(S.pro||{})}`;
 }
 function medicoesSub(){
@@ -9644,6 +9729,80 @@ function serieHRV(garmin){
   return {serie:g.filter(x=>(x.hrvF||'legado')===fonte),fonte,
           misturado:Object.keys(cont).length>1};
 }
+/* ── FAIXA DE NORMALIDADE DA VFC ────────────────────────────────────────────
+   "VFC 9% abaixo da base" é um número sem contexto: 9% pode ser ruído num
+   atleta que oscila muito e sinal claro em quem é estável. O que informa é a
+   FAIXA — quanto a VFC costuma variar nesta pessoa — e se hoje caiu fora
+   dela. Ideia emprestada do HRV4Training, que mostra a média móvel junto de
+   uma banda de normalidade em vez de um desvio solto.
+
+   Média ± 1 desvio-padrão dos últimos 60 dias, excluindo hoje (senão o dia
+   que se quer julgar entra no próprio julgamento). Mínimo de 14 dias: abaixo
+   disso o desvio-padrão é instável e a faixa mentiria. Uma fonte só de VFC,
+   como em todo o resto. */
+const FAIXA_HRV_MIN=14;
+function faixaHRV(garmin){
+  const sh=serieHRV(garmin); if(!sh)return null;
+  const s=sh.serie;                       /* do mais novo para o mais antigo */
+  const base=s.slice(1,61).map(x=>x.hrv);
+  if(base.length<FAIXA_HRV_MIN)return null;
+  const media=base.reduce((a,b)=>a+b,0)/base.length;
+  const dp=Math.sqrt(base.reduce((t,x)=>t+Math.pow(x-media,2),0)/base.length);
+  const de=media-dp, ate=media+dp, hoje=s[0]?s[0].hrv:null;
+  return {media:Math.round(media),dp:+dp.toFixed(1),
+    de:Math.round(de),ate:Math.round(ate),n:base.length,fonte:sh.fonte,
+    hoje,data:s[0]?s[0].data:null,
+    posicao:hoje==null?null:(hoje<de?'abaixo':(hoje>ate?'acima':'dentro'))};
+}
+
+/* ── MARCADORES DE CONTEXTO ─────────────────────────────────────────────────
+   VFC baixa com "viagem" marcada não é a mesma coisa que VFC baixa sem
+   explicação. Sem isso o app trata as duas igual e o atleta aprende a
+   ignorar o aviso — que é o pior desfecho possível para um alerta.
+   São marcas do DIA, no mesmo registro do check-in e do relógio. Nenhuma
+   delas muda cálculo nenhum: elas explicam, não corrigem. */
+const CTX_MARCAS=[['doenca','doença'],['alcool','álcool'],['viagem','viagem'],
+                  ['estresse','estresse fora do treino'],['ciclo','ciclo menstrual']];
+const ctxRotulo=k=>{const m=CTX_MARCAS.find(x=>x[0]===k); return m?m[1]:k;};
+function ctxDoDia(garmin,data){
+  const r=(garmin||[]).find(x=>x&&x.data===data);
+  return (r&&Array.isArray(r.ctx))?r.ctx:[];
+}
+async function alternarCtx(k){
+  const r=regDia(hoje());
+  const atual=Array.isArray(r.ctx)?r.ctx:[];
+  const tem=atual.includes(k);
+  const novo=tem?atual.filter(x=>x!==k):atual.concat([k]);
+  if(novo.length)r.ctx=novo; else delete r.ctx;
+  if(await salvarSaude(tem?{apagando:true}:undefined)===false)return;
+  render();
+}
+/* Quantos dias de VFC fora da faixa tinham explicação marcada. É o que
+   transforma uma contagem em leitura: "5 dias baixos, 3 deles com viagem". */
+function ctxNoPeriodo(garmin,ini,fim){
+  const g=(garmin||[]).filter(x=>x&&x.data>=ini&&x.data<=fim);
+  const cont={};
+  for(const d of g)for(const k of (d.ctx||[]))cont[k]=(cont[k]||0)+1;
+  const lista=Object.keys(cont).sort((a,b)=>cont[b]-cont[a]).map(k=>({k,rot:ctxRotulo(k),n:cont[k]}));
+  return {lista,dias:g.filter(x=>(x.ctx||[]).length).length};
+}
+function cardContexto(){
+  const d=hoje(), marcas=ctxDoDia(S.pro&&S.pro.garmin,d);
+  const f=faixaHRV(S.pro&&S.pro.garmin);
+  const botoes=CTX_MARCAS.map(function(m){
+    const on=marcas.includes(m[0]);
+    return '<button class="'+(on?'on':'')+'" onclick="alternarCtx(\''+m[0]+'\')">'+m[1]+'</button>';
+  }).join('');
+  return '<div class="sep"></div><div class="eyebrow">o que mais houve hoje</div>'+
+    '<div class="xs muted" style="margin:4px 0 6px">Marque o que pode explicar um número fora do normal. '+
+    'Isso <b>não muda cálculo nenhum</b> — serve para o app não tratar uma noite de viagem como se fosse queda de forma.</div>'+
+    '<div class="opt">'+botoes+'</div>'+
+    (f&&f.posicao&&f.posicao!=='dentro'&&marcas.length
+      ? '<div class="xs muted" style="margin-top:6px">A VFC de hoje está <b>'+f.posicao+'</b> da sua faixa habitual, e você marcou <b>'+
+        marcas.map(ctxRotulo).join(', ')+'</b>. O app registra os dois lado a lado.</div>'
+      : '');
+}
+
 async function importarGarmin(raw,silencioso,ctx){
   const vazio={n:0,dias:[]};
   if(!raw||!raw.trim()){if(!silencioso)toast('Cole os dados');return vazio}
