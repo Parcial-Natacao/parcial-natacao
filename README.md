@@ -5,11 +5,12 @@ treinos, registro de tempos e parciais, competições, marcas, carga/fadiga e
 relatório de performance. **Um arquivo, sem build, sem dependências
 instaladas.**
 
-**Versão atual:** v159 (o número aparece no cabeçalho do app e em `const VER`)
+**Versão atual:** veja `const VER` em `index.html` (o número também aparece no cabeçalho do app)
 **Autor do conteúdo técnico:** Bruno Barbato (atleta e engenheiro)
 **Contexto:** equipe de natação masters, Campo Grande — MS
 
 Leia antes de mexer no código:
+- [`SDD.md`](SDD.md) — **o contrato do projeto**: o que não pode quebrar, o que já foi decidido, o que testar sempre e o que está pendente.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — fluxo de trabalho, regras de segurança e padrões.
 - [`ARQUITETURA.md`](ARQUITETURA.md) — o mapa técnico: estado, render, motor de performance, histórico de versões.
 
@@ -22,7 +23,7 @@ Leia antes de mexer no código:
 | **Código** | `index.html` — HTML + CSS + JS num arquivo só, sem framework e sem build |
 | **Banco** | Firebase **Firestore**, projeto `parcial-cdb0e`, coleção única `kv` |
 | **Autenticação** | Firebase Auth (e-mail e senha) |
-| **Hospedagem** | GitHub Pages — `https://parcial-natacao.github.io/parcial-natacao/` |
+| **Hospedagem** | GitHub Pages, domínio próprio — `https://meros360.com` |
 | **Deploy** | automático a cada push na branch `main` |
 
 Não há passo de build: editar o `index.html` e dar push já publica.

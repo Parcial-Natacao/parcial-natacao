@@ -10,10 +10,11 @@ O **Meros360** é um app de performance de natação. Características important
 
 - **PWA single-file**: praticamente tudo vive em [`index.html`](index.html) (~380 KB) — HTML + CSS + JS puro, **sem build, sem framework, sem `npm install`**.
 - **Sync na nuvem**: usa **Firebase / Firestore** (projeto `parcial-cdb0e`) para sincronizar dados entre usuários.
-- **Deploy automático**: todo push na branch `main` publica em **https://parcial-natacao.github.io** (GitHub Pages).
+- **Deploy automático**: todo push na branch `main` publica em **https://meros360.com** (GitHub Pages).
 
 Antes de tocar no código, leia nesta ordem:
 
+0. [`SDD.md`](SDD.md) — **o contrato**: invariantes que não podem quebrar, decisões já tomadas, testes obrigatórios antes de cada merge e armadilhas conhecidas. Quem muda o app atualiza o SDD no mesmo commit.
 1. [`ARQUITETURA.md`](ARQUITETURA.md) — o mapa do app (estado global `S`, `render()`, helpers do Firestore, motor de performance, histórico de versões). **É a leitura mais importante.**
 2. [`README.md`](README.md) — visão geral e setup.
 3. [`ESPECIFICACAO.md`](ESPECIFICACAO.md) — regras de negócio.
