@@ -1,0 +1,7 @@
+{
+  "indexes": [
+    {"collectionGroup":"group_members","queryScope":"COLLECTION","fields":[{"fieldPath":"uid","order":"ASCENDING"},{"fieldPath":"ativo","order":"ASCENDING"}]},
+    {"collectionGroup":"group_members","queryScope":"COLLECTION","fields":[{"fieldPath":"groupId","order":"ASCENDING"},{"fieldPath":"role","order":"ASCENDING"},{"fieldPath":"ativo","order":"ASCENDING"}]}
+  ],
+  "fieldOverrides": []
+}

@@ -62,8 +62,10 @@ provar que ainda vale.
 | Saúde vive em `pro_<uid>_sau` e é **fonte de verdade na leitura** | um defeito em Marcas não pode alcançar VFC, sono e check-in | teste `saúde` |
 | Gravação que zera uma coleção de 3+ itens é recusada | apagamento em massa quase sempre é defeito, não intenção | teste `trava` |
 | Apagar de propósito passa `{apagando:true}` | a trava não pode impedir o usuário de apagar o que quer | revisar toda chamada nova de `salvarSaude`/`salvarPro` |
-| Gravar **une** com o servidor por chave natural (dia, id) | dois aparelhos: o último a escrever apagava o que o outro acrescentou | teste `aparelhos` |
-| Exclusão **não** mescla | união ressuscitaria o item que se quis remover | teste `aparelhos` |
+| Saúde grava **diferenças de três vias**, em transação, por dia/id | união de snapshots reintroduzia valores antigos do outro aparelho | `tests/fluxos-v174.cjs`: dois aparelhos e VFC |
+| Exclusão de Saúde remove somente os itens editados, preservando inclusões independentes | substituir o documento inteiro também perdia dados; união ressuscitava exclusões | teste de dois aparelhos/exclusões |
+| Fila de Saúde é durável e separada por uid; conflito explícito não sobrescreve o servidor | gravação offline não pode virar perda silenciosa | cenário de rede real cortada e recarga |
+| Backup pessoal inclui Saúde, versões restauram Saúde e principal juntos | exportar só `pro_` não levava a partição de Saúde | cenário de backup/restauração em emulador |
 | Importar duas vezes não soma duas vezes | cada item tem chave própria; totais do dia são derivados | teste `garmin` |
 | Apagar conta leva `pro_`, `pro_*_sau`, as 8 versões, `kPerf` e os anexos | prometer exclusão e guardar dado de saúde é pior que não prometer | função `apagarDadosDaConta` |
 
@@ -98,6 +100,13 @@ provar que ainda vale.
 | decisão | quando | razão |
 |---|---|---|
 | PRO **não** administra equipe; só técnico da equipe ou administrador | out/2026 | PRO é atleta competitivo; as regras publicadas exigem `perfil == 'tecnico'` |
+| Criar grupo privado permite gerir **aquele grupo**, sem promover o perfil nem assumir clube/equipe legada | out/2026 | propriedade do espaço não comprova representação institucional nem habilitação profissional |
+| Técnico de grupo exige convite aceito e credencial conferida separadamente pela administração | out/2026 | CREF digitado não comprova identidade; número de registro não comprova vínculo |
+| Atleta e PRO podem colar/montar treino próprio sem técnico | out/2026 | PRO não depende de prescrição do sistema nem de código |
+| Geração automática é para Atleta comum sem técnico ativo; versão do algoritmo depende de revisão profissional registrada | out/2026 | não interferir na prescrição do técnico; não presumir segurança clínica |
+| Gerador usa nível, capacidade declarada, tempo e piscina; nunca Saúde ou IA externa | out/2026 | escopo aprovado por Renato/Bruno; montagem não é diagnóstico ou avaliação individual |
+| Convites individuais vinculados ao e-mail; transferência exige aceite; nome público não concede acesso | out/2026 | impedir tomada de grupo e autopromoção |
+| Compartilhamento novo de grupo é opt-in: tempos, duração, RPE e conclusão, sem Saúde bruta | out/2026 | ser responsável pelo espaço não dá direito a exames/VFC |
 | Administrador global lê o `pro_` de qualquer conta | — | permite suporte e recuperação; **declarado no guia**, não escondido |
 | Saúde em documento próprio | v160 | limitar o raio de um defeito |
 | Extrato por **mês de calendário**, comparação normalizada por semana | v169 | é como atleta e técnico pensam; 28 vs 31 dias falseia a comparação |
@@ -128,10 +137,13 @@ impede o conserto de hoje de voltar no mês que vem.
 ### 3.2 Quando mexer nas regras do Firestore
 
 ```
-cd firebase && npm run test:rules      # precisa de Node + emulador
+cd firebase
+firebase emulators:exec --config firebase.qa.json --project demo-meros-v174 --only firestore,auth "npm run test:rules && node ../tests/fluxos-v174.cjs"
 ```
-Depois **republicar no console** (Firestore › Regras). Publicar antes de mergear
-o app correspondente pode quebrar o que está no ar.
+Dependências de desenvolvimento e configuração do navegador: ver
+[`docs/VALIDACAO-INICIO-GRUPOS.md`](docs/VALIDACAO-INICIO-GRUPOS.md).
+Depois seguir a publicação coordenada de regras, índices e app desse roteiro.
+O arquivo do repositório não publica sozinho. Nunca usar contas reais no QA.
 
 ### 3.3 Quando mexer em gravação, sincronia ou importação
 
@@ -140,7 +152,7 @@ Reencenar, no navegador, com banco simulado:
 | cenário | o que provar |
 |---|---|
 | Espelho de outro atleta + troca de chapéu | gravação bloqueada; `S.pro` devolvido |
-| `fdb.disableNetwork()` e salvar | retorna em segundos, avisa, não trava |
+| Cortar a rede real do navegador e salvar | retorna em segundos, avisa, fila sobrevive à recarga; `disableNetwork()` sozinho não bloqueia necessariamente RPC de transação |
 | Dois aparelhos, mesmo documento | o que o outro acrescentou sobrevive |
 | Importar o mesmo arquivo duas vezes | totais não dobram |
 | Apagar item | continua apagando (a união não o ressuscita) |
@@ -159,7 +171,9 @@ Reencenar, no navegador, com banco simulado:
 
 - [ ] **Revisão dos cálculos por profissional de ciência do esporte.** É a maior
       dívida em aberto, e não é técnica. Um piloto acompanhado começa a pagá-la.
-- [ ] Rodar `npm run test:rules` em máquina com Node (aqui não há).
+- [x] Executar regras em emulador com Node/Java — evidência e roteiro em `docs/VALIDACAO-INICIO-GRUPOS.md` (não equivale a validar produção).
+- [ ] Revisar profissionalmente o gerador `g1` antes de liberá-lo. Implementação não marca revisão como concluída.
+- [ ] Publicar regras e índices desta branch e conferir o piloto no ambiente de destino, conforme roteiro.
 - [ ] Decidir sobre plano Blaze — destravaria PITR (hoje inexistente no Spark) e
       o Storage para anexos.
 

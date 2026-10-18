@@ -524,6 +524,11 @@ svg.chart{width:100%;height:auto;display:block}
      por causa da marca. */
   @page{margin:20mm 12mm 18mm}
 }
+.inicio-acoes{display:grid;gap:8px;margin:14px 0}
+.inicio-guiado p{max-width:65ch}
+.grupo-linha{padding:14px 0;border-bottom:1px solid var(--line)}
+.treino-texto{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+@media(min-width:620px){.inicio-acoes{grid-template-columns:repeat(2,minmax(0,1fr))}.inicio-acoes>button:last-child:nth-child(odd){grid-column:1/-1}}
 </style>
 
 <header id="hdr" class="hide">
@@ -552,12 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
+<script src="./persistencia-segura.js?v=v174"></script>
+<script src="./inicio-e-grupos.js?v=v174"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v173';
+const VER='v174';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -777,12 +784,19 @@ const _CAIXA_PRONTA=(async()=>{
   try{
     if(typeof indexedDB==='undefined'||!FB_CONFIG.projectId)return;
     const nome=`firestore/[DEFAULT]/${FB_CONFIG.projectId}/main`;
+    // Nunca crie um banco vazio antes do SDK: ele parece um esquema antigo
+    // incompleto e fazia o primeiro acesso quebrar em deleteObjectStore.
+    if(typeof indexedDB.databases!=='function')return;
+    const existente=(await indexedDB.databases()).find(d=>d.name===nome&&d.version>0);
+    if(!existente)return;
     const db=await new Promise((res,rej)=>{
-      const r=indexedDB.open(nome);
+      const r=indexedDB.open(nome,existente.version);
+      r.onupgradeneeded=()=>{r.transaction.abort();rej(new Error('cache ainda não inicializado'));};
       r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
       r.onblocked=()=>rej(new Error('bloqueado'));
       setTimeout(()=>rej(new Error('tempo esgotado')),4000);
     });
+    db.onversionchange=()=>db.close();
     try{
       const lojas=[...db.objectStoreNames].filter(n=>/^remoteDocuments/.test(n));
       for(const loja of lojas){
@@ -859,7 +873,7 @@ function camposSeguranca(k,v){
        O split corta o sufixo das versões diárias (pro_<uid>_bk3). */
     o.dono=val._dono||k.slice(4).split('_')[0]||null;
   }
-  else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null); }
+  else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null);o.geradorVersao=val.origem?.tipo==='gerador'?(val.origem.versao||null):null; }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
     o.equipe=val.equipe||null;
@@ -968,7 +982,8 @@ async function gravarComEspera(k,v){
 function marcarSincronia(){
   const pm=document.getElementById('pModo');
   if(!pm)return;
-  if(_pendentes>0){ pm.textContent=`sincronizando ${_pendentes}`; pm.className='pill clock'; }
+  const n=_pendentes+(typeof pendenciasSaude==='function'?pendenciasSaude():0);
+  if(n>0){ pm.textContent=`sincronizando ${n}`; pm.className='pill clock'; }
   else { pm.textContent=MODO; pm.className='pill '+(EMREDE?'tec':''); }
 }
 const EMREDE=!!(FB||NUVEM);
@@ -1066,50 +1081,8 @@ async function recarregarForcado(){
    não deixam ler. Então pedimos pelas chaves que são do próprio usuário —
    cadastro, dados PRO, o espelho da equipe e a caixa do currículo. É isso que
    um atleta precisa para não perder a vida dele no app. */
-async function exportarBackup(){
-  const dados={};
-  if(LOCAL){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
-    if(k&&k.startsWith(PFX))dados[k.slice(PFX.length)]=JSON.parse(localStorage.getItem(k))}}
-  else if(FB||NUVEM){
-    if(!S.u)return toast('Entre na sua conta para exportar.');
-    toast('Montando o backup…');
-    const chaves=[kUser(S.u.email)];
-    if(temDadosPessoais())chaves.push(kPro(S.u.id));
-    if(S.u.perfil==='pro'){
-      chaves.push(kPTrIdx(S.u.id));
-      const pessoais=await DB.get(kPTrIdx(S.u.id))||[];
-      for(const t of pessoais)if(t&&t.id)chaves.push(kPTr(S.u.id,t.id));
-    }
-    if(S.u.equipe){ chaves.push(kEq(S.u.equipe), kPerf(S.u.equipe,S.u.id), kAbmn(S.u.equipe,S.u.id)); }
-    for(const k of chaves){ try{ const v=await DB.get(k); if(v!=null)dados[k]=v; }catch(_){} }
-  }
-  else Object.keys(MEM).forEach(k=>dados[k]=JSON.parse(MEM[k]));
-  const n=Object.keys(dados).length;
-  if(!n)return alerta('Backup vazio','Não consegui ler nenhum dado seu. Confira se você está conectado e entrou na conta — um arquivo vazio é pior do que nenhum, porque parece um backup.');
-  const pacote={app:APP_NOME,versao:VER,em:new Date().toISOString(),
-    conta:S.u?S.u.email:null,censo:temDadosPessoais()?censoPro(S.pro):null,dados};
-  try{
-    const url=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
-    const a=document.createElement('a'); a.href=url; a.download=`meros360-backup-${hoje()}.json`; a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),4000); toast(`Backup gerado · ${n} registro(s)`);
-  }catch(e){
-    sheet(`<h2>Backup</h2><p class="small muted">Copie e guarde este texto.</p>
-      <textarea id="bkTxt" style="min-height:200px;font-size:11px">${esc(JSON.stringify(pacote))}</textarea>
-      <button class="primary full" style="margin-top:10px" onclick="copiarTexto('bkTxt')">Copiar</button>`);
-  }
-}
-async function importarBackup(inp){
-  const f=inp.files[0]; if(!f)return;
-  try{
-    const j=JSON.parse(await f.text());
-    if(!j.dados)return toast('Arquivo não reconhecido');
-    let n=0; for(const [k,v] of Object.entries(j.dados)){ await DB.set(k,v); n++ }
-    toast(`${n} registros restaurados`);
-    const ses=await DB.get('sessao',false);
-    if(ses&&ses.email){const u=await DB.get(kUser(ses.email)); if(u)return entrarSessao(u)}
-    S.vista='entrada'; render();
-  }catch(e){ toast('Não consegui ler o backup') }
-}
+async function exportarBackup(){return exportarBackupSeguro();}
+async function importarBackup(inp){return importarBackupSeguro(inp);}
 /* chaves */
 const kUser=em=>`u_${em.toLowerCase()}`;
 const kEq=eq=>`eq_${eq}`;                     /* {slug,nome,criadoEm,tecnicoEmail} */
@@ -1126,7 +1099,7 @@ const kPTr=(uid,id)=>`pt_${uid}_${id}`;        /* treino de piscina pessoal do P
 function ehTreinoPessoal(id,t){return !!(t?._pessoal||(S.tridx||[]).find(x=>x.id===id)?._pessoal)}
 function chaveTreinoUsuario(id,t){return ehTreinoPessoal(id,t)?kPTr(S.u.id,id):kTr(S.u.equipe,id)}
 async function lerTreinoUsuario(id){return DB.get(chaveTreinoUsuario(id))}
-async function gravarTreinoUsuario(t){return DB.set(chaveTreinoUsuario(t.id,t),t)}
+async function gravarTreinoUsuario(t){return gravarComEspera(chaveTreinoUsuario(t.id,t),t)}
 async function transacaoTreinoUsuario(id,fn){return transacao(chaveTreinoUsuario(id),fn)}
 /* ── O DADO CARREGA O DONO ──────────────────────────────────────────────────
    A perda de 14/10 teve uma causa só, por trás de todos os sintomas: o objeto
@@ -1533,7 +1506,7 @@ function traduzErroFB(code){
    Se a validação falhar, a conta recém-criada é removida. */
 async function cadastrarFB(dados){
   const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,nivel}=dados;
-  const atleta=perfil==='atleta'||perfil==='pro', semEquipe=atleta&&!equipe;
+  const atleta=perfil==='atleta'||perfil==='pro', semEquipe=!equipe;
   if(!equipe&&!semEquipe)return toast('Informe o nome da equipe');
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
@@ -1546,7 +1519,7 @@ async function cadastrarFB(dados){
 
   /* Para os dois tipos de atleta, equipe/clube é apenas afiliação pública. O vínculo que dá
      acesso aos treinos de um técnico é escolhido separadamente, já dentro do
-     app. Somente o técnico precisa nascer ligado a uma equipe operacional. */
+     app. Técnico pode começar sem equipe e receber um convite de grupo. */
   const em=email.toLowerCase(), eqSlug=atleta?'':slug(equipe);
   const afiliacao=atleta&&equipe?`cat:${slug(equipe)}`:null;
   let cred;
@@ -1559,7 +1532,7 @@ async function cadastrarFB(dados){
   if(perfil==='tecnico'){
     /* Equipes são criadas exclusivamente pelo administrador. Isso impede que
        alguém invente uma equipe durante o cadastro e vire gestor sem revisão. */
-    if(!eq)return abortar('Equipe não encontrada. Peça ao administrador para criar a equipe antes do cadastro do técnico.');
+    if(eqSlug&&!eq)return abortar('Equipe não encontrada. Crie a conta sem equipe e depois crie um grupo privado ou receba um convite.');
   }else{
     /* Cadastro livre: a afiliação não depende de técnico e não concede acesso
        compartilhado. O atleta escolhe um técnico depois, se quiser. */
@@ -1601,6 +1574,7 @@ async function autenticarFB(email,senha){
     S.emailPendente=em; S.envioFalhou=pend?.confirmacaoEmail?.status==='falhou'?(pend.confirmacaoEmail.erro||'falhou'):null;
     S.vista='verificar'; S.u=null; render(); return toast('Confirme seu e-mail antes de entrar.');
   }
+  await fauth.currentUser.getIdToken(true); // atualiza email_verified usado nas regras dos grupos
   const u=await DB.get(kUser(em));
   if(!u){ await fauth.signOut(); return toast('Conta sem perfil. Fale com o administrador para regularizar o acesso.'); }
   if(u.ativo===false){ await fauth.signOut(); return toast('Conta desativada. Fale com o administrador.'); }
@@ -1611,7 +1585,7 @@ async function autenticarFB(email,senha){
 async function cadastrar(dados){
   if(FB)return cadastrarFB(dados);
   const {perfil,equipe,nome,email,nascimento,telefone,senha,senha2,tipo,cpf,nivel}=dados;
-  const atleta=perfil==='atleta'||perfil==='pro', semEquipe=atleta&&!equipe;
+  const atleta=perfil==='atleta'||perfil==='pro', semEquipe=!equipe;
   if(!equipe&&!semEquipe)return toast('Informe o nome da equipe');
   if(!nome||nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('E-mail inválido');
@@ -1629,7 +1603,7 @@ async function cadastrar(dados){
   let nivelFinal=nivel||'Master';
 
   if(perfil==='tecnico'){
-    if(!eq)return toast('Equipe não encontrada. Peça ao administrador para criar a equipe antes do cadastro do técnico.');
+    if(eqSlug&&!eq)return toast('Equipe não encontrada. Crie a conta sem equipe e depois crie um grupo privado ou receba um convite.');
   }else{
     if(cpf&&!cpfValido(cpf))return toast('CPF inválido');
     nivelFinal=nivel||'Master';
@@ -1663,7 +1637,11 @@ async function entrarSessao(u){
   S.eq=u.equipe?await DB.get(kEq(u.equipe)):null;
   S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
   S.modoAtleta=chapeuSalvo(u);
-  await carregarDados(); ligarSincronia(); render();
+  S.grupos=null;S.grDetalhe=null;S.grGrupoId=null;S.gruposErro=null;S._sauBase=null;
+  await carregarDados(); ligarSincronia();
+  try{await carregarGrupos();}catch(e){S.grupos=[];S.gruposErro=e.message;}
+  if(u.perfil==='tecnico'&&!u.equipe)S.aba='grupos';
+  render();await receberConviteNoLogin();
 }
 /* Somente o administrador global liga/desliga o chapéu de gestão. */
 function alternarGestao(){
@@ -1760,7 +1738,7 @@ function copiar(t){
 async function carregarDados(){
   if(!S.u)return;
   const eq=S.u.equipe;
-  const pessoais=S.u.perfil==='pro'&&!ehGestor()?((await DB.get(kPTrIdx(S.u.id)))||[]):[];
+  const pessoais=temDadosPessoais()&&!ehGestor()?((await DB.get(kPTrIdx(S.u.id)))||[]):[];
   if(!eq){
     S.eq=null; S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
@@ -1867,7 +1845,7 @@ async function restaurarCaixaPreta(){
     if(Array.isArray(CAIXA_PRETA.pro[f.campo])){ S.pro[f.campo]=CAIXA_PRETA.pro[f.campo]; n+=f.n; }
   }
   /* reposição é aditiva: a trava anti-apagamento não tem motivo para reclamar */
-  if(await salvarPro()===false)return;
+  if(await salvarSaude()===false)return;
   S.caixaFalta=null; fecharSheet();
   toast(`${n} registro(s) restaurado(s) do cache deste aparelho`); render();
 }
@@ -1899,6 +1877,7 @@ function mesclaUsuarioSincronia(atual,doBanco,adminOrig){
   return doBanco;
 }
 async function sincronizar(sil){
+  if(S.u)sincronizarFilaSaude(S.u.id);
   if(!S.u)return;
   /* A sincronia SILENCIOSA nunca interrompe quem está preenchendo algo: nem
      escrevendo treino, nem com uma folha aberta, nem com qualquer campo em
@@ -2055,7 +2034,7 @@ async function salvarPro(op){
   if(okPro===false)return false;
   /* snapshot visível ao técnico (desempenho + carga + composição p/ a assinatura de sprint;
      SEM Saúde: Garmin (VFC/sono) e exames laboratoriais ficam só no pro_ privado) */
-  if(S.u.equipe&&S.u.aprovado!==false)await DB.set(kPerf(S.u.equipe,S.u.id),{nome:S.u.nome,nivel:S.u.nivel||null,
+  if(S.u.equipe&&S.u.aprovado!==false)await gravarComEspera(kPerf(S.u.equipe,S.u.id),{nome:S.u.nome,nivel:S.u.nivel||null,
     pbs:S.pro.pbs||{},resultados:S.pro.resultados||[],seco:S.pro.seco||[],alvos:S.pro.alvos||null,
     bioimp:S.pro.bioimp||[],prontidao:(typeof prontidaoSubj==='function'?prontidaoSubj(7):null),
     /* o técnico precisa saber se o atleta está bem para ajustar a carga. Vai só
@@ -2105,25 +2084,7 @@ async function abrirVersoes(){
     <div class="note warn" style="margin:10px 0">Restaurar <b>substitui</b> os seus dados de hoje pelos daquele dia. O estado atual é guardado antes, como <b>“antes da última restauração”</b> — então dá para voltar atrás.</div>
     <button class="primary full" onclick="fecharSheet()">Fechar</button>`);
 }
-async function restaurarVersao(slot){
-  const v=await DB.get(kProBk(S.u.id,slot));
-  if(!v||!v.pro)return toast('Versão não encontrada');
-  if(v.pro._dono&&v.pro._dono!==S.u.id)return alerta('Versão de outra conta','Esta cópia não é sua e não foi restaurada.');
-  /* O estado atual vai para a fatia 'undo', NÃO para a de hoje: a de hoje
-     guarda o estado da manhã, que é justamente o que se costuma querer de
-     volta — gravar por cima dela seria destruir o alvo da restauração. */
-  await DB.set(kProBk(S.u.id,'undo'),
-    {_dono:S.u.id,em:Date.now(),dia:hoje(),ver:VER,censo:censoPro(S.pro),
-     pro:JSON.parse(JSON.stringify(S.pro))});
-  S.pro=comDono(v.pro,S.u.id);
-  /* a versão restaurada passa a ser o estado "carregado" do dia, senão a
-     próxima gravação guardaria o dado antigo como se fosse o de hoje */
-  S._proCarregado=JSON.stringify(S.pro); S._bkDia=hoje();
-  if(await salvarPro({apagando:true})===false)return;
-  fecharSheet();
-  toast(`Dados restaurados para ${DIAS_BK[slot]!==undefined?DIAS_BK[slot]:'antes da restauração'} ${(v.dia||'').slice(8,10)}/${(v.dia||'').slice(5,7)}`);
-  render();
-}
+async function restaurarVersao(slot){return restaurarVersaoSeguro(slot);}
 /* Lê o documento de Saúde e o funde em S.pro. A forma em memória não muda —
    as ~38 telas continuam lendo S.pro.garmin, S.pro.exames e companhia. O que
    mudou é de ONDE vem e para onde vai.
@@ -2133,69 +2094,10 @@ async function restaurarVersao(slot){
    para de carregar essas listas depois que o documento novo estiver
    confirmado — senão uma falha no meio da migração apagaria o que ela deveria
    proteger. */
-async function juntarSaude(){
-  if(!S.u)return;
-  S._sauOk=false;
-  let sau=null;
-  try{ sau=await DB.get(kSau(S.u.id)); }catch(_){ return; }   /* offline: fica o do pro_ */
-  if(!sau){
-    /* Conta anterior à separação: move a Saúde para o documento próprio agora,
-       sem esperar que o usuário abra a aba. Enquanto ela estiver só no pro_,
-       continua exposta ao defeito que a separação existe para evitar. */
-    const tem=CAMPOS_SAUDE.some(k=>Array.isArray(S.pro[k])&&S.pro[k].length);
-    if(tem&&!S.laudoAtleta&&!S.pro._espelho&&(!S.pro._dono||S.pro._dono===S.u.id)){
-      const corpo=soSaude(S.pro); corpo._dono=S.u.id;
-      try{ if(await DB.set(kSau(S.u.id),corpo))S._sauOk=true; }catch(_){}
-    }
-    return;
-  }
-  if(sau._dono&&sau._dono!==S.u.id){ console.warn('sau_ de outro dono — ignorado'); return; }
-  for(const k of CAMPOS_SAUDE)if(Array.isArray(sau[k]))S.pro[k]=sau[k];
-  S._sauOk=true;
-}
+async function juntarSaude(){return juntarSaudeSeguro();}
 /* Única porta de escrita da Saúde. Mesmas travas do salvarPro, aplicadas só
    às listas de Saúde — e nenhuma outra função escreve aqui. */
-async function salvarSaude(op){
-  if(!(S.u&&temDadosPessoais()))return;
-  if(S.laudoAtleta||(S.pro&&S.pro._espelho)){
-    console.warn('salvarSaude bloqueado: espelho');
-    toast('Não gravei: esta tela é a do atleta, não a sua.');
-    return false;
-  }
-  if(S.pro&&S.pro._dono&&S.pro._dono!==S.u.id){
-    console.warn('salvarSaude bloqueado: dono',S.pro._dono);
-    alerta('Gravação bloqueada','Os dados abertos nesta tela <b>pertencem a outra conta</b> e não foram gravados nos seus.');
-    return false;
-  }
-  let corpo=soSaude(S.pro); corpo._dono=S.u.id;
-  /* UNE com o servidor antes de gravar: outro aparelho pode ter acrescentado
-     algo depois de eu carregar, e gravar por cima apagaria em silêncio.
-     Apagar não mescla — ali a intenção É remover. */
-  if(!(op&&op.apagando)){
-    try{
-      const rem=await DB.get(kSau(S.u.id));
-      if(rem&&(!rem._dono||rem._dono===S.u.id)){
-        corpo=mesclarSaude(rem,corpo); corpo._dono=S.u.id;
-        /* o que veio do outro aparelho entra na tela também, senão o app
-           mostraria menos do que acabou de gravar */
-        for(const k of CAMPOS_SAUDE)S.pro[k]=corpo[k];
-      }
-    }catch(_){ /* offline: segue com o que tenho, o cache resolve depois */ }
-  }
-  /* o censo da Saúde é conferido contra o que foi carregado, igual ao do pro_ */
-  const perdas=(op&&op.apagando)?[]:perdasPro(S._sauCenso,corpo);
-  if(perdas.length){
-    console.warn('salvarSaude bloqueado: apagaria',perdas);
-    alerta('Gravação bloqueada',`Esta gravação apagaria <b>${esc(perdas.join(', '))}</b> dos seus dados de Saúde. Nada foi alterado — feche e abra o app.`);
-    return false;
-  }
-  const ok=await gravarComEspera(kSau(S.u.id),corpo);
-  if(ok===false)return false;
-  if(ok==='pendente')toast('Salvo neste aparelho — sincroniza quando a internet voltar');
-  S._sauOk=true; S._sauCenso=censoSaude(corpo);
-  await salvarPro(op);          /* o kPerf do técnico e a versão do dia seguem no pro_ */
-  return true;
-}
+async function salvarSaude(op){return salvarSaudeSeguro(op);}
 function censoSaude(o){ const c={}; for(const k of CAMPOS_SAUDE)c[k]=Array.isArray(o&&o[k])?o[k].length:0; return c; }
 /* ── DOIS APARELHOS, UM DOCUMENTO ───────────────────────────────────────────
    Reproduzido em teste: o celular faz o check-in do dia; o notebook, que
@@ -2301,7 +2203,7 @@ function guardarCadastro(){
 }
 function passoCadastro(dir){
   guardarCadastro();
-  if(dir>0&&CAD_PASSO===1&&!CAD.equipe&&!(['atleta','pro'].includes(S.perfilEscolhido)&&CAD.semEquipe))return toast('Informe sua equipe ou escolha “Ainda não tenho equipe”');
+  if(dir>0&&CAD_PASSO===1&&!CAD.equipe&&!CAD.semEquipe)return toast('Informe sua equipe ou escolha “Ainda não tenho equipe”');
   if(dir>0&&CAD_PASSO===2){
     if(!CAD.nome||CAD.nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(CAD.email||''))return toast('Informe um e-mail válido');
@@ -2341,10 +2243,10 @@ function telaCadastro(){
                <datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>
                <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou (digite para buscar).':'Digite e escolha a mesma equipe do seu técnico.'}</div>`
             : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
-  const escolhaEquipe=atleta?`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
+  const escolhaEquipe=`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
       <button type="button" class="${!CAD.semEquipe?'on':''}" aria-pressed="${!CAD.semEquipe}" onclick="selSituacaoEquipe('com')">Tenho uma equipe</button>
       <button type="button" class="${CAD.semEquipe?'on':''}" aria-pressed="${!!CAD.semEquipe}" onclick="selSituacaoEquipe('sem')">Ainda não tenho equipe</button>
-    </div></div>`:'';
+    </div></div>`;
   const equipe=`${p==='pro'?`<div class="note ok" style="margin:0 0 12px"><b>Perfil competitivo.</b> Você terá acompanhamento diário, registro completo dos tempos, Garmin, histórico e relatório de análise. Equipe e técnico continuam opcionais.</div>`:''}${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Equipe e técnico são opcionais. Depois de confirmar o e-mail, você já poderá registrar seus próprios treinos e escolher qualquer um dos dois quando quiser.</div>`:`<div class="field"><label for="cdEquipe">${atleta?'Equipe ou clube <span class="muted">(opcional)</span>':'Equipe'}</label>${campoEquipe}</div>`}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
     <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
@@ -2404,7 +2306,18 @@ async function confirmarEmailAgora(){
      e-mail chegar passa desse tempo com facilidade. */
   if(FB&&fauth&&!fauth.currentUser)
     return alerta('Sessão expirada','Para conferir a confirmação eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro — se o link já foi aberto, você entra direto.');
-  try{await fauth.currentUser.reload();if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));if(!u)return toast('Perfil não encontrado');if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');u.confirmacaoEmail={status:'confirmado',atualizadoEm:Date.now(),erro:null};await DB.set(kUser(em),u);await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!')}catch(e){toast('Não consegui verificar agora. Tente novamente.')}}
+  try{
+    await fauth.currentUser.reload();
+    if(!fauth.currentUser.emailVerified)return toast('A confirmação ainda não apareceu. Abra o link recebido e tente de novo.');
+    await fauth.currentUser.getIdToken(true);
+    const em=(fauth.currentUser.email||'').toLowerCase(),u=await DB.get(kUser(em));
+    if(!u)return toast('Perfil não encontrado');
+    if(u.ativo===false)return toast('Esta conta está desativada. Fale com o administrador.');
+    u.confirmacaoEmail={status:'confirmado',atualizadoEm:Date.now(),erro:null};
+    if(await DB.set(kUser(em),u)===false)return toast('Não consegui confirmar o perfil. Tente novamente.');
+    await entrarSessao(u);toast('E-mail confirmado. Bem-vindo!');
+  }catch(e){toast('Não consegui verificar agora. Tente novamente.');}
+}
 async function sairVerificacao(){try{if(FB)await fauth.signOut()}catch(_){}S.emailPendente=null;S.envioFalhou=null;S.vista='login';render()}
 
 /* ---------- conta / ajustes ---------- */
@@ -2475,7 +2388,8 @@ function abrirConta(){
       <button class="full ghost" style="color:var(--clock)" onclick="sairDaEquipe()">Desvincular técnico</button>
       <div class="xs muted" style="margin-top:6px">Você deixa de receber os treinos desse técnico. Sua equipe do perfil, seus treinos e seu histórico continuam salvos.</div>`:''}
     <div class="sep"></div>
-    <button class="full ghost" onclick="abrirModo()">Dados e backup</button>
+    <button class="full" onclick="abrirMeusGrupos()">Meus grupos privados e convites</button>
+    <button class="full ghost" style="margin-top:8px" onclick="abrirModo()">Dados e backup</button>
     <button class="full danger" style="margin-top:9px" onclick="sair()">Sair da conta</button>
     <div class="sep"></div>
     <button class="full ghost" style="color:var(--clock)" onclick="apagarMinhaConta()">Apagar minha conta…</button>`);
@@ -2488,7 +2402,8 @@ function abrirModo(){
         ? 'Modo <b>neste aparelho</b>: tudo fica gravado na memória do próprio celular e continua aqui quando você fechar e abrir de novo. Sem servidor, o que o técnico lança não chega sozinho no seu aparelho — use o compartilhamento por WhatsApp e guarde backups.'
         : 'Modo <b>temporário</b>: os dados somem ao recarregar a página.'}</div>
     <div class="sep"></div><div class="eyebrow">backup</div>
-    <p class="small muted" style="margin:6px 0 10px">Um arquivo com tudo: contas, treinos, competições e seus dados PRO.</p>
+    <p class="small muted" style="margin:6px 0 10px">Uma cópia do seu cadastro, treinos pessoais e dados de Saúde, inclusive alterações pendentes. Anexos externos são referências, não cópias dos arquivos. Publicações de grupos e equipes permanecem nos espaços compartilhados.</p>
+    <button class="full" style="margin-bottom:10px" onclick="abrirPendenciasSaude()">Pendências de Saúde (${pendenciasSaude()})</button>
     <button class="primary full" onclick="exportarBackup()">Exportar backup</button>
     <div class="field" style="margin-top:12px"><label>Restaurar de um arquivo</label>
       <input type="file" accept=".json,application/json" onchange="importarBackup(this)"></div>
@@ -2597,7 +2512,7 @@ function renderInterno(){
   }
   /* Só o técnico depende da aprovação administrativa. Atleta e PRO continuam
      usando seus dados privados enquanto o vínculo com um técnico está pendente. */
-  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&S.u.perfil==='tecnico'){
+  if(!ehAdmin()&&S.u.aprovado===false&&S.u.equipe&&S.u.perfil==='tecnico'&&S.aba!=='grupos'){
     hdr.classList.remove('hide'); nav.classList.add('hide');
     document.getElementById('btnVoltar').classList.add('hide');
     const pm=document.getElementById('pModo'); if(pm){pm.textContent=MODO;pm.className='pill '+(EMREDE?'tec':'')}
@@ -2639,9 +2554,11 @@ function renderInterno(){
     if(S.u.podeSaude)mapa.garmin=telaGarmin;
     if(S.u.podeRelatorio)mapa.relatorio=telaRelatorio; }
   if(ehDev())mapa.equipes=telaEquipes;   /* aba do desenvolvedor */
+  mapa.grupos=telaGrupos;
   /* cardCaixaPreta vem primeiro, e em todas as abas: perda de dado não espera
      o usuário passar na aba certa — e a cópia que a repõe é perecível. */
   app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  marcarSincronia();
   _irAteHoje();
 }
 /* cor determinística por equipe (fundo suave) + destaque */
@@ -3210,13 +3127,14 @@ async function salvarTreino(){
   if(fst&&ehDataURL(pdf)&&!pessoal){ const u=await subirAnexo(anexoTreino(S.u.equipe,id),pdf); if(u)pdfRef=u; }
   const t={id,data,titulo,nivel,piscina,parcial25,textoBruto:texto,blocos,pdf:pdfRef,para:[...S.selMulti],
     registros:editando?(S.treino.registros||{}):{},autor:S.u.nome,
-    criadoPor:editando?(S.treino.criadoPor||null):S.u.id,atualizado:Date.now(),_pessoal:pessoal};
+    criadoPor:editando?(S.treino.criadoPor||null):S.u.id,atualizado:Date.now(),_pessoal:pessoal,
+    origem:editando&&S.treino.origem?{...S.treino.origem,editadoEm:Date.now()}:null};
   const chaveIdx=pessoal?kPTrIdx(S.u.id):kTrIdx(S.u.equipe);
-  await DB.set(pessoal?kPTr(S.u.id,id):kTr(S.u.equipe,id),t);
+  if(await gravarComEspera(pessoal?kPTr(S.u.id,id):kTr(S.u.equipe,id),t)===false)return;
   const idx=(await DB.get(chaveIdx)||[]).filter(x=>x.id!==id);
   idx.unshift({id,data,titulo,nivel,vol:volTreino(t),para:t.para,nAtletas:t.para.length,_pessoal:pessoal});
   idx.sort((a,b)=>b.data.localeCompare(a.data));
-  await DB.set(chaveIdx,idx);
+  if(await gravarComEspera(chaveIdx,idx)===false)return;
   S.treino=t; S.sub='detalhe'; S.editando=false; S.rascunho=null; TREINOPDF=null; S.pilha.pop();
   await carregarDados(); S.treino=t;
   toast(`${t.blocos.reduce((n,b)=>n+b.itens.length,0)} séries · ${t.para.length} atleta(s)`);
@@ -3279,7 +3197,8 @@ function telaTreinoDetalhe(){
     ${b.itens.map(i=>linhaSerie(t,i,at,blocoSolto,ctxBloco(b,i.id))).join('')}`;}).join(''):'<div class="empty"><div class="big">Sem atletas neste treino</div></div>'}
   <div class="row" style="margin:16px 0 30px">
     <button class="ghost full" onclick="compartilharTreino()">Compartilhar treino e tempos</button>
-  </div>`;
+  </div>
+  ${t.origem?.tipo==='grupo'?'<div class="note"><p class="small">Este treino veio de um grupo. Seus tempos continuam privados até você escolher enviá-los.</p><button class="full" onclick="compartilharTreinoGrupo()">Enviar meu acompanhamento ao técnico do grupo</button><button class="ghost full" style="margin-top:8px" onclick="revogarCompartilhamentoGrupo()">Remover acompanhamento compartilhado</button></div>':''}`;
 }
 /* nº de rodadas EFETIVO: do interpretador (item.rodadas) OU adicionadas à mão
    pelo atleta/técnico (rec.nrd). Assim dá para lançar 2ª/3ª rodada em qualquer série. */
@@ -3915,7 +3834,7 @@ function faixaSemana(){
    "não fez", e pintar de cinza um treino que o atleta fez seria pior que omitir. */
 function feitoConhecido(meta){ const d=semDoc(meta.id); return d?treinoFeito(d,S.u.id):null; }
 function telaTreinosAtleta(){
-  if(S.sub==='novo'&&S.u.perfil==='pro')return telaNovoTreino();   /* PRO lança treino de piscina como o técnico */
+  if(S.sub==='novo'&&temDadosPessoais())return telaNovoTreino();
   if(S.treino&&S.sub==='detalhe')return telaTreinoDetalhe();
   /* liberação dia a dia: o atleta só vê o treino do técnico quando chega a data */
   const meus=S.tridx.filter(t=>(t.para||[]).includes(S.u.id)&&(t.data||'')<=hoje());
@@ -3925,8 +3844,10 @@ function telaTreinosAtleta(){
   const cardFn=t=>t._extra?cardTreinoExtra(t):cardTreinoAtleta(t);
   return`
   <div class="row" style="margin:16px 0 6px"><h2>Meus treinos</h2><div class="grow"></div>
-    ${S.u.perfil==='pro'?`<button class="sm ghost" onclick="novoTreinoPro()">+ Piscina</button>`:''}
-    <button class="sm primary" onclick="abrirTreinoExtra()">+ Meu treino</button></div>
+    <button class="sm ghost" onclick="novoTreinoPro()">+ Piscina</button>
+    <button class="sm" onclick="abrirTreinoExtra()">Outra atividade</button></div>
+  ${cardInicioGuiado(lista.length)}
+  <button class="ghost full" style="margin-bottom:10px" onclick="abrirMeusGrupos()">Meus grupos e treinos recebidos</button>
   ${cardVinculosAtleta()}
   ${heroTreino(meus)}
   ${faixaSemana()}
@@ -3957,7 +3878,7 @@ function telaTreinosAtleta(){
     <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
   </div>
   ${S.treinoView==='lista'?grupoTreinos(lista,cardFn):calendarioTreinos(lista,cardFn,'abrirTreinoExtra')}`:
-    `<div class="empty"><div class="big">Nada por aqui ainda</div><p class="small">Toque em <b>+ Meu treino</b> para adicionar musculação, bike, corrida… ou aguarde o técnico publicar.</p></div>`}`;
+    ''}`;
 }
 
 /* =====================================================================
@@ -3974,6 +3895,7 @@ function telaAguardando(){
     <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
   </div>
   <button class="ghost full" style="margin-top:18px" onclick="sincronizar(false)">Já fui liberado? Atualizar</button>
+  <button class="ghost full" onclick="abrirMeusGrupos()">Meus grupos privados e convites</button>
   ${['atleta','pro'].includes(S.u.perfil)?'<button class="ghost full" style="margin-top:8px" onclick="cancelarPedidoEquipe()">Escolhi a equipe errada</button>':''}
   <button class="ghost full" style="margin-top:8px;color:var(--clock)" onclick="sair()">Sair</button>`;
 }
@@ -6807,7 +6729,7 @@ async function sairDaEquipe(){
 function cardVinculosAtleta(){
   if(!S.u||!['atleta','pro'].includes(S.u.perfil))return'';
   const af=nomeAfiliacao(S.u), temTec=!!S.u.equipe, pend=temTec&&S.u.aprovado===false;
-  const tecnico=!temTec?'Sem técnico — seus treinos continuam disponíveis'
+  const novos=(S.grupos||[]).filter(g=>g.temTecnico),tecnico=!temTec?(novos.length?'Técnico habilitado em '+novos.map(g=>g.nome).join(', '):'Sem técnico — seus treinos continuam disponíveis')
     : pend?`Pedido enviado para ${S.u.equipeNome||'o técnico'} — aguardando aprovação`
     :(S.tecnico?`Treinos com ${S.tecnico.nome}`:`Técnico vinculado por ${S.u.equipeNome||'uma equipe'}`);
   return`<div class="card tight" style="margin-top:10px">
@@ -7015,6 +6937,7 @@ async function confirmarApagarMinhaConta(){
     catch(e){ return toast(traduzErroFB(e.code)); }
   }
   toast('Apagando…');
+  try{await apagarDadosGruposDaConta();}catch(e){return alerta('Exclusão não iniciada',esc(e.message));}
   await apagarDadosDaConta(u,S.pro);
   if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
   try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
@@ -9434,7 +9357,7 @@ async function salvarMedicao(tipo){
      glicemia fora de 20–600 não é medida, é erro de digitação */
   if(lac&&(v<=0||v>30))return toast('Lactato fora da faixa plausível (0 a 30 mmol/L)');
   if(!lac&&(v<20||v>600))return toast('Glicemia fora da faixa plausível (20 a 600 mg/dL)');
-  const r=regDia(hoje()), item={h:val('mdH')||new Date().toTimeString().slice(0,5),v:+v.toFixed(2)};
+  const r=regDia(hoje()), item={id:uid(),h:val('mdH')||new Date().toTimeString().slice(0,5),v:+v.toFixed(2)};
   if(lac){ const o=val('mdO'); if(o)item.obs=o.slice(0,60); r.lac=[...(r.lac||[]),item]; }
   else { item.q=S.mdQ||'antes'; r.gli=[...(r.gli||[]),item]; }
   if(await salvarSaude()===false)return;
@@ -9479,7 +9402,7 @@ async function salvarSintoma(){
   const txt=(val('sintTxt')||'').trim();
   if(txt.length<3)return toast('Descreva em poucas palavras');
   const r=regDia(hoje());
-  r.sint=[...(r.sint||[]),{o:S.sintO||'dor',txt:txt.slice(0,120)}];
+  r.sint=[...(r.sint||[]),{id:uid(),o:S.sintO||'dor',txt:txt.slice(0,120)}];
   if(await salvarSaude()===false)return;
   fecharSheet(); toast('Sintoma registrado'); render();
 }
@@ -9524,7 +9447,7 @@ async function salvarCheckin(){
   const hj=hoje(); let rec=(S.pro.garmin||[]).find(x=>x.data===hj); if(!rec){rec={data:hj};S.pro.garmin.push(rec);}
   rec.sonoQ=d.sonoQ; rec.energia=d.energia; rec.dor=d.dor; rec.estresse=d.estresse; rec.humor=d.humor;
   if(d.sono!=null)rec.sono=d.sono; if(d.fc!=null)rec.fc=d.fc;
-  await salvarSaude(); S.checkinDraft=null;
+  if(await salvarSaude()===false)return; S.checkinDraft=null;
   toast('Check-in salvo · prontidão '+checkinScore(rec)); render();
 }
 /* ── IMPORT DO GARMIN: o atrito era ACHAR os arquivos ──────────────────────
@@ -9744,7 +9667,8 @@ const FAIXA_HRV_MIN=14;
 function faixaHRV(garmin){
   const sh=serieHRV(garmin); if(!sh)return null;
   const s=sh.serie;                       /* do mais novo para o mais antigo */
-  const base=s.slice(1,61).map(x=>x.hrv);
+  const referencia=s[0]?.data||hoje(),inicio=new Date(referencia+'T00:00:00');inicio.setDate(inicio.getDate()-60);
+  const base=s.filter(x=>x.data<referencia&&x.data>=isoDia(inicio)).map(x=>x.hrv);
   if(base.length<FAIXA_HRV_MIN)return null;
   const media=base.reduce((a,b)=>a+b,0)/base.length;
   const dp=Math.sqrt(base.reduce((t,x)=>t+Math.pow(x-media,2),0)/base.length);
@@ -9866,7 +9790,7 @@ async function importarGarmin(raw,silencioso,ctx){
     mapa[dia]=g;n++;tocados.add(dia);
   });
   S.pro.garmin=Object.values(mapa);
-  if(!silencioso){await salvarSaude();toast(`${n} registro(s) lido(s)`);render()}
+  if(!silencioso){if(await salvarSaude()===false)return {n:0,dias:[],erro:true};toast(`${n} registro(s) lido(s)`);render()}
   return {n,dias:[...tocados]};
 }
 async function lancarDia(){
@@ -9877,7 +9801,7 @@ async function lancarDia(){
   if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
   const sh=horasFlex(val('gS')); if(sh!=null)g.sono=sh; if(nm('gP')!==undefined)g.pse=nm('gP');
   S.sonoSel=null;                     /* senão a faixa fica marcada no dia seguinte */
-  await salvarSaude(); toast('Gravado'); render();
+  if(await salvarSaude()===false)return; toast('Gravado'); render();
 }
 let FOTO=null,SECOPDF=null;
 function fotoSeco(inp){
@@ -9992,7 +9916,7 @@ async function salvarSeco(){
   if(S.secoEdit){ const i=S.pro.seco.findIndex(x=>x.id===S.secoEdit); if(i>=0)S.pro.seco[i]={...S.pro.seco[i],...reg}; else S.pro.seco.unshift(reg); }
   else S.pro.seco.unshift(reg);
   FOTO=null; SECOPDF=null; S.secoDraft=null; S.secoEdit=null;
-  await salvarSaude(); fecharSheet(); toast('Treino salvo'); render();
+  if(await salvarSaude()===false)return; fecharSheet(); toast('Treino salvo'); render();
 }
 async function apagarSeco(id){
   /* apaga também o arquivo no Storage — senão vira lixo pago e dado pessoal
@@ -10051,7 +9975,7 @@ async function corrigirDuracoes(){
   const l=duracoesSuspeitas(); if(!l.length)return;
   const porId=new Map(l.map(x=>[x.id,x.para]));
   S.pro.seco=(S.pro.seco||[]).map(s=>porId.has(s.id)?{...s,dur:porId.get(s.id)}:s);
-  await salvarSaude();
+  if(await salvarSaude()===false)return;
   ESF=null; SESSOES=[];                   /* a carga é recalculada com os valores novos */
   fecharSheet(); toast(`${l.length} duração(ões) corrigida(s)`); render();
 }
@@ -10896,7 +10820,7 @@ async function salvarExame(){
   const ex={id:uid(),data:val('exData')||hoje(),vals,obs};
   S.pro=S.pro||proVazio();
   S.pro.exames=S.pro.exames||[]; S.pro.exames.push(ex);
-  await salvarSaude(); fecharSheet(); toast('Exame salvo'); render();
+  if(await salvarSaude()===false)return; fecharSheet(); toast('Exame salvo'); render();
 }
 async function apagarExame(id){ S.pro.exames=(S.pro.exames||[]).filter(e=>e.id!==id); await salvarSaude({apagando:true}); render(); }
 
@@ -10975,7 +10899,7 @@ async function salvarBio(){
   if(BIO_M.every(([k])=>b[k]==null)&&!b.obs)return toast('Preencha ao menos um valor');
   S.pro=S.pro||proVazio();
   S.pro.bioimp=S.pro.bioimp||[]; S.pro.bioimp.push(b);
-  await salvarSaude(); fecharSheet(); toast('Bioimpedância salva'); render();
+  if(await salvarSaude()===false)return; fecharSheet(); toast('Bioimpedância salva'); render();
 }
 async function apagarBio(id){ S.pro.bioimp=(S.pro.bioimp||[]).filter(x=>x.id!==id); await salvarSaude({apagando:true}); render(); }
 function resumoBioCurto(b){
@@ -13713,6 +13637,7 @@ Soltura
 /* =====================================================================
    INÍCIO
    ===================================================================== */
+registrarTestesInicioGrupos();
 (async()=>{
   const m=(location.hash||'').match(/recuperar=([\w]+)/);
   if(m&&!FB){S.tok=m[1];S.vista='reset';render();return}   /* no Firebase o link de reset é a página do próprio Firebase */
@@ -13722,8 +13647,8 @@ Soltura
       if(user){
         await user.reload();
         if(!user.emailVerified){const pend=await DB.get(kUser(user.email||''));S.emailPendente=user.email;S.envioFalhou=pend?.confirmacaoEmail?.status==='falhou'?(pend.confirmacaoEmail.erro||'falhou'):null;S.u=null;S.vista='verificar';render();return}
-        const s=await DB.get('sessao',false);
-        const em=(s&&s.email)?s.email:(user.email||'').toLowerCase();
+        // A conta vem do Auth, nunca de uma sessão antiga de outro usuário.
+        const em=(user.email||'').toLowerCase();
         const u=await DB.get(kUser(em));
         if(u&&u.ativo!==false){if(u.confirmacaoEmail?.status!=='confirmado'){u.confirmacaoEmail={status:'confirmado',atualizadoEm:Date.now(),erro:null};await DB.set(kUser(em),u)}await entrarSessao(u);return}
       }
