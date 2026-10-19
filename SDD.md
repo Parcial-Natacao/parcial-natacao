@@ -119,6 +119,7 @@ provar que ainda vale.
 | Extrato mora no **calendário da aba Treinos**, recolhido | v172 | é onde já se navega mês a mês; aberto viraria ruído diário |
 | Faixa de VFC = média ± 1 desvio, 60 dias, excluindo hoje | v173 | o dia julgado não pode entrar no próprio julgamento |
 | Medidor de prontidão na aba **Treinos, acima do calendário** | v175 | é a tela em que se entra todo dia; no relatório só acharia quem já foi procurar |
+| O nome da faixa vai escrito na própria faixa do arco | v178 | dispensa legenda e dispensa decorar que vermelho é ruim; `PRONT_FAIXAS` é a única fonte dos quatro nomes |
 | O medidor **não tira média** entre relógio e check-in | v175 | a discordância entre os dois é a informação; o ponteiro mostra um, diz qual, e avisa quando discordam mais de 20 pontos |
 | **Strava está fora** | out/2026 | a política proíbe combinar dados e uso em IA, incluindo derivados |
 | Sem app nativo por enquanto | — | sincronização automática exigiria HealthKit/Health Connect |

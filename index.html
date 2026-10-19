@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v177"></script>
-<script src="./inicio-e-grupos.js?v=v177"></script>
+<script src="./persistencia-segura.js?v=v178"></script>
+<script src="./inicio-e-grupos.js?v=v178"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v177';
+const VER='v178';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4921,7 +4921,7 @@ teste('prontidão','sem relógio e sem check-in não há ponteiro',a=>{
   a.eq(p.score,null,'nada a apontar');
   a.ok(p.falta.length>=2,'e diz o que falta');
   a.ok(/check-in de hoje/.test(p.falta.join(' ')),'o check-in está entre o que falta');
-  a.ok(!/polygon/.test(svgMedidorProntidao(null)),'o desenho sai sem agulha');});
+  a.ok(!/<line /.test(svgMedidorProntidao(null)),'o desenho sai sem o entalhe que marca o ponto');});
 
 teste('prontidão','relógio parado há mais de 3 dias não fala do hoje',a=>{
   _atleta(); S.pro.garmin=_relogio(50,50,8);   /* começa 8 dias atrás */
@@ -4955,6 +4955,19 @@ teste('prontidão','os dois juntos: mostra o relógio e não tira média',a=>{
   a.ok(p.score!==Math.round((p.obj+p.per)/2),'média dos dois seria outro número');
   a.ok(Math.abs(p.delta)>20,'a discordância vira aviso');});
 
+teste('prontidão','o nome de cada faixa vai escrito na própria faixa',a=>{
+  /* é o que dispensa legenda e decorar cor: PRONT_FAIXAS é a única fonte dos
+     quatro nomes, e os quatro têm de aparecer no desenho */
+  const svg=svgMedidorProntidao(72);
+  for(const f of PRONT_FAIXAS)a.ok(svg.indexOf(f[2].toUpperCase())>=0,f[2]+' aparece no arco');
+  a.ok(/textPath/.test(svg),'escritos ao longo do arco, não soltos');
+  a.ok(/>HOJE</.test(svg),'e HOJE fica acima do número');
+  a.ok(/<line /.test(svg),'com o entalhe no ponto exato');});
+teste('prontidão','dois medidores na mesma tela não trocam de rótulo',a=>{
+  /* os textPath apontam por id: sem id próprio o segundo medidor puxaria os
+     caminhos do primeiro e os nomes sairiam no lugar errado */
+  const id=t=>(t.match(/id="(mp\d+)-0"/)||[])[1];
+  a.ok(id(svgMedidorProntidao(30))!==id(svgMedidorProntidao(80)),'ids diferentes a cada desenho');});
 teste('prontidão','as quatro faixas cobrem 0 a 100 sem buraco',a=>{
   a.eq(faixaProntidao(0).nome,'muito baixa','0');
   a.eq(faixaProntidao(39).nome,'muito baixa','39');
@@ -4977,7 +4990,7 @@ teste('prontidão','o cartão não aponta quando não há base',a=>{
   _atleta(); S.pro.garmin=[];
   const h=cardMedidorProntidao();
   a.ok(/sem base/.test(h),'diz sem base');
-  a.ok(!/polygon/.test(h),'e não desenha agulha');});
+  a.ok(!/<line /.test(h),'e não marca ponto nenhum no arco');});
 /* ── IMPORT DO GARMIN (v142) ─────────────────────────────────────────────── */
 teste('garmin','reconhece os quatro arquivos que importam, e só eles',a=>{
   a.eq(garminRelevante('DI_CONNECT/DI-Connect-Metrics/TrainingReadinessDTO_2026.json'),'VFC','VFC');
@@ -9244,24 +9257,49 @@ function prontidaoAgora(pro){
     fonte:(obj!=null&&per!=null)?'ambos':(obj!=null?'relogio':'checkin'),
     delta:(obj!=null&&per!=null)?per-obj:null});
 }
+/* Cada medidor precisa de ids próprios: dois cartões na mesma página fariam
+   os textPath do segundo apontarem para os caminhos do primeiro. */
+let _mpSeq=0;
 /* O desenho. Semicírculo de 180° (esquerda) a 360° (direita); o placar 0–100
-   vira ângulo direto. A faixa onde o atleta está fica cheia e as outras
-   apagadas, para o olho ir ao lugar certo sem precisar ler legenda. */
+   vira ângulo direto. O NOME de cada faixa vai escrito na PRÓPRIA faixa, em
+   textPath, como no HRV4Training: assim a leitura não depende de decorar que
+   vermelho é ruim nem de uma legenda solta embaixo. A faixa do atleta fica
+   acesa, as outras apagadas, e um entalhe marca o ponto exato dentro dela —
+   o ponteiro grosso que havia antes passava por cima justamente do número. */
 function svgMedidorProntidao(score){
-  const CX=100,CY=96,R=74,W=16;
+  const CX=100,CY=96,R=74,W=18,GAP=1.4,ID='mp'+(++_mpSeq);
   const ang=v=>180+Math.max(0,Math.min(100,v))*1.8;
   const pt=(a,r)=>[(CX+r*Math.cos(a*Math.PI/180)).toFixed(2),(CY+r*Math.sin(a*Math.PI/180)).toFixed(2)];
-  const arco=(v1,v2,cor,op)=>{const a=pt(ang(v1),R),b=pt(ang(v2),R);
-    return `<path d="M${a[0]} ${a[1]} A${R} ${R} 0 0 1 ${b[0]} ${b[1]}" fill="none" stroke="${cor}" stroke-width="${W}" opacity="${op}"/>`;};
-  const vivo=score!=null, atual=vivo?faixaProntidao(score).nome:null;
-  const arcos=PRONT_FAIXAS.map(f=>arco(f[0],f[1],f[3],vivo?(f[2]===atual?1:.2):.18)).join('');
-  let agulha='';
-  if(vivo){
-    const a=ang(score),p1=pt(a,R-27),p2=pt(a+90,5.5),p3=pt(a-90,5.5);
-    agulha=`<polygon points="${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]}" fill="var(--ink)"/>`
-      +`<circle cx="${CX}" cy="${CY}" r="6" fill="var(--ink)"/>`;
-  }
-  return `<svg viewBox="0 0 200 104" width="210" height="109" role="img" aria-label="${vivo?'prontidão '+score+' de 100':'sem base para medir a prontidão hoje'}">${arcos}${agulha}</svg>`;
+  const arco=(a1,a2,r)=>{const p=pt(a1,r),q=pt(a2,r);return `M${p[0]} ${p[1]} A${r} ${r} 0 0 1 ${q[0]} ${q[1]}`;};
+  const vivo=score!=null, fx=vivo?faixaProntidao(score):null;
+  let faixas='',rotulos='',marca='';
+  PRONT_FAIXAS.forEach((f,i)=>{
+    const a1=ang(f[0])+GAP, a2=ang(f[1])-GAP, aceso=vivo&&f[2]===fx.nome;
+    /* Todas as faixas ficam COLORIDAS — apagar as outras tirava o contraste do
+       nome escrito em cima delas, que é justamente o que faz o desenho ser lido
+       sem legenda. Quem diz onde o atleta está é a faixa mais grossa, o entalhe
+       e o número no meio. Sem base, todas apagam por igual. */
+    faixas+=`<path d="${arco(a1,a2,R)}" fill="none" stroke="${f[3]}" stroke-width="${aceso?W+4:W}" opacity="${vivo?1:.22}"/>`;
+    /* o caminho do rótulo fica um pouco para dentro do centro do traço: o
+       textPath assenta a BASE das letras na linha, e elas crescem para fora */
+    rotulos+=`<path id="${ID}-${i}" d="${arco(a1,a2,R-3.2)}" fill="none"/>`
+      +`<text font-size="7.2" font-weight="800" letter-spacing=".35" fill="#fff"`
+      +` stroke="rgba(0,0,0,.42)" stroke-width=".75" paint-order="stroke"`
+      +` opacity="${vivo?(aceso?1:.9):.55}">`
+      +`<textPath href="#${ID}-${i}" startOffset="50%" text-anchor="middle">${f[2].toUpperCase()}</textPath></text>`;
+    if(aceso){
+      /* o entalhe não pode cair no vão entre duas faixas (placar exatamente no
+         limite, como 75), senão some */
+      const a=Math.max(a1+1.5,Math.min(a2-1.5,ang(score)));
+      const p=pt(a,R-(W+4)/2),q=pt(a,R+(W+4)/2);
+      marca=`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="var(--card)" stroke-width="2.6" stroke-linecap="round"/>`;
+    }
+  });
+  const cor=vivo?fx.cor:'var(--ink-3)';
+  const centro=`<text x="${CX}" y="53" text-anchor="middle" font-size="8" font-weight="800" letter-spacing="2.2" fill="var(--ink-3)">HOJE</text>`
+    +`<text x="${CX}" y="82" text-anchor="middle" font-size="31" font-weight="800" fill="${cor}">${vivo?score:'—'}</text>`
+    +`<text x="${CX}" y="93.5" text-anchor="middle" font-size="8.4" font-weight="800" letter-spacing="1.1" fill="${cor}">${(vivo?fx.nome:'sem base').toUpperCase()}</text>`;
+  return `<svg viewBox="0 0 200 104" width="222" height="115" role="img" aria-label="${vivo?'prontidão de hoje '+score+' de 100, faixa '+fx.nome:'sem base para medir a prontidão hoje'}">${faixas}${rotulos}${marca}${centro}</svg>`;
 }
 /* As linhas de procedência saíram de baixo do medidor e foram para um toque:
    "80 em 486 dias de base" embaixo do ponteiro era ruído diário — e estava
@@ -9302,15 +9340,12 @@ function abrirProcedenciaProntidao(){
 function cardMedidorProntidao(){
   if(!temPro())return'';
   const p=prontidaoAgora(S.pro), vivo=p.score!=null;
-  const fx=vivo?faixaProntidao(p.score):null, cor=vivo?fx.cor:'var(--ink-3)';
   const disc=vivo&&p.delta!=null&&Math.abs(p.delta)>20;
+  /* HOJE, o número e o nome da faixa moram DENTRO do svg, no vazio do arco —
+     fora dele o cartão ficava alto demais e o olho tinha de descer para saber
+     onde estava. */
   return `<div class="card" data-dom="corpo" id="c-medidor"><div class="eyebrow">prontidão</div>
-    <div style="display:flex;justify-content:center;margin-top:2px">${svgMedidorProntidao(p.score)}</div>
-    <div style="text-align:center">
-      <div style="font-size:10px;font-weight:800;letter-spacing:.16em;color:var(--ink-3)">HOJE</div>
-      <div style="font-size:34px;font-weight:800;line-height:1.1;color:${cor}">${vivo?p.score:'—'}</div>
-      <div style="font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:${cor}">${vivo?fx.nome:'sem base'}</div>
-    </div>
+    <div style="display:flex;justify-content:center;margin:2px 0 2px">${svgMedidorProntidao(p.score)}</div>
     ${vivo?'':`<div class="xs muted" style="margin-top:10px;text-align:center">${p.falta.join(' e ')}.</div>`}
     ${disc?`<div class="note warn" style="margin-top:10px"><b>Corpo e percepção discordam em ${Math.abs(p.delta)} pontos.</b> ${p.delta<0?'Você está se sentindo pior do que o relógio indica.':'Você está se sentindo melhor do que os sinais do corpo.'} É o sinal mais útil do dia — vale olhar antes de mexer na carga.</div>`:''}
     <div style="text-align:center;margin-top:10px"><button class="sm ghost" style="width:auto;min-height:0;padding:5px 12px" onclick="abrirProcedenciaProntidao()">${vivo?'de onde vem este número':'por que não há número'}</button></div>
