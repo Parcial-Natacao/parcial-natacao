@@ -2,14 +2,14 @@
 
 Aplicativo web de página única para equipes de natação masters: prescrição de
 treinos, registro de tempos e parciais, competições, marcas, carga/fadiga e
-relatório de performance. **Um arquivo, sem build, sem dependências
-instaladas.**
+relatório de performance. **Sem build nem dependências instaladas para usar o app.**
 
-**Versão atual:** v159 (o número aparece no cabeçalho do app e em `const VER`)
+**Versão atual:** veja `const VER` em `index.html` (o número também aparece no cabeçalho do app)
 **Autor do conteúdo técnico:** Bruno Barbato (atleta e engenheiro)
 **Contexto:** equipe de natação masters, Campo Grande — MS
 
 Leia antes de mexer no código:
+- [`SDD.md`](SDD.md) — **o contrato do projeto**: o que não pode quebrar, o que já foi decidido, o que testar sempre e o que está pendente.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — fluxo de trabalho, regras de segurança e padrões.
 - [`ARQUITETURA.md`](ARQUITETURA.md) — o mapa técnico: estado, render, motor de performance, histórico de versões.
 
@@ -19,13 +19,14 @@ Leia antes de mexer no código:
 
 | | |
 |---|---|
-| **Código** | `index.html` — HTML + CSS + JS num arquivo só, sem framework e sem build |
-| **Banco** | Firebase **Firestore**, projeto `parcial-cdb0e`, coleção única `kv` |
+| **Código** | `index.html`, `persistencia-segura.js` e `inicio-e-grupos.js` — JavaScript puro, sem build |
+| **Banco** | Firebase **Firestore**, projeto `parcial-cdb0e`, `kv` legado e coleções estruturadas de grupos |
 | **Autenticação** | Firebase Auth (e-mail e senha) |
-| **Hospedagem** | GitHub Pages — `https://parcial-natacao.github.io/parcial-natacao/` |
+| **Hospedagem** | GitHub Pages, domínio próprio — `https://meros360.com` |
 | **Deploy** | automático a cada push na branch `main` |
 
-Não há passo de build: editar o `index.html` e dar push já publica.
+Não há passo de build. O merge na `main` publica os arquivos estáticos.
+Mudanças de regras e índices do Firestore precisam de publicação própria.
 
 ### Rodar localmente
 
@@ -52,9 +53,14 @@ use o botão **Atualizar app** ou apague e readicione o ícone.
 
 ## Onde os dados moram
 
-Tudo vive na coleção `kv` do Firestore, com o conteúdo serializado em JSON no
+Os dados legados vivem na coleção `kv` do Firestore, com o conteúdo serializado em JSON no
 campo `v`. A camada de acesso está isolada no objeto `DB` (`get` e `set`), no
 topo do `<script>` — trocar de banco significa reescrever só esse objeto.
+
+Grupos privados usam coleções estruturadas separadas e transações com validação
+no servidor. Veja `ARQUITETURA.md` e o roteiro de
+[`validação e publicação`](docs/VALIDACAO-INICIO-GRUPOS.md). Equipe do catálogo,
+grupo privado e credencial de técnico são conceitos distintos.
 
 **Chaves principais:**
 

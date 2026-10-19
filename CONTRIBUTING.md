@@ -8,12 +8,13 @@ Guia rápido para quem for desenvolver o app. Leia isto **antes** de começar.
 
 O **Meros360** é um app de performance de natação. Características importantes:
 
-- **PWA single-file**: praticamente tudo vive em [`index.html`](index.html) (~380 KB) — HTML + CSS + JS puro, **sem build, sem framework, sem `npm install`**.
+- **PWA sem build**: HTML + CSS + JS puro em [`index.html`](index.html), com extensões clássicas [`persistencia-segura.js`](persistencia-segura.js) e [`inicio-e-grupos.js`](inicio-e-grupos.js). Sem framework ou instalação para usar o app.
 - **Sync na nuvem**: usa **Firebase / Firestore** (projeto `parcial-cdb0e`) para sincronizar dados entre usuários.
-- **Deploy automático**: todo push na branch `main` publica em **https://parcial-natacao.github.io** (GitHub Pages).
+- **Deploy automático**: todo push na branch `main` publica em **https://meros360.com** (GitHub Pages).
 
 Antes de tocar no código, leia nesta ordem:
 
+0. [`SDD.md`](SDD.md) — **o contrato**: invariantes que não podem quebrar, decisões já tomadas, testes obrigatórios antes de cada merge e armadilhas conhecidas. Quem muda o app atualiza o SDD no mesmo commit.
 1. [`ARQUITETURA.md`](ARQUITETURA.md) — o mapa do app (estado global `S`, `render()`, helpers do Firestore, motor de performance, histórico de versões). **É a leitura mais importante.**
 2. [`README.md`](README.md) — visão geral e setup.
 3. [`ESPECIFICACAO.md`](ESPECIFICACAO.md) — regras de negócio.
@@ -27,7 +28,8 @@ git clone https://github.com/parcial-natacao/parcial-natacao.github.io.git
 cd parcial-natacao.github.io
 ```
 
-Não há dependências para instalar. Para rodar localmente, basta abrir o `index.html` no navegador ou servir a pasta com qualquer servidor estático, por exemplo:
+Não há dependências do app para instalar. Sirva a pasta com um servidor estático
+(convites usam Web Crypto, disponível em HTTPS e localhost):
 
 ```bash
 python -m http.server 8000
@@ -96,7 +98,7 @@ Siga o estilo já existente no `index.html`:
 - Estado global em `S`; a UI é reconstruída chamando `render()`, que reescreve `#app`.
 - Handlers via `onclick` inline chamando funções globais.
 - Acesso ao Firestore pelos helpers `DB.get(k)` / `DB.set(k, v)` e pelas funções `k*` (`kUser`, `kEq`, `kPerf`, etc.). Não fale com o Firestore direto sem necessidade.
-- Persistência offline está ativada; escritas são otimistas (atualiza a tela e depois confirma com "Salvo ✓").
+- Persistência offline está ativada. Não confundir confirmação local com confirmação no servidor. Saúde usa fila de diferenças por uid; gestão de grupos exige conexão. Toda mensagem de sucesso precisa respeitar retorno `false`.
 - Mantenha a densidade de comentários e a nomenclatura do código ao redor.
 
 ---
@@ -107,9 +109,12 @@ Siga o estilo já existente no `index.html`:
 - [ ] Não deixei `console.log` de depuração nem código morto.
 - [ ] Não há segredos nem dados pessoais no diff (`git status` / revisão do diff).
 - [ ] Incrementei `VER` se a mudança é visível ao usuário.
-- [ ] Se mexi em `firestore.rules.v2`, publiquei no console do Firebase.
+- [ ] Se mexi em regras, rodei o emulador e registrei o plano de publicação coordenada; não publico produção sem autorização.
 - [ ] Atualizei `ARQUITETURA.md` se mudei a arquitetura ou adicionei um recurso relevante.
 
 ---
 
 Dúvidas de arquitetura? Comece pelo [`ARQUITETURA.md`](ARQUITETURA.md). Bom trabalho! 🏊
+
+Para validar início, grupos, gerador, concorrência e offline, siga
+[`docs/VALIDACAO-INICIO-GRUPOS.md`](docs/VALIDACAO-INICIO-GRUPOS.md).

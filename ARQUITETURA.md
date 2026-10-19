@@ -7,13 +7,15 @@ performance" (Performance Score / Readiness / correlações etc.).
 
 ## 1. Stack e restrições
 
-- **Front-end:** um único `index.html` (~3600 linhas), sem build. `<script>`
+- **Front-end:** `index.html` com extensões clássicas `persistencia-segura.js`
+  e `inicio-e-grupos.js`, sem build. `<script>`
   clássico, funções globais, handlers `onclick` inline. Estado global no objeto
   `S`. Render por reconstrução de HTML (`render()` reescreve `#app`).
 - **Sincronização/persistência:** Firebase (Firestore no modo "kv" chave-valor +
   Auth e-mail/senha). Abstração `DB.get(k)` / `DB.set(k,v)`. Cai para
   `localStorage` quando `FB_CONFIG` está vazio (modo teste).
-- **Hospedagem:** GitHub Pages (PWA). Deploy = re-subir `index.html`.
+- **Hospedagem:** GitHub Pages (PWA). Deploy inclui HTML, ambos os módulos e
+  `sw.js`, com versões alinhadas. Não copiar apenas o HTML.
 - **IA (opcional):** Cloudflare Worker (`backend/worker.js`) que chama a API da
   Anthropic para (a) OCR de PDFs/fotos de exames, bioimpedância e fichas de
   treino fora d'água, e (b) gerar um laudo narrativo. Chave da IA fica só no
@@ -25,6 +27,41 @@ performance" (Performance Score / Readiness / correlações etc.).
   token do Firebase.
 
 ## 2. Chaves do Firestore (coleção `kv`)
+
+### Extensões de início e grupos privados
+
+`inicio-e-grupos.js` preserva o estado global e componentes do app. O catálogo
+`time_` continua sendo afiliação pública sem permissão; `eq_` permanece legado.
+Não há conversão automática de equipes existentes nem migração de dados alheios.
+
+Coleções estruturadas novas: `groups` (responsável/arquivo/transferência),
+`group_members` (papéis por grupo), `group_invites` (hash do segredo de convite,
+destinatário e expiração), `professionals` (credencial e conferência administrativa),
+`group_claims` (pedido de verificação institucional), `group_workouts` (prescrição),
+`group_records` (acompanhamento voluntário) e `app_config/generator` (liberação).
+Operações de gestão exigem conexão e e-mail confirmado. Regras validam o token,
+não apenas botões ou o perfil no cliente. Bruno pode gerir todos os grupos;
+responsáveis comuns só gerem os próprios espaços.
+
+Uma publicação do técnico é copiada para o treino **pessoal** do atleta, com
+origem preservada e id determinístico contra cópia repetida. Não se torna
+realizada ao ser recebida. Compartilhar conclusão/tempos é uma ação separada;
+revogar remove a cópia compartilhada, não o histórico pessoal. Retirar uma
+publicação não apaga as cópias que atletas já adicionaram.
+
+O gerador `g1` é determinístico, sem API de IA: respostas declaradas → prévia →
+treino planejado. Apenas Atleta comum sem técnico ativo; PRO mantém entrada
+manual completa. É bloqueado até conferência profissional e liberação dessa
+versão pelo administrador. Testes usam aprovação fictícia só no emulador.
+
+`persistencia-segura.js` usa base profunda por sessão e diferenças por dia/id
+para Saúde. A transação aplica somente alterações locais sobre o documento
+atual; edições incompatíveis no mesmo campo ficam em conflito explícito.
+Operações offline ficam em `localStorage` por uid, com ids de deduplicação;
+não se troca um snapshot inteiro pelo outro. Conta › Dados e backup expõe a
+fila, exportação e descarte confirmado. Restauração em rede grava undo, Saúde
+e principal numa transação. Backup exporta somente documentos próprios,
+incluindo Saúde e pendências; importação preserva permissões da conta atual.
 
 | Chave | Conteúdo |
 |---|---|

@@ -53,8 +53,10 @@ Não existe histórico consolidado para orientar carga.
   - **Relatório** — consolida tudo e produz diagnóstico e sugestão de sessão.
 
 ### 2.3 Técnico
-- Escolhe uma equipe operacional previamente criada pelo administrador e
-  aguarda aprovação antes de gerir atletas e treinos.
+- Pode entrar sem equipe. No fluxo legado, escolhe uma equipe operacional
+  criada pelo administrador e aguarda aprovação. No fluxo novo, recebe convite
+  individual para grupo privado e solicita verificação profissional separada.
+  Só publica com ambos ativos; nome de clube ou CREF digitado não libera acesso.
 - **Treinos**: cola o treino em texto livre, escolhe o nível e marca quem
   recebe. Lança tempos por atleta. Edita e exclui.
 - **Elenco**: libera CPFs, define e troca o nível de cada atleta, vê a ficha
@@ -65,6 +67,24 @@ Não existe histórico consolidado para orientar carga.
 
 ### 2.4 Níveis
 `Master`, `Aperfeiçoamento`, `Águas Abertas`. Quem define é o técnico.
+
+### 2.5 Início independente e grupos privados
+
+- Primeiro acesso orienta: adicionar treino próprio, gerar treino de piscina
+  (Atleta comum sem técnico ativo), ou vincular técnico.
+- PRO sem técnico mantém treino próprio, acompanhamento e tempos completos;
+  não vira administrador nem depende de código para usar esses recursos.
+- Geração automática por nível declarado (iniciante/intermediário/avançado),
+  capacidade contínua, tempo e piscina; não são os níveis de elenco legados.
+  Não usa Saúde, IA ou máximos; exige prática segura e piscina supervisionada.
+  Sem revisão profissional registrada de `g1`, fica indisponível aos atletas.
+- Criador administra somente seu grupo privado. Convite é individual, dura
+  48h, exige e-mail confirmado e aceite; remover alguém revoga o acesso futuro.
+- Representação de instituição exige conferência administrativa independente.
+  Aprovação não toma equipes existentes nem transfere propriedade.
+- Transferência de responsabilidade só termina após aceite do destinatário.
+- Publicação recebida vira cópia pessoal planejada, não sessão concluída.
+  Enviar tempos/conclusão ao técnico é voluntário e revogável; sem exames/VFC.
 
 ---
 

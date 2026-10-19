@@ -44,6 +44,138 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Grupos v174: permissões estruturadas, independentes do nome do clube e
+    // do perfil global PRO. Nenhum destes papéis dá leitura aos pro_*.
+    function gAuth() { return request.auth != null && request.auth.token.email_verified == true; }
+    function gAdmin() { return gAuth() && request.auth.token.email.lower() == 'barbato.bruno@gmail.com'; }
+    function gRoot(g) { return get(/databases/$(database)/documents/groups/$(g)).data; }
+    function gOwner(g) { return gAdmin() || (gAuth() && gRoot(g).ownerUid == request.auth.uid); }
+    function gMember(g) { return gAuth()
+      && exists(/databases/$(database)/documents/group_members/$(g + '_' + request.auth.uid))
+      && get(/databases/$(database)/documents/group_members/$(g + '_' + request.auth.uid)).data.ativo == true; }
+    function gProfessional(u) { return exists(/databases/$(database)/documents/professionals/$(u))
+      && get(/databases/$(database)/documents/professionals/$(u)).data.status == 'aprovado'; }
+    function gCoach(g) { return gMember(g) && gProfessional(request.auth.uid)
+      && get(/databases/$(database)/documents/group_members/$(g + '_' + request.auth.uid)).data.role == 'tecnico'; }
+    function gOpen(g) { return gRoot(g).arquivado == false; }
+    function gInvite(d) {
+      let c = get(/databases/$(database)/documents/group_invites/$(d.inviteId)).data;
+      let depois = getAfter(/databases/$(database)/documents/group_invites/$(d.inviteId)).data;
+      return gAuth() && d.uid == request.auth.uid && d.email == request.auth.token.email.lower()
+        && c.email == d.email && c.groupId == d.groupId && c.role == d.role
+        && c.status == 'aberto' && c.expiraEm > request.time.toMillis() && gOpen(d.groupId)
+        && depois.status == 'aceito' && depois.aceitoPor == request.auth.uid;
+    }
+    function gMemberShape(d,id) { return d.keys().hasOnly(['groupId','uid','email','nome','role','ativo','criadoEm','inviteId'])
+      && id == d.groupId + '_' + d.uid && d.role in ['atleta','tecnico']
+      && d.nome is string && d.nome.size() <= 100 && d.email is string && d.ativo is bool; }
+    match /groups/{g} {
+      allow read: if gAdmin() || (gAuth() && resource.data.ownerUid == request.auth.uid) || gMember(g);
+      allow create: if gAuth() && request.resource.data.keys().hasOnly(['nome','ownerUid','verificacao','arquivado','criadoEm','transferUid','transferExp'])
+        && g.matches('[a-f0-9]{32}') && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.nome is string && request.resource.data.nome.size() >= 3 && request.resource.data.nome.size() <= 80
+        && request.resource.data.verificacao == 'nao_verificado' && request.resource.data.arquivado == false
+        && request.resource.data.transferUid == null && request.resource.data.transferExp == 0;
+      allow update: if gAdmin()
+        || (gOwner(g) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome','arquivado','transferUid','transferExp'])
+          && request.resource.data.nome is string && request.resource.data.nome.size() >= 3 && request.resource.data.nome.size() <= 80
+          && (request.resource.data.transferUid == null
+            || exists(/databases/$(database)/documents/group_members/$(g + '_' + request.resource.data.transferUid))))
+        || (gAuth() && resource.data.transferUid == request.auth.uid && resource.data.transferExp > request.time.toMillis()
+          && gMember(g) && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.transferUid == null && request.resource.data.transferExp == 0
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerUid','transferUid','transferExp']));
+      allow delete: if gAdmin();
+    }
+    match /group_members/{m} {
+      allow read: if gAdmin() || (gAuth() && resource.data.uid == request.auth.uid)
+        || gOwner(resource.data.groupId) || gCoach(resource.data.groupId)
+        || (gMember(resource.data.groupId) && resource.data.role == 'tecnico' && resource.data.ativo == true);
+      allow create: if gMemberShape(request.resource.data,m) && (gAdmin()
+        || (gAuth() && request.resource.data.uid == request.auth.uid && request.resource.data.role == 'atleta'
+          && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.ownerUid == request.auth.uid)
+        || gInvite(request.resource.data));
+      allow update: if gMemberShape(request.resource.data,m)
+        && request.resource.data.uid == resource.data.uid && request.resource.data.groupId == resource.data.groupId
+        && (gAdmin()
+          || (gOwner(resource.data.groupId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','ativo'])
+            && resource.data.uid != gRoot(resource.data.groupId).ownerUid)
+          || (gAuth() && resource.data.uid == request.auth.uid && resource.data.uid != gRoot(resource.data.groupId).ownerUid
+            && request.resource.data.ativo == false && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ativo']))
+          || gInvite(request.resource.data));
+      allow delete: if gAdmin() || (gAuth() && resource.data.uid == request.auth.uid
+        && (gRoot(resource.data.groupId).ownerUid != request.auth.uid || gRoot(resource.data.groupId).arquivado == true));
+    }
+    match /group_invites/{i} {
+      allow read: if gAdmin() || gOwner(resource.data.groupId) || (gAuth() && resource.data.email == request.auth.token.email.lower());
+      allow create: if gOwner(request.resource.data.groupId) && gOpen(request.resource.data.groupId)
+        && request.resource.data.keys().hasOnly(['groupId','groupName','email','role','status','expiraEm','criadoPor','criadoPorNome','criadoEm','aceitoPor'])
+        && i.matches('[a-f0-9]{64}') && request.resource.data.email is string
+        && request.resource.data.role in ['atleta','tecnico'] && request.resource.data.status == 'aberto'
+        && request.resource.data.criadoPor == request.auth.uid && request.resource.data.aceitoPor == null
+        && request.resource.data.expiraEm > request.time.toMillis()
+        && request.resource.data.expiraEm <= request.time.toMillis() + 604800000;
+      allow update: if (gOwner(resource.data.groupId) && request.resource.data.status == 'revogado'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+        || (gAuth() && resource.data.email == request.auth.token.email.lower() && resource.data.status == 'aberto'
+          && resource.data.expiraEm > request.time.toMillis() && gOpen(resource.data.groupId)
+          && request.resource.data.status == 'aceito' && request.resource.data.aceitoPor == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','aceitoPor'])
+          && getAfter(/databases/$(database)/documents/group_members/$(resource.data.groupId + '_' + request.auth.uid)).data.inviteId == i);
+      allow delete: if gAdmin() || gOwner(resource.data.groupId) || (gAuth() && resource.data.email == request.auth.token.email.lower());
+    }
+    match /professionals/{u} {
+      allow read: if gAdmin() || (gAuth() && (request.auth.uid == u || resource.data.status == 'aprovado'));
+      allow create: if gAuth() && request.auth.uid == u && request.resource.data.uid == u
+        && request.resource.data.keys().hasOnly(['uid','nome','cref','uf','status','fonte','verificadoPor','verificadoEm'])
+        && request.resource.data.status == 'pendente'
+        && request.resource.data.verificadoPor == null && request.resource.data.verificadoEm == null && request.resource.data.fonte == null;
+      allow update: if (gAdmin() && request.resource.data.uid == u)
+        || (gAuth() && request.auth.uid == u && resource.data.status != 'aprovado'
+          && request.resource.data.uid == u && request.resource.data.status == 'pendente'
+          && request.resource.data.keys().hasOnly(['uid','nome','cref','uf','status','fonte','verificadoPor','verificadoEm'])
+          && request.resource.data.verificadoPor == null && request.resource.data.verificadoEm == null && request.resource.data.fonte == null);
+      allow delete: if gAdmin() || (gAuth() && request.auth.uid == u);
+    }
+    match /group_claims/{c} {
+      allow read: if gAdmin() || (gAuth() && resource.data.uid == request.auth.uid);
+      allow create, update: if gAdmin() || (gAuth() && request.resource.data.uid == request.auth.uid
+        && c == request.resource.data.groupId + '_' + request.auth.uid && gOwner(request.resource.data.groupId)
+        && request.resource.data.keys().hasOnly(['groupId','uid','contato','fonte','status']) && request.resource.data.status == 'pendente');
+      allow delete: if gAdmin() || (gAuth() && resource.data.uid == request.auth.uid);
+    }
+    match /group_workouts/{t} {
+      allow read: if gAdmin() || gOwner(resource.data.groupId) || gMember(resource.data.groupId);
+      allow create: if (gAdmin() || gCoach(request.resource.data.groupId)) && gOpen(request.resource.data.groupId)
+        && t.matches('[a-f0-9]{32}')
+        && request.resource.data.keys().hasOnly(['groupId','titulo','texto','data','piscina','autor','publishedBy','status','criadoEm'])
+        && request.resource.data.publishedBy == request.auth.uid && request.resource.data.status == 'publicado'
+        && request.resource.data.titulo is string && request.resource.data.titulo.size() > 0 && request.resource.data.titulo.size() <= 100
+        && request.resource.data.texto is string && request.resource.data.texto.size() <= 12000
+        && request.resource.data.data.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && request.resource.data.piscina in ['SC25','LC50'];
+      allow update: if (gAdmin() || gCoach(resource.data.groupId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status == 'cancelado';
+      allow delete: if gAdmin();
+    }
+    match /group_records/{r} {
+      allow read: if gAdmin() || (gAuth() && resource.data.uid == request.auth.uid) || gCoach(resource.data.groupId);
+      allow create, update: if gAuth() && request.resource.data.uid == request.auth.uid && gMember(request.resource.data.groupId)
+        && r == request.resource.data.workoutId + '_' + request.auth.uid
+        && get(/databases/$(database)/documents/group_workouts/$(request.resource.data.workoutId)).data.groupId == request.resource.data.groupId
+        && request.resource.data.keys().hasOnly(['groupId','workoutId','uid','nome','titulo','data','feito','dur','rpe','tempos','atualizado'])
+        && request.resource.data.feito is bool && request.resource.data.tempos is map
+        && (request.resource.data.dur == null || (request.resource.data.dur >= 0 && request.resource.data.dur <= 1440))
+        && (request.resource.data.rpe == null || (request.resource.data.rpe >= 0 && request.resource.data.rpe <= 10));
+      allow delete: if gAdmin() || (gAuth() && resource.data.uid == request.auth.uid);
+    }
+    match /app_config/{c} {
+      allow read: if gAuth();
+      allow write: if gAdmin() && c == 'generator'
+        && request.resource.data.keys().hasOnly(['status','versao','profissionalUid','profissionalNome','cref','aprovadoPor','aprovadoEm'])
+        && request.resource.data.versao == 'g1' && request.resource.data.aprovadoPor == request.auth.uid
+        && (request.resource.data.status == 'suspenso'
+          || (request.resource.data.status == 'aprovado' && gProfessional(request.resource.data.profissionalUid)));
+    }
     match /kv/{chave} {
 
       function logado()   { return request.auth != null; }
@@ -89,7 +221,15 @@ service cloud.firestore {
         return logado() && chave.matches('pt_' + meuUid() + '_.*');
       }
       function ehMeuTreinoPessoal() {
-        return ehMinhaChaveTreinoPessoal() && resource.data.dono == meuUid();
+        return ehMinhaChaveTreinoPessoal()
+          && (!exists(/databases/$(database)/documents/kv/$(chave)) || resource.data.dono == meuUid());
+      }
+      function geracaoLiberada() {
+        let versao = request.resource.data.get('geradorVersao',null);
+        return versao == null || (gAuth()
+          && get(/databases/$(database)/documents/app_config/generator).data.status == 'aprovado'
+          && get(/databases/$(database)/documents/app_config/generator).data.versao == versao
+          && gProfessional(get(/databases/$(database)/documents/app_config/generator).data.profissionalUid));
       }
       function ehU()   { return chave.matches('u_.*'); }
       function ehEq()  { return chave.matches('eq_.*'); }
@@ -129,6 +269,9 @@ service cloud.firestore {
         // Vem antes das regras de perfil: estes documentos têm `perfil:null`;
         // numa consulta o Firestore não pode avaliar `null in [...]`.
         ( ehTimePublico() && logado() )
+        // Transações precisam ler a ausência do documento antes de criá-lo.
+        // Só o próprio namespace pode observar uma chave pessoal inexistente.
+        || ( ehPro() && ehMeuPro() && !exists(/databases/$(database)/documents/kv/$(chave)) )
         // dados privados do atleta: dono; o administrador global é a exceção
         || ( ehPro() && logado() && resource.data.dono == meuUid() )
         || ( ehTreinoPessoal() && ehMeuTreinoPessoal() )
@@ -150,7 +293,7 @@ service cloud.firestore {
         ehAdmin() ||
         ( ehPro() && ehMeuPro() && request.resource.data.dono == meuUid() )
         || ( ehTreinoPessoal() && ehMinhaChaveTreinoPessoal()
-                                  && request.resource.data.dono == meuUid() )
+                                  && request.resource.data.dono == meuUid() && geracaoLiberada() )
         // cadastro: só o meu, e SEMPRE pendente (bloqueia autopromoção)
         || ( ehU() && ehMeuU()
              && request.resource.data.dono == meuUid()
@@ -174,7 +317,8 @@ service cloud.firestore {
         ( ehPro() && ehMeuPro() && resource.data.dono == meuUid()
                               && request.resource.data.dono == meuUid() )
         || ( ehTreinoPessoal() && ehMeuTreinoPessoal()
-                                  && request.resource.data.dono == meuUid() )
+                                  && request.resource.data.dono == meuUid()
+                                  && (request.resource.data.get('geradorVersao',null) == resource.data.get('geradorVersao',null) || geracaoLiberada()) )
         // o próprio cadastro: edita os dados, mas NÃO sobe o próprio privilégio.
         // `aprovado` só fica igual ou cai para false.
         || ( ehU() && ehMeuU() && naoMexeEm('dono') && naoMexeEm('perfil')
