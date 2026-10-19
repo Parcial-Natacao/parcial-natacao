@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v174"></script>
-<script src="./inicio-e-grupos.js?v=v174"></script>
+<script src="./persistencia-segura.js?v=v175"></script>
+<script src="./inicio-e-grupos.js?v=v175"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v174';
+const VER='v175';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3873,6 +3873,11 @@ function telaTreinosAtleta(){
       <b>${n===1?'1 sessão fora d\u2019água com dado':n+' sessões fora d\u2019água com dados'} faltando ou errado${n===1?'':'s'}.</b>
       ${auto?`${auto} é${auto>1?'ão':''} a duração que o app lia errado até a v96 (<b>1:10</b> como 1min10s em vez de 1h10) — essa${auto>1?'s':''} ele corrige sozinho. `:''}Duração e RPE são o que vira carga: sem eles a sessão não entra na conta.
       <button class="sm primary full" style="margin-top:8px" onclick="abrirPendencias()">Ver quais são</button></div>`})()}
+  ${/* O medidor mora AQUI, acima do calendario: e a tela em que o atleta
+       entra todo dia, e a pergunta que ele faz antes de olhar o treino e
+       'como eu estou hoje'. No relatorio ele seria achado so por quem ja
+       foi procurar. */''}
+  ${cardMedidorProntidao()}
   ${lista.length?`<div class="row" style="gap:6px;margin-bottom:8px">
     <button class="sm ${S.treinoView!=='lista'?'primary':'ghost'}" onclick="S.treinoView='cal';render()">📅 Calendário</button>
     <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
@@ -4809,6 +4814,78 @@ teste('prontidão','sem forma específica não há score',a=>{
   a.eq(r.score,null,'sem componentes não publica número');
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
 
+
+/* ── MEDIDOR DE PRONTIDÃO (v175) ───────────────────────────────────────────
+   O que estes casos protegem: o ponteiro só existe quando há base, o número
+   diz de onde veio, e relógio parado não fala do hoje. */
+/* dias de relógio recentes o bastante para prontidaoGarmin (4+ com VFC e FC) */
+function _relogio(hrv,fc,ini){const o=[];for(let i=(ini||0);i<(ini||0)+20;i++)
+  o.push({data:_dAtras(i),hrv:(typeof hrv==='function'?hrv(i):hrv),hrvF:'noite',fc:(typeof fc==='function'?fc(i):fc)});
+  return o;}
+function _checkin(d,v){return{data:d,sonoQ:v,energia:v,humor:v,dor:6-v,estresse:6-v};}
+
+teste('prontidão','sem relógio e sem check-in não há ponteiro',a=>{
+  _atleta(); S.pro.garmin=[];
+  const p=prontidaoAgora(S.pro);
+  a.eq(p.score,null,'nada a apontar');
+  a.ok(p.falta.length>=2,'e diz o que falta');
+  a.ok(/check-in de hoje/.test(p.falta.join(' ')),'o check-in está entre o que falta');
+  a.ok(!/polygon/.test(svgMedidorProntidao(null)),'o desenho sai sem agulha');});
+
+teste('prontidão','relógio parado há mais de 3 dias não fala do hoje',a=>{
+  _atleta(); S.pro.garmin=_relogio(50,50,8);   /* começa 8 dias atrás */
+  a.ok(prontidaoGarmin(S.pro,null)!=null,'a conta antiga ainda sai');
+  const p=prontidaoAgora(S.pro);
+  a.eq(p.score,null,'mas o medidor não aponta');
+  a.ok(p.velho&&p.velho.atraso>=8,'e guarda o placar velho com a idade dele');});
+
+teste('prontidão','com relógio recente o ponteiro vem do relógio',a=>{
+  _atleta(); S.pro.garmin=_relogio(50,50,0);
+  const p=prontidaoAgora(S.pro);
+  a.eq(p.fonte,'relogio','a fonte é o relógio');
+  a.eq(p.per,null,'sem check-in de hoje');
+  a.ok(p.score>0,'e há número');
+  a.ok(p.dias>=4,'com os dias de base junto');});
+
+teste('prontidão','só check-in: o ponteiro é do check-in e diz isso',a=>{
+  _atleta(); S.pro.garmin=[_checkin(hoje(),5)];
+  const p=prontidaoAgora(S.pro);
+  a.eq(p.fonte,'checkin','veio do check-in');
+  a.eq(p.score,100,'5 em tudo é 100');
+  a.eq(p.obj,null,'e o relógio não entra');});
+
+teste('prontidão','os dois juntos: mostra o relógio e não tira média',a=>{
+  _atleta(); S.pro.garmin=_relogio(50,50,0);
+  Object.assign(S.pro.garmin[0],_checkin(hoje(),1));   /* percebida 0 */
+  const p=prontidaoAgora(S.pro);
+  a.eq(p.fonte,'ambos','as duas fontes existem');
+  a.eq(p.score,p.obj,'o ponteiro é o do relógio');
+  a.eq(p.per,0,'e o check-in continua visível');
+  a.ok(p.score!==Math.round((p.obj+p.per)/2),'média dos dois seria outro número');
+  a.ok(Math.abs(p.delta)>20,'a discordância vira aviso');});
+
+teste('prontidão','as quatro faixas cobrem 0 a 100 sem buraco',a=>{
+  a.eq(faixaProntidao(0).nome,'muito baixa','0');
+  a.eq(faixaProntidao(39).nome,'muito baixa','39');
+  a.eq(faixaProntidao(40).nome,'baixa','40 já é baixa');
+  a.eq(faixaProntidao(54).nome,'baixa','54');
+  a.eq(faixaProntidao(55).nome,'normal','55');
+  a.eq(faixaProntidao(74).nome,'normal','74');
+  a.eq(faixaProntidao(75).nome,'alta','75');
+  a.eq(faixaProntidao(100).nome,'alta','100 não cai fora');});
+
+teste('prontidão','o marcador de contexto do dia viaja junto',a=>{
+  _atleta(); S.pro.garmin=_relogio(50,50,0);
+  S.pro.garmin[0].ctx=['viagem'];
+  const p=prontidaoAgora(S.pro);
+  a.eq(p.marcas.length,1,'um marcador hoje');
+  a.ok(/viagem/.test(cardMedidorProntidao()),'e aparece no cartão');});
+
+teste('prontidão','o cartão não aponta quando não há base',a=>{
+  _atleta(); S.pro.garmin=[];
+  const h=cardMedidorProntidao();
+  a.ok(/sem base/.test(h),'diz sem base');
+  a.ok(!/polygon/.test(h),'e não desenha agulha');});
 /* ── IMPORT DO GARMIN (v142) ─────────────────────────────────────────────── */
 teste('garmin','reconhece os quatro arquivos que importam, e só eles',a=>{
   a.eq(garminRelevante('DI_CONNECT/DI-Connect-Metrics/TrainingReadinessDTO_2026.json'),'VFC','VFC');
@@ -9021,6 +9098,113 @@ function veredictoProntidao(score){
   if(score>=75)return {nivel:'pronto',cor:'var(--ok)',txt:'Bem recuperado — dá para treinar forte e progredir a carga.'};
   if(score>=50)return {nivel:'moderado',cor:'var(--rope)',txt:'Prontidão média — mantenha a carga, evite picos e cuide do sono.'};
   return {nivel:'baixa prontidão',cor:'var(--clock)',txt:'Indicadores abaixo da sua faixa habitual. Leitura de estado, não diagnóstico — vale considerar recuperação antes de progredir carga.'};
+}
+/* ── MEDIDOR DE PRONTIDÃO ────────────────────────────────────────────────
+   Um ponteiro só, e logo abaixo o que o sustenta.
+
+   REGRA QUE IMPORTA: SEM BASE NÃO HÁ PONTEIRO. Um medidor que sempre aponta
+   para algum lugar ensina a confiar no desenho em vez do dado — e aqui há
+   dias sem relógio sincronizado e sem check-in respondido. Nesses dias o arco
+   aparece apagado, sem agulha, dizendo o que falta.
+
+   POR QUE NÃO FAZ MÉDIA entre relógio e check-in: a discordância entre os
+   dois é a informação mais útil (ver concordanciaProntidao). O ponteiro
+   mostra o corpo quando há medida do corpo, mostra o check-in quando é só o
+   que existe, e DIZ qual dos dois está mostrando. Quando os dois existem e
+   discordam muito, isso vira aviso — nunca um número intermediário, que
+   apagaria justamente o que os dois tinham de diferente. */
+const PRONT_FAIXAS=[[0,40,'muito baixa','var(--clock)'],[40,55,'baixa','var(--rope)'],
+                    [55,75,'normal','var(--water)'],[75,100,'alta','var(--ok)']];
+function faixaProntidao(s){
+  for(const f of PRONT_FAIXAS)if(s<f[1]||f[1]===100)return{nome:f[2],cor:f[3]};
+  return{nome:'normal',cor:'var(--water)'};
+}
+/* O relógio para de falar do HOJE depois de alguns dias sem sincronizar: o
+   cálculo compara os 3 registros mais recentes com os 14 anteriores, e se os
+   "recentes" forem de duas semanas atrás o número continua saindo — só que
+   sobre outro dia. Três dias é o limite. */
+const PRONT_ATRASO_MAX=3;
+function prontidaoAgora(pro){
+  pro=pro||S.pro;
+  const g=[...((pro&&pro.garmin)||[])].filter(x=>x&&x.data).sort((a,b)=>b.data.localeCompare(a.data));
+  const h0=new Date(hoje()+'T00:00:00');
+  const og=prontidaoGarmin(pro,null);
+  const ult=(g.find(x=>x.hrv!=null||x.fc!=null)||{}).data||null;
+  const atraso=ult?Math.round((h0-new Date(ult+'T00:00:00'))/86400000):null;
+  const velho=!!og&&(atraso==null||atraso>PRONT_ATRASO_MAX);
+  const obj=(og&&!velho)?og.score:null;
+  const sub=(typeof prontidaoSubj==='function')?prontidaoSubj(7):null;
+  const per=sub&&sub.hoje!=null?sub.hoje:null;
+  const base={obj,per,marcas:ctxDoDia(pro&&pro.garmin,hoje()),
+              dias:og?og.dias:null,atraso,
+              velho:velho?{score:og.score,atraso}:null,
+              media7:sub?sub.media:null,n7:sub?sub.n:null};
+  if(obj==null&&per==null){
+    const falta=[];
+    if(!og)falta.push('o relógio ainda não tem 4 dias de VFC ou de FC de repouso');
+    else if(velho)falta.push(atraso==null?'a medida do relógio não tem data'
+      :`a última medida do relógio é de ${atraso} dia${atraso===1?'':'s'} atrás`);
+    falta.push('o check-in de hoje não foi respondido');
+    return Object.assign(base,{score:null,fonte:null,delta:null,falta});
+  }
+  return Object.assign(base,{
+    score:obj!=null?obj:per,
+    fonte:(obj!=null&&per!=null)?'ambos':(obj!=null?'relogio':'checkin'),
+    delta:(obj!=null&&per!=null)?per-obj:null});
+}
+/* O desenho. Semicírculo de 180° (esquerda) a 360° (direita); o placar 0–100
+   vira ângulo direto. A faixa onde o atleta está fica cheia e as outras
+   apagadas, para o olho ir ao lugar certo sem precisar ler legenda. */
+function svgMedidorProntidao(score){
+  const CX=100,CY=96,R=74,W=16;
+  const ang=v=>180+Math.max(0,Math.min(100,v))*1.8;
+  const pt=(a,r)=>[(CX+r*Math.cos(a*Math.PI/180)).toFixed(2),(CY+r*Math.sin(a*Math.PI/180)).toFixed(2)];
+  const arco=(v1,v2,cor,op)=>{const a=pt(ang(v1),R),b=pt(ang(v2),R);
+    return `<path d="M${a[0]} ${a[1]} A${R} ${R} 0 0 1 ${b[0]} ${b[1]}" fill="none" stroke="${cor}" stroke-width="${W}" opacity="${op}"/>`;};
+  const vivo=score!=null, atual=vivo?faixaProntidao(score).nome:null;
+  const arcos=PRONT_FAIXAS.map(f=>arco(f[0],f[1],f[3],vivo?(f[2]===atual?1:.2):.18)).join('');
+  let agulha='';
+  if(vivo){
+    const a=ang(score),p1=pt(a,R-27),p2=pt(a+90,5.5),p3=pt(a-90,5.5);
+    agulha=`<polygon points="${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]}" fill="var(--ink)"/>`
+      +`<circle cx="${CX}" cy="${CY}" r="6" fill="var(--ink)"/>`;
+  }
+  return `<svg viewBox="0 0 200 104" width="210" height="109" role="img" aria-label="${vivo?'prontidão '+score+' de 100':'sem base para medir a prontidão hoje'}">${arcos}${agulha}</svg>`;
+}
+function cardMedidorProntidao(){
+  if(!temPro())return'';
+  const p=prontidaoAgora(S.pro), vivo=p.score!=null;
+  const fx=vivo?faixaProntidao(p.score):null;
+  const L=[];
+  if(vivo){
+    if(p.fonte==='ambos')
+      L.push(`Vem do <b>relógio</b> — ${p.obj} em ${p.dias} dias de base. O <b>check-in de hoje</b> deu ${p.per}: o app mostra os dois e não tira média.`);
+    else if(p.fonte==='relogio'){
+      L.push(`Vem do <b>relógio</b> — VFC, FC de repouso e sono, ${p.dias} dias de base${p.atraso>0?`, última medida de ${p.atraso} dia${p.atraso===1?'':'s'} atrás`:''}.`);
+      L.push('Sem o check-in de hoje não dá para comparar o que o corpo mostra com o que você sente.');
+    } else {
+      L.push(`Vem do <b>check-in de hoje</b>${p.n7>1?` — a média dos seus últimos ${p.n7} check-ins é ${p.media7}`:''}.`);
+      L.push(p.velho?`O relógio não entra: a última medida é de ${p.velho.atraso} dias atrás.`
+                    :'O relógio ainda não entra: faltam 4 dias de VFC ou de FC de repouso.');
+    }
+    L.push(p.marcas.length
+      ? `Hoje você marcou <b>${p.marcas.map(ctxRotulo).join(', ')}</b> — explica o número, não muda o cálculo.`
+      : 'Nenhum marcador de contexto hoje.');
+  } else {
+    L.push(`Sem base para apontar hoje: ${p.falta.join(' e ')}.`);
+    if(p.velho)L.push(`O último placar do relógio foi ${p.velho.score}, mas é de ${p.velho.atraso} dias atrás — não serve para falar de hoje.`);
+  }
+  const disc=vivo&&p.delta!=null&&Math.abs(p.delta)>20;
+  return `<div class="card" data-dom="corpo" id="c-medidor"><div class="eyebrow">prontidão hoje</div>
+    <div style="display:flex;justify-content:center;margin-top:4px">${svgMedidorProntidao(p.score)}</div>
+    <div style="text-align:center;margin-top:-10px">
+      <div style="font-size:32px;font-weight:800;line-height:1;color:${vivo?fx.cor:'var(--ink-3)'}">${vivo?p.score:'—'}</div>
+      <div style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin-top:4px;color:${vivo?fx.cor:'var(--ink-3)'}">${vivo?fx.nome:'sem base'}</div>
+    </div>
+    <div class="ln" style="margin:11px 0 8px"></div>
+    ${L.map(t=>`<div class="xs muted" style="margin:3px 0">${t}</div>`).join('')}
+    ${disc?`<div class="note warn" style="margin-top:9px"><b>Corpo e percepção discordam em ${Math.abs(p.delta)} pontos.</b> ${p.delta<0?'Você está se sentindo pior do que o relógio indica.':'Você está se sentindo melhor do que os sinais do corpo.'} É o sinal mais útil do dia — vale olhar antes de mexer na carga.</div>`:''}
+  </div>`;
 }
 function cardProntidaoSubj(){
   const p=prontidaoSubj(7); if(!p)return'';

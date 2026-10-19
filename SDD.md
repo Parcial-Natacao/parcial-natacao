@@ -81,6 +81,8 @@ provar que ainda vale.
 | Recusar é melhor que concluir fraco | cobertura < 60%, histórico < 8 semanas, amostra < 6 tiros | teste `extrato` |
 | Estimativa não vira score | gordura implausível entra em quarentena | `composicaoEstim` |
 | Marcador de contexto explica, **não corrige** | viagem e queda de forma não podem gerar o mesmo alarme | teste `contexto` |
+| **Sem base não há ponteiro** | medidor que sempre aponta ensina a confiar no desenho, não no dado | `prontidaoAgora`, teste `prontidão` |
+| Relógio parado não fala do hoje | a conta compara os 3 registros mais recentes com os 14 anteriores: sem limite de idade, o número sai sobre outro dia | `PRONT_ATRASO_MAX` (3 dias) |
 
 ### 1.4 Limites assumidos
 
@@ -113,6 +115,8 @@ provar que ainda vale.
 | Mínimo de **8 semanas** para comparar | v169 | abaixo disso não há base do próprio atleta |
 | Extrato mora no **calendário da aba Treinos**, recolhido | v172 | é onde já se navega mês a mês; aberto viraria ruído diário |
 | Faixa de VFC = média ± 1 desvio, 60 dias, excluindo hoje | v173 | o dia julgado não pode entrar no próprio julgamento |
+| Medidor de prontidão na aba **Treinos, acima do calendário** | v175 | é a tela em que se entra todo dia; no relatório só acharia quem já foi procurar |
+| O medidor **não tira média** entre relógio e check-in | v175 | a discordância entre os dois é a informação; o ponteiro mostra um, diz qual, e avisa quando discordam mais de 20 pontos |
 | **Strava está fora** | out/2026 | a política proíbe combinar dados e uso em IA, incluindo derivados |
 | Sem app nativo por enquanto | — | sincronização automática exigiria HealthKit/Health Connect |
 | Identificadores de armazenamento **não** são renomeados | — | `PFX='parcial_'`, projeto `parcial-cdb0e`, chaves `u_`/`pro_`/`eq_` |
@@ -173,7 +177,9 @@ Reencenar, no navegador, com banco simulado:
       dívida em aberto, e não é técnica. Um piloto acompanhado começa a pagá-la.
 - [x] Executar regras em emulador com Node/Java — evidência e roteiro em `docs/VALIDACAO-INICIO-GRUPOS.md` (não equivale a validar produção).
 - [ ] Revisar profissionalmente o gerador `g1` antes de liberá-lo. Implementação não marca revisão como concluída.
-- [ ] Publicar regras e índices desta branch e conferir o piloto no ambiente de destino, conforme roteiro.
+- [x] Publicar regras e índices (19/10/2026): `firebase/firestore.rules.v2` publicado
+      em Firestore › Regras e os dois índices de `group_members` criados e **Ativados**.
+      Falta conferir o piloto no ambiente de destino, conforme roteiro.
 - [ ] Decidir sobre plano Blaze — destravaria PITR (hoje inexistente no Spark) e
       o Storage para anexos.
 
@@ -221,6 +227,7 @@ Cada uma custou tempo de verdade.
 | Endereço | `meros360.com` |
 | Projeto Firebase | `parcial-cdb0e`, plano **Spark** (sem PITR, sem Storage) |
 | Regras publicadas | conferir em Firestore › Regras; devem bater com `firebase/firestore.rules.v2` |
+| Índices | `group_members` (uid, ativo) e (groupId, role, ativo), escopo coleção — ambos ativos |
 
 Para não criar uma segunda fonte de verdade, **este documento não repete o
 número da versão nem a contagem de testes**: os dois vivem no código e no app.
