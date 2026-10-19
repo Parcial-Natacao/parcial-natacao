@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v178"></script>
-<script src="./inicio-e-grupos.js?v=v178"></script>
+<script src="./persistencia-segura.js?v=v179"></script>
+<script src="./inicio-e-grupos.js?v=v179"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v178';
+const VER='v179';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4921,7 +4921,7 @@ teste('prontidão','sem relógio e sem check-in não há ponteiro',a=>{
   a.eq(p.score,null,'nada a apontar');
   a.ok(p.falta.length>=2,'e diz o que falta');
   a.ok(/check-in de hoje/.test(p.falta.join(' ')),'o check-in está entre o que falta');
-  a.ok(!/<line /.test(svgMedidorProntidao(null)),'o desenho sai sem o entalhe que marca o ponto');});
+  a.ok(!/mp-marca/.test(svgMedidorProntidao(null)),'o desenho sai sem a marca que aponta o ponto');});
 
 teste('prontidão','relógio parado há mais de 3 dias não fala do hoje',a=>{
   _atleta(); S.pro.garmin=_relogio(50,50,8);   /* começa 8 dias atrás */
@@ -4955,6 +4955,29 @@ teste('prontidão','os dois juntos: mostra o relógio e não tira média',a=>{
   a.ok(p.score!==Math.round((p.obj+p.per)/2),'média dos dois seria outro número');
   a.ok(Math.abs(p.delta)>20,'a discordância vira aviso');});
 
+teste('prontidão','as quatro faixas ocupam o mesmo pedaço do arco',a=>{
+  /* em pontos elas são desiguais (muito baixa tem 40, baixa tem 15); no
+     desenho têm de ser iguais, senão a faixa estreita — onde 41 e 54 são
+     coisas bem diferentes — é a que fica com menos espaço */
+  for(let i=0;i<PRONT_FAIXAS.length;i++){
+    const L=angFaixa(i);
+    a.quase(L[1]-L[0],45,0.001,'faixa '+PRONT_FAIXAS[i][2]+' com 45 graus');
+  }
+  a.eq(angFaixa(0)[0],180,'o arco começa na esquerda');
+  a.eq(angFaixa(3)[1],360,'e termina na direita');});
+teste('prontidão','o placar se posiciona dentro da sua própria faixa',a=>{
+  a.quase(angProntidao(0),180,0.001,'0 no início');
+  a.quase(angProntidao(20),202.5,0.001,'20 é metade de muito baixa');
+  a.quase(angProntidao(40),225,0.001,'40 abre a faixa baixa');
+  a.quase(angProntidao(47.5),247.5,0.001,'47,5 é metade de baixa');
+  a.quase(angProntidao(55),270,0.001,'55 abre normal');
+  a.quase(angProntidao(75),315,0.001,'75 abre alto');
+  a.quase(angProntidao(100),360,0.001,'100 no fim');
+  a.quase(angProntidao(-10),180,0.001,'abaixo de 0 não escapa');
+  a.quase(angProntidao(140),360,0.001,'acima de 100 também não');
+  let ant=-1,cresce=true;
+  for(let v=0;v<=100;v+=0.5){const x=angProntidao(v); if(x<ant)cresce=false; ant=x;}
+  a.ok(cresce,'e nunca anda para trás');});
 teste('prontidão','o nome de cada faixa vai escrito na própria faixa',a=>{
   /* é o que dispensa legenda e decorar cor: PRONT_FAIXAS é a única fonte dos
      quatro nomes, e os quatro têm de aparecer no desenho */
@@ -4962,7 +4985,7 @@ teste('prontidão','o nome de cada faixa vai escrito na própria faixa',a=>{
   for(const f of PRONT_FAIXAS)a.ok(svg.indexOf(f[2].toUpperCase())>=0,f[2]+' aparece no arco');
   a.ok(/textPath/.test(svg),'escritos ao longo do arco, não soltos');
   a.ok(/>HOJE</.test(svg),'e HOJE fica acima do número');
-  a.ok(/<line /.test(svg),'com o entalhe no ponto exato');});
+  a.ok(/mp-marca/.test(svg),'com a marca no ponto exato');});
 teste('prontidão','dois medidores na mesma tela não trocam de rótulo',a=>{
   /* os textPath apontam por id: sem id próprio o segundo medidor puxaria os
      caminhos do primeiro e os nomes sairiam no lugar errado */
@@ -4990,7 +5013,7 @@ teste('prontidão','o cartão não aponta quando não há base',a=>{
   _atleta(); S.pro.garmin=[];
   const h=cardMedidorProntidao();
   a.ok(/sem base/.test(h),'diz sem base');
-  a.ok(!/<line /.test(h),'e não marca ponto nenhum no arco');});
+  a.ok(!/mp-marca/.test(h),'e não marca ponto nenhum no arco');});
 /* ── IMPORT DO GARMIN (v142) ─────────────────────────────────────────────── */
 teste('garmin','reconhece os quatro arquivos que importam, e só eles',a=>{
   a.eq(garminRelevante('DI_CONNECT/DI-Connect-Metrics/TrainingReadinessDTO_2026.json'),'VFC','VFC');
@@ -9257,6 +9280,32 @@ function prontidaoAgora(pro){
     fonte:(obj!=null&&per!=null)?'ambos':(obj!=null?'relogio':'checkin'),
     delta:(obj!=null&&per!=null)?per-obj:null});
 }
+/* ── FATIAS IGUAIS NO ARCO (v179) ──────────────────────────────────
+   As faixas têm larguras diferentes em PONTOS (muito baixa tem 40, baixa tem
+   15), e mapear ponto direto em ângulo deixava "baixa" com um quarto do arco
+   de "muito baixa". Duas consequências ruins: o desenho ficava torto, e a
+   faixa estreita — que é onde a diferença entre 41 e 54 mais importa — era
+   justamente a que tinha menos espaço para mostrar onde o atleta caiu.
+
+   Agora cada faixa ocupa um quarto do semicírculo e o placar se posiciona
+   DENTRO da sua faixa. A escala do arco deixa de ser linear em pontos: 45°
+   valem 40 pontos na primeira faixa e 15 na segunda. O número no meio
+   continua sendo o número; o arco diz em que faixa ele cai e onde dentro
+   dela. */
+function angProntidao(v){
+  const F=PRONT_FAIXAS, fatia=180/F.length;
+  v=Math.max(0,Math.min(100,v));
+  for(let i=0;i<F.length;i++){
+    const ini=F[i][0], fim=(i===F.length-1)?100:F[i][1];
+    if(v<fim||i===F.length-1){
+      const dentro=fim>ini?Math.max(0,Math.min(1,(v-ini)/(fim-ini))):0;
+      return 180+(i+dentro)*fatia;
+    }
+  }
+  return 360;
+}
+/* os limites de cada faixa no arco: fatias iguais, independentes dos pontos */
+const angFaixa=i=>[180+i*(180/PRONT_FAIXAS.length),180+(i+1)*(180/PRONT_FAIXAS.length)];
 /* Cada medidor precisa de ids próprios: dois cartões na mesma página fariam
    os textPath do segundo apontarem para os caminhos do primeiro. */
 let _mpSeq=0;
@@ -9268,13 +9317,12 @@ let _mpSeq=0;
    o ponteiro grosso que havia antes passava por cima justamente do número. */
 function svgMedidorProntidao(score){
   const CX=100,CY=96,R=74,W=18,GAP=1.4,ID='mp'+(++_mpSeq);
-  const ang=v=>180+Math.max(0,Math.min(100,v))*1.8;
   const pt=(a,r)=>[(CX+r*Math.cos(a*Math.PI/180)).toFixed(2),(CY+r*Math.sin(a*Math.PI/180)).toFixed(2)];
   const arco=(a1,a2,r)=>{const p=pt(a1,r),q=pt(a2,r);return `M${p[0]} ${p[1]} A${r} ${r} 0 0 1 ${q[0]} ${q[1]}`;};
   const vivo=score!=null, fx=vivo?faixaProntidao(score):null;
   let faixas='',rotulos='',marca='';
   PRONT_FAIXAS.forEach((f,i)=>{
-    const a1=ang(f[0])+GAP, a2=ang(f[1])-GAP, aceso=vivo&&f[2]===fx.nome;
+    const lim=angFaixa(i), a1=lim[0]+GAP, a2=lim[1]-GAP, aceso=vivo&&f[2]===fx.nome;
     /* Todas as faixas ficam COLORIDAS — apagar as outras tirava o contraste do
        nome escrito em cima delas, que é justamente o que faz o desenho ser lido
        sem legenda. Quem diz onde o atleta está é a faixa mais grossa, o entalhe
@@ -9283,16 +9331,18 @@ function svgMedidorProntidao(score){
     /* o caminho do rótulo fica um pouco para dentro do centro do traço: o
        textPath assenta a BASE das letras na linha, e elas crescem para fora */
     rotulos+=`<path id="${ID}-${i}" d="${arco(a1,a2,R-3.2)}" fill="none"/>`
-      +`<text font-size="7.2" font-weight="800" letter-spacing=".35" fill="#fff"`
+      +`<text font-size="${f[2].length>8?6.3:7.2}" font-weight="800" letter-spacing="${f[2].length>8?.05:.35}" fill="#fff"`
       +` stroke="rgba(0,0,0,.42)" stroke-width=".75" paint-order="stroke"`
       +` opacity="${vivo?(aceso?1:.9):.55}">`
       +`<textPath href="#${ID}-${i}" startOffset="50%" text-anchor="middle">${f[2].toUpperCase()}</textPath></text>`;
     if(aceso){
-      /* o entalhe não pode cair no vão entre duas faixas (placar exatamente no
-         limite, como 75), senão some */
-      const a=Math.max(a1+1.5,Math.min(a2-1.5,ang(score)));
-      const p=pt(a,R-(W+4)/2),q=pt(a,R+(W+4)/2);
-      marca=`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="var(--card)" stroke-width="2.6" stroke-linecap="round"/>`;
+      /* A marca fica FORA do arco, apontando para dentro. Atravessando o traço
+         ela cortava o nome escrito na faixa bem no meio ("BAI|XA"), e perto das
+         pontas sumia. O vão entre faixas também engolia a marca quando o placar
+         caía exatamente no limite (75), daí o recuo de 1,5°. */
+      const a=Math.max(a1+1.5,Math.min(a2-1.5,angProntidao(score)));
+      const ponta=pt(a,R+(W+4)/2+1), e=pt(a-2.6,R+(W+4)/2+5.4), d=pt(a+2.6,R+(W+4)/2+5.4);
+      marca=`<polygon class="mp-marca" points="${ponta[0]},${ponta[1]} ${e[0]},${e[1]} ${d[0]},${d[1]}" fill="var(--ink)"/>`;
     }
   });
   const cor=vivo?fx.cor:'var(--ink-3)';
