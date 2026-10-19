@@ -120,6 +120,7 @@ provar que ainda vale.
 | Faixa de VFC = média ± 1 desvio, 60 dias, excluindo hoje | v173 | o dia julgado não pode entrar no próprio julgamento |
 | Medidor de prontidão na aba **Treinos, acima do calendário** | v175 | é a tela em que se entra todo dia; no relatório só acharia quem já foi procurar |
 | O nome da faixa vai escrito na própria faixa do arco | v178 | dispensa legenda e dispensa decorar que vermelho é ruim; `PRONT_FAIXAS` é a única fonte dos quatro nomes |
+| As quatro faixas ocupam **45° cada** no arco, e o placar se posiciona dentro da sua | v179 | em pontos elas são desiguais (40, 15, 20, 25); proporcional, a faixa estreita — onde 41 e 54 são coisas diferentes — ficava com menos espaço. A escala do arco deixa de ser linear em pontos: isso é proposital, o número no meio continua exato |
 | O medidor **não tira média** entre relógio e check-in | v175 | a discordância entre os dois é a informação; o ponteiro mostra um, diz qual, e avisa quando discordam mais de 20 pontos |
 | **Strava está fora** | out/2026 | a política proíbe combinar dados e uso em IA, incluindo derivados |
 | Sem app nativo por enquanto | — | sincronização automática exigiria HealthKit/Health Connect |
