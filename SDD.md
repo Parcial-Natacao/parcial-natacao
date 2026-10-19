@@ -79,6 +79,9 @@ provar que ainda vale.
 | Procedência viaja com o dado | VFC da noite ≠ média semanal; parcial oficial ≠ digitada | `hrvF`, `origemParc`, `serieHRV` |
 | Referência é do atleta, não universal | 6,5h de sono para todo mundo dizia que um atleta de 7h39 estava bem | `refSono`, `faixaHRV` |
 | Recusar é melhor que concluir fraco | cobertura < 60%, histórico < 8 semanas, amostra < 6 tiros | teste `extrato` |
+| ACWR só fala com passado | uma sessão na vida dava "4,0× a média das 4 semanas anteriores" e abria o relatório do atleta novo com REAVALIAR A CARGA | `ACWR_DIAS_BASE_MIN`, teste `carga` |
+| A semana existe também sem equipe | `carregarDados` saltava `carregarSemana` no ramo sem equipe: o PRO independente marcava feito e seguia vendo "0 de 1" | `carregarSemana`, teste `semana` |
+| A marca mora num lugar só | a tela de escolher esporte — a primeira de quem cria a conta — seguia escrevendo "PARCIAL" à mão | `APP_MARCA`, teste `marca` |
 | Estimativa não vira score | gordura implausível entra em quarentena | `composicaoEstim` |
 | Marcador de contexto explica, **não corrige** | viagem e queda de forma não podem gerar o mesmo alarme | teste `contexto` |
 | **Sem base não há ponteiro** | medidor que sempre aponta ensina a confiar no desenho, não no dado | `prontidaoAgora`, teste `prontidão` |
@@ -175,6 +178,8 @@ Reencenar, no navegador, com banco simulado:
 
 - [ ] **Revisão dos cálculos por profissional de ciência do esporte.** É a maior
       dívida em aberto, e não é técnica. Um piloto acompanhado começa a pagá-la.
+      Entra nessa conversa o limite assumido em `ACWR_DIAS_BASE_MIN` (6 dias com
+      carga nos 21 dias anteriores): é critério de bom senso, não de literatura.
 - [x] Executar regras em emulador com Node/Java — evidência e roteiro em `docs/VALIDACAO-INICIO-GRUPOS.md` (não equivale a validar produção).
 - [ ] Revisar profissionalmente o gerador `g1` antes de liberá-lo. Implementação não marca revisão como concluída.
 - [x] Publicar regras e índices (19/10/2026): `firebase/firestore.rules.v2` publicado
@@ -203,6 +208,16 @@ Reencenar, no navegador, com banco simulado:
 ## 5. Armadilhas conhecidas
 
 Cada uma custou tempo de verdade.
+
+- **Testar o cadastro do zero encontra o que o dono do app nunca vê.** Quem já
+  tem conta, equipe e meses de histórico nunca passa pelos ramos de "primeiro
+  dia". Os três defeitos de 19/10/2026 — marca antiga, semana sem equipe e ACWR
+  sem passado — só aparecem numa conta nova e sem equipe.
+- Para encenar isso sem tocar em produção: servir uma cópia do `index.html` com
+  `FB_CONFIG.apiKey` vazio. O app cai em `LOCAL=true` e grava tudo no
+  `localStorage` do navegador — nenhuma conta é criada no Firebase. O que esse
+  caminho **não** exercita: confirmação de e-mail, regras do Firestore,
+  sincronia entre aparelhos e service worker.
 
 | armadilha | sintoma | como evitar |
 |---|---|---|

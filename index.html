@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v176"></script>
-<script src="./inicio-e-grupos.js?v=v176"></script>
+<script src="./persistencia-segura.js?v=v177"></script>
+<script src="./inicio-e-grupos.js?v=v177"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v176';
+const VER='v177';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1099,7 +1099,22 @@ const kPTr=(uid,id)=>`pt_${uid}_${id}`;        /* treino de piscina pessoal do P
 function ehTreinoPessoal(id,t){return !!(t?._pessoal||(S.tridx||[]).find(x=>x.id===id)?._pessoal)}
 function chaveTreinoUsuario(id,t){return ehTreinoPessoal(id,t)?kPTr(S.u.id,id):kTr(S.u.equipe,id)}
 async function lerTreinoUsuario(id){return DB.get(chaveTreinoUsuario(id))}
-async function gravarTreinoUsuario(t){return gravarComEspera(chaveTreinoUsuario(t.id,t),t)}
+/* O que ESTE aparelho acaba de gravar entra no cache da semana na hora.
+   O comentário de `carregarSemana` já prometia isso ("o que o próprio
+   aparelho grava já atualiza o cache na hora"), mas nada implementava: depois
+   de marcar "feito" e voltar para a lista, a faixa da semana seguia dizendo
+   "pendente" e "0 de 1" até a releitura de 60s — tempo de sobra para o atleta
+   concluir que não salvou e marcar de novo. */
+function lembrarDocSemana(t){
+  if(!t||!t.id||!t.data)return false;
+  if(!semanaDe(hoje()).includes(t.data))return false;   /* fora da semana não entra: o cache é só dela */
+  _semDocs[t.id]=t; return true;
+}
+async function gravarTreinoUsuario(t){
+  const r=await gravarComEspera(chaveTreinoUsuario(t.id,t),t);
+  lembrarDocSemana(t);
+  return r;
+}
 async function transacaoTreinoUsuario(id,fn){return transacao(chaveTreinoUsuario(id),fn)}
 /* ── O DADO CARREGA O DONO ──────────────────────────────────────────────────
    A perda de 14/10 teve uma causa só, por trás de todos os sintomas: o objeto
@@ -1741,6 +1756,13 @@ async function carregarDados(){
   const pessoais=temDadosPessoais()&&!ehGestor()?((await DB.get(kPTrIdx(S.u.id)))||[]):[];
   if(!eq){
     S.eq=null; S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    /* ⚠️ Sem equipe o fluxo saltava `carregarSemana` e ia direto para o return.
+       Resultado: `_semDocs` ficava vazio para sempre, `feitoConhecido` sempre
+       devolvia null, e o PRO independente — o cadastro padrão de quem escolhe
+       "ainda não tenho equipe" — via "0 de 1" e "treino de hoje" mesmo depois
+       de marcar tudo como feito. `carregarSemana` não usa `eq` quando o treino
+       é pessoal, que é o único caso possível aqui. */
+    await carregarSemana(null,S.tridx);
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
     await juntarSaude();
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
@@ -1752,6 +1774,7 @@ async function carregarDados(){
      equipe. Evita leituras negadas e mantém apenas o nome necessário à espera. */
   if(S.u.aprovado===false&&['atleta','pro','tecnico'].includes(S.u.perfil)){
     S.eq=await DB.get(kEq(eq)); S.tridx=pessoais; S.cidx=[]; S.libs=[]; S.elenco=[]; S.treino=null; S.comp=null; S.tecnico=null;
+    await carregarSemana(eq,S.tridx);   /* mesmo motivo do ramo sem equipe */
     if(temDadosPessoais()&&!S.laudoAtleta)S.pro=comDono(await DB.get(kPro(S.u.id)),S.u.id)||proVazio(S.u.id);
     await juntarSaude();
     return;
@@ -2594,7 +2617,10 @@ const ESPORTES=['Natação','Corrida','Triathlon','Musculação','Bicicleta','Ci
 function telaEsporte(){
   return`
   <div style="height:24px"></div>
-  <div class="center"><div class="brand" style="font-size:30px">PAR<span>CIAL</span></div></div>
+  ${/* esta tela ficou com a marca ANTIGA escrita à mão quando o app virou
+       Meros360: a troca pegou APP_MARCA e passou direto por aqui, porque era
+       texto solto. É a PRIMEIRA tela de quem acaba de criar a conta. */''}
+  <div class="center"><div class="brand grande">${APP_MARCA}</div></div>
   <div class="card" style="margin-top:18px">
     <div class="eyebrow">qual esporte você pratica?</div>
     <div style="max-height:46vh;overflow-y:auto;margin-top:10px;border:1px solid var(--line);border-radius:12px">
@@ -4815,6 +4841,71 @@ teste('prontidão','sem forma específica não há score',a=>{
   a.ok(/forma específica|componentes/.test(r.motivo||''),'e diz por quê');});
 
 
+/* ── ACWR PRECISA DE PASSADO (v177) ──────────────────────────────
+   Uma sessão na vida dava "4.0× a média das 4 semanas anteriores" e abria o
+   relatório do atleta novo com REAVALIAR A CARGA. */
+function _diasCarga(mapa){const d=[];for(let i=0;i<42;i++)d[i]=mapa[i]||0;return d;}
+teste('carga','uma sessão só não vira razão de carga',a=>{
+  const dia=_diasCarga({0:455});
+  const r=acwrComBase(dia,455,455/4);
+  a.eq(r.acwr,null,'sem passado, sem razão');
+  a.eq(r.baseDias,0,'nenhum dia de base nas 3 semanas anteriores');});
+teste('carga','com base suficiente a razão volta a sair',a=>{
+  const m={}; for(let i=0;i<28;i+=2)m[i]=400;      /* 14 dias com carga */
+  const dia=_diasCarga(m);
+  const ag=dia.slice(0,7).reduce((t,x)=>t+x,0), cr=dia.slice(0,28).reduce((t,x)=>t+x,0)/4;
+  const r=acwrComBase(dia,ag,cr);
+  a.ok(r.baseDias>=ACWR_DIAS_BASE_MIN,'passa do mínimo de dias de base');
+  a.ok(r.acwr!=null,'e a razão existe');
+  a.quase(r.acwr,ag/cr,0.0001,'e é a divisão normal');});
+teste('carga','base no limite: 5 dias não, 6 dias sim',a=>{
+  const mk=n=>{const m={};for(let i=0;i<n;i++)m[7+i*2]=400;return _diasCarga(m)};
+  a.eq(acwrComBase(mk(5),400,500).acwr,null,'5 dias ainda é pouco');
+  a.ok(acwrComBase(mk(6),400,500).acwr!=null,'6 dias já serve');});
+teste('carga','sem razão o app não fala de carga',a=>{
+  _atleta();
+  const r=recomendaIntensidade({fadiga:{acwr:null,monotonia:null},estado:{pr:{score:80}}});
+  a.ok(!/sustentável|reduzir|redução|progressão/i.test(r.txt),'nada de veredicto sobre carga');
+  a.ok(/semanas suficientes/.test(r.txt),'e diz o que falta');
+  const r2=recomendaIntensidade({fadiga:{acwr:null,monotonia:null},estado:{pr:{score:30}}});
+  a.eq(r2.t,'warn','prontidão baixa continua avisando');
+  a.ok(!/carga dos últimos 7 dias/.test(r2.txt),'mas sem inventar razão de carga');});
+
+/* ── SEMANA DO ATLETA SEM EQUIPE (v177) ──────────────────────────
+   Achado testando o cadastro novo do zero: um PRO sem equipe marcava o treino
+   como feito e a faixa seguia dizendo "0 de 1". `_semDocs` nunca era
+   preenchido, porque `carregarDados` saltava `carregarSemana` no ramo sem
+   equipe — e nada realimentava o cache depois de gravar. */
+teste('semana','marca de feito entra no cache da semana na hora',a=>{
+  _atleta();
+  const bk=Object.keys(_semDocs); bk.forEach(k=>delete _semDocs[k]);
+  const t={id:'tq1',data:hoje(),_pessoal:true,para:['A1'],feito:{A1:true}};
+  a.eq(lembrarDocSemana(t),true,'treino da semana entra');
+  a.eq(semDoc('tq1'),t,'e semDoc passa a enxergar');
+  a.eq(feitoConhecido({id:'tq1'}),true,'feitoConhecido deixa de devolver null');
+  delete _semDocs['tq1'];});
+teste('semana','o cache guarda só a semana corrente',a=>{
+  _atleta();
+  const velho={id:'tq2',data:_dAtras(30),_pessoal:true,para:['A1'],feito:{A1:true}};
+  a.eq(lembrarDocSemana(velho),false,'treino de 30 dias atrás fica de fora');
+  a.eq(semDoc('tq2'),null,'e não aparece no cache');
+  a.eq(lembrarDocSemana(null),false,'nulo não quebra');
+  a.eq(lembrarDocSemana({id:'x'}),false,'sem data não entra');});
+teste('semana','sem feito conhecido a faixa não inventa conclusão',a=>{
+  _atleta();
+  const bk=Object.keys(_semDocs); bk.forEach(k=>delete _semDocs[k]);
+  a.eq(feitoConhecido({id:'inexistente'}),null,'sem documento, null — nem true nem false');});
+
+/* ── MARCA (v177) ────────────────────────────────────────────
+   A tela de escolher esporte — a PRIMEIRA de quem acabou de criar a conta —
+   seguia escrevendo "PARCIAL" à mão, porque a troca de marca pegou APP_MARCA
+   e passou direto por um texto solto. */
+teste('marca','nenhuma tela escreve a marca antiga à mão',a=>{
+  const t=telaEsporte();
+  a.ok(!/PAR<span>CIAL<\/span>/.test(t),'a palavra antiga saiu');
+  a.ok(t.indexOf(APP_MARCA)>=0,'e a tela usa APP_MARCA');
+  a.eq(APP_NOME,'Meros360','o nome mora num lugar só');});
+
 /* ── MEDIDOR DE PRONTIDÃO (v175) ───────────────────────────────────────────
    O que estes casos protegem: o ponteiro só existe quando há base, o número
    diz de onde veio, e relógio parado não fala do hoje. */
@@ -4871,8 +4962,8 @@ teste('prontidão','as quatro faixas cobrem 0 a 100 sem buraco',a=>{
   a.eq(faixaProntidao(54).nome,'baixa','54');
   a.eq(faixaProntidao(55).nome,'normal','55');
   a.eq(faixaProntidao(74).nome,'normal','74');
-  a.eq(faixaProntidao(75).nome,'alta','75');
-  a.eq(faixaProntidao(100).nome,'alta','100 não cai fora');});
+  a.eq(faixaProntidao(75).nome,'alto','75');
+  a.eq(faixaProntidao(100).nome,'alto','100 não cai fora');});
 
 teste('prontidão','o marcador de contexto do dia viaja junto',a=>{
   _atleta(); S.pro.garmin=_relogio(50,50,0);
@@ -9115,7 +9206,7 @@ function veredictoProntidao(score){
    discordam muito, isso vira aviso — nunca um número intermediário, que
    apagaria justamente o que os dois tinham de diferente. */
 const PRONT_FAIXAS=[[0,40,'muito baixa','var(--clock)'],[40,55,'baixa','var(--rope)'],
-                    [55,75,'normal','var(--water)'],[75,100,'alta','var(--ok)']];
+                    [55,75,'normal','var(--water)'],[75,100,'alto','var(--ok)']];
 function faixaProntidao(s){
   for(const f of PRONT_FAIXAS)if(s<f[1]||f[1]===100)return{nome:f[2],cor:f[3]};
   return{nome:'normal',cor:'var(--water)'};
@@ -10447,12 +10538,30 @@ function diasComCargaInformada(){
   return m;
 }
 function idadeDoUsuario(){ try{ return (typeof anos==='function'&&S.u)?anos(S.u):null; }catch(_){ return null; } }
+/* ⚠️ ACWR SEM PASSADO É UM NÚMERO INVENTADO (v177)
+   Achado testando um cadastro novo do zero: com UMA sessão na vida (RPE 7 ×
+   65 min) o relatório abria com "REAVALIAR A CARGA — carga dos últimos 7 dias
+   em 4.0× a média das 4 semanas anteriores". A média de 28 dias era a própria
+   sessão dividida por 4: a semana sendo comparada consigo mesma. O primeiro
+   treino da vida do atleta virava alarme de excesso de carga — ao lado de um
+   "cobertura dos dados 3%" que o próprio app escrevia.
+   A razão só diz algo quando existe carga ANTES da semana corrente. Seis dias
+   com carga nos 21 dias anteriores (≈ 2 por semana) é o mínimo assumido aqui;
+   é um critério de bom senso e entra na lista do que a revisão de ciência do
+   esporte precisa confirmar. Sem base, `acwr` sai null — e quem lê null já
+   sabe dizer "ainda sem carga habitual para comparar". */
+const ACWR_DIAS_BASE_MIN=6;
+function diasComCargaEntre(dia,a,b){let n=0;for(let i=a;i<b;i++)if((dia[i]||0)>0)n++;return n;}
+function acwrComBase(dia,aguda,cron){
+  const base=diasComCargaEntre(dia,7,28);
+  return {acwr:(cron>0&&base>=ACWR_DIAS_BASE_MIN)?aguda/cron:null, baseDias:base};
+}
 /* fadiga: carga aguda (7d) / carga habitual (28d/sem), em UA de duração × RPE. NAO e a mesma conta de cargaACWR(), que usa METROS NADADOS. monotonia = média/desvio (7d) */
 function fadigaCarga(){
   const dia=loadDiario(42), soma=(a,b)=>{let t=0;for(let i=a;i<b;i++)t+=dia[i]||0;return t;};
   const aguda=soma(0,7), cron=soma(0,28)/4;
   if(aguda<=0&&cron<=0)return null;
-  const acwr=cron>0?aguda/cron:null;
+  const {acwr,baseDias}=acwrComBase(dia,aguda,cron);
   const arr=Array.from({length:7},(_,i)=>dia[i]||0), m=arr.reduce((t,x)=>t+x,0)/7;
   /* Monotonia de Foster = media/desvio da carga diaria da semana. Com carga
      quase igual todo dia o desvio tende a zero e a razao EXPLODE: o teste
@@ -10462,7 +10571,7 @@ function fadigaCarga(){
      tira o absurdo; o piso de desvio evita divisao por quase-zero. */
     const sd=Math.sqrt(arr.reduce((t,x)=>t+(x-m)*(x-m),0)/7);
     const monotonia=m>0?Math.min(5,m/Math.max(sd,m*0.08)):0;
-  return {aguda:Math.round(aguda),cronica:Math.round(cron),acwr,monotonia:+monotonia.toFixed(1),strain:Math.round(aguda*monotonia)};
+  return {aguda:Math.round(aguda),cronica:Math.round(cron),acwr,baseDias,monotonia:+monotonia.toFixed(1),strain:Math.round(aguda*monotonia)};
 }
 function cardFadiga(){
   const f=fadigaCarga(); if(!f)return'';
@@ -10514,7 +10623,7 @@ async function calcFadigaAtleta(atId){
   if(!temCarga&&!pront)return Object.assign({aguda:null,cronica:null,acwr:null,monotonia:null,prontidao:null},extra);
   let res={aguda:null,cronica:null,acwr:null,monotonia:null,prontidao:pront};
   if(temCarga){
-    const acwr=cron>0?aguda/cron:null;
+    const {acwr,baseDias}=acwrComBase(dia,aguda,cron);
     const arr=Array.from({length:7},(_,i)=>dia[i]||0), m=arr.reduce((t,x)=>t+x,0)/7;
     /* Monotonia de Foster = media/desvio da carga diaria da semana. Com carga
      quase igual todo dia o desvio tende a zero e a razao EXPLODE: o teste
@@ -10524,7 +10633,7 @@ async function calcFadigaAtleta(atId){
      tira o absurdo; o piso de desvio evita divisao por quase-zero. */
     const sd=Math.sqrt(arr.reduce((t,x)=>t+(x-m)*(x-m),0)/7);
     const monotonia=m>0?Math.min(5,m/Math.max(sd,m*0.08)):0;
-    res={aguda:Math.round(aguda),cronica:Math.round(cron),acwr,monotonia:+monotonia.toFixed(1),prontidao:pront};
+    res={aguda:Math.round(aguda),cronica:Math.round(cron),acwr,baseDias,monotonia:+monotonia.toFixed(1),prontidao:pront};
   }
   return Object.assign(res,extra);
 }
@@ -13178,6 +13287,16 @@ function recomendaIntensidade(motor){
   const prS=(typeof prontidaoSubj==='function'&&prontidaoSubj(7))?prontidaoSubj(7).media:null;
   const pr=prG!=null?prG:prS;
   if(acwr==null&&pr==null)return{t:'',nivel:'Sem dados de carga',txt:'Faltam dados para recomendar intensidade. Marque RPE e duração dos treinos e faça o check-in diário.'};
+  /* Sem ACWR não se fala de carga — nem para mandar reduzir, nem para dizer
+     que está "sustentável". Antes desta guarda, quem tinha check-in e nenhuma
+     história de treino recebia "Manter a carga — carga em faixa sustentável",
+     uma afirmação sobre carga feita sem carga nenhuma. */
+  if(acwr==null){
+    if(pr!=null&&pr<50)return{t:'warn',nivel:'Prontidão baixa hoje',
+      txt:'A prontidão de hoje está abaixo da sua faixa. Ainda não há semanas suficientes de registro para comparar a carga com a sua habitual — esta leitura é do estado, não uma recomendação de carga.'};
+    return{t:'',nivel:'Sem carga habitual para comparar',
+      txt:'Ainda não há semanas suficientes de RPE e duração registrados para comparar a carga desta semana com a sua habitual. Seguir registrando é o que destrava essa leitura.'};
+  }
   const alto=(acwr!=null&&acwr>1.5)||(mono!=null&&mono>2.2)||(pr!=null&&pr<50);
   if(alto){ const m=[];
     if(acwr!=null&&acwr>1.5)m.push(`carga de sessão (duração × RPE) dos últimos 7 dias em ${acwr.toFixed(1)}× a média das 4 semanas anteriores`);
