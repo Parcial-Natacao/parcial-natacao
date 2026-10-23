@@ -220,6 +220,11 @@ Cada uma custou tempo de verdade.
   de escrever qualquer leitor de PDF novo, imprima o que `pdfTextos` devolve
   para o arquivo de verdade; o texto do pypdf, do visualizador ou do
   copiar-e-colar sai em outra ordem e leva a um parser que nunca funciona.
+- **Leitor de formato novo tem DOIS lados.** O Meet Program entrou na v180 só
+  na tela do atleta; na do técnico o mesmo PDF voltou zero inscritos na véspera
+  seguinte. São cadeias separadas — `minhasProvasDoBalizamento` para o atleta,
+  `parseBalizTec` para o técnico — e mexer numa sem a outra deixa metade do
+  app sem enxergar o arquivo.
 - **Dois documentos com o mesmo nome popular.** "Balizamento" pode ser o
   psych sheet (antes do sorteio: sem série e sem raia) ou o Meet Program
   (depois: com as duas). Quando os dois leitores acham o atleta, o que tem
