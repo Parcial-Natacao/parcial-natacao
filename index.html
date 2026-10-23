@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v180"></script>
-<script src="./inicio-e-grupos.js?v=v180"></script>
+<script src="./persistencia-segura.js?v=v181"></script>
+<script src="./inicio-e-grupos.js?v=v181"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v180';
+const VER='v181';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -6540,6 +6540,31 @@ teste('balizamento','o meet program ganha do psych sheet, que não tem raia',a=>
   a.eq(r[0].raia,7,'com raia');});
 teste('balizamento','psych sheet não passa pelo leitor de meet program',a=>{
   a.eq(hytekProgramaMinhas(_HY_COL,'Bruno Barbato').length,0,'sem série no documento, nada de raia inventada');});
+teste('balizamento','o técnico também lê o meet program, com série e raia',a=>{
+  /* O leitor novo tinha entrado só na tela do atleta. Na do técnico o mesmo PDF
+     voltava zero inscritos — nenhum nome — porque parseBalizTec só conhecia
+     ABMN e psych sheet. */
+  const bk=S.elenco;
+  try{
+    _atleta(); S.elenco=[{id:'a1',nome:'Bruno Barbato de Macedo'}];
+    const r=parseHytekProgramaEquipe(_HY_PROG,['Tnt Masters Sp']);
+    a.eq(r.length,1,'uma prova da equipe (o revezamento fica de fora)');
+    a.eq(r[0].inscritos.length,1,'um inscrito');
+    const i=r[0].inscritos[0];
+    a.eq(i.nome,'Bruno Barbato de Macedo','o nome sai como está no Elenco');
+    a.eq(i.serie,22,'com série');
+    a.eq(i.raia,7,'e raia — que o psych sheet nunca teve');
+    a.eq(i.inscricao,132750,'e o tempo de inscrição');
+  } finally { S.elenco=bk; }});
+teste('balizamento','pela coluna da equipe, acha quem ainda não está no Elenco',a=>{
+  const bk=S.elenco;
+  try{
+    _atleta(); S.elenco=[];
+    const r=parseHytekProgramaEquipe(_HY_PROG,['Tnt Masters Sp']);
+    a.eq(r.length,1,'achou pela equipe, sem Elenco nenhum');
+    a.eq(r[0].inscritos[0].nome,'Barbato De Macedo, Bruno','e o nome vem como está no PDF');
+    a.eq(parseHytekProgramaEquipe(_HY_PROG,['Outro Clube']).length,0,'equipe que não está no PDF não traz ninguém');
+  } finally { S.elenco=bk; }});
 teste('balizamento','cabeçalho em inglês vira prova, revezamento e jarda ficam de fora',a=>{
   const c=hytekCabecalho('#14 Men 50 LC Meter Breaststroke');
   a.eq(c&&c.dist,50,'distância'); a.eq(c&&c.estilo,'peito','estilo'); a.eq(c&&c.codigo,'14','código');
@@ -7719,6 +7744,35 @@ function parseHytekEquipe(txt,alvos){
   }
   return out;
 }
+/* O MESMO Meet Program, do lado do técnico (v181). O leitor novo tinha entrado
+   só na tela do atleta; na do técnico o PDF de Buenos Aires voltava ZERO
+   inscritos — nenhum nome, nenhuma prova — porque os quatro leitores de lá
+   conhecem ABMN e psych sheet, e nenhum deles conhece este formato.
+   Aqui vem de bônus o que o psych sheet nunca teve: série e raia de cada
+   atleta da equipe. A série INTEIRA não é guardada no documento da equipe de
+   propósito — 20 atletas × 5 provas × 10 adversaários engordaria o documento
+   sem necessidade; para ver quem nada ao lado, o atleta sobe o PDF no espaço
+   dele. */
+function parseHytekProgramaEquipe(txt,alvos){
+  const elenco=(S.elenco||[]).map(a=>({a,toks:tokensNome(a.nome)})).filter(x=>x.toks.length);
+  const AL=new Set((alvos||[]).map(s=>normNome(s)).filter(Boolean));
+  const out=[];
+  for(const p of parseHytekPrograma(txt)){
+    const ins=[];
+    for(const s of Object.keys(p.series))for(const i of p.series[s]){
+      const n=normNome(i.nome);
+      const doElenco=elenco.find(x=>x.toks.every(t=>n.includes(t)));
+      if(!doElenco&&!AL.has(normNome(i.equipe||'')))continue;
+      ins.push({serie:+s,raia:i.raia,nome:doElenco?doElenco.a.nome:i.nome,
+        equipe:i.equipe||'',inscricao:i.inscricao});
+    }
+    if(ins.length){
+      ins.sort((a,b)=>(a.serie-b.serie)||(a.raia-b.raia));
+      out.push({codigo:p.codigo,dist:p.dist,estilo:p.estilo,genero:p.genero,categoria:'',inscritos:ins});
+    }
+  }
+  return out;
+}
 /* Ordem de prioridade, cada formato no layout que é o dele: ABMN por equipe,
    ABMN por nomes do Elenco, HY-TEK em três colunas, HY-TEK em uma. Recebe as
    DUAS leituras do PDF (ou uma string só, para texto colado). */
@@ -7727,6 +7781,10 @@ function parseBalizTec(t){
   const colunas=typeof t==='string'?t:(t.colunas||t.linhas);
   const porEq=parseBalizamentoEquipe(linhas,alvosEquipe()); if(porEq.length)return porEq;
   const porNome=parseBalizamentoTecnico(linhas); if(porNome.length)return porNome;
+  /* Meet Program antes do psych sheet, pela mesma razão do lado do atleta: os
+     dois acham o nome, mas só este sabe em que série e raia ele nada. */
+  const prog=parseHytekProgramaEquipe(linhas,alvosEquipe()); if(prog.length)return prog;
+  const progC=parseHytekProgramaEquipe(colunas,alvosEquipe()); if(progC.length)return progC;
   const hyCol=parseHytekEquipe(colunas,alvosEquipe()); if(hyCol.length)return hyCol;
   return parseHytekEquipe(linhas,alvosEquipe());
 }
