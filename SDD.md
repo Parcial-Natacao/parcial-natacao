@@ -77,6 +77,9 @@ provar que ainda vale.
 | Nada é prometido sem confirmação | "salvo neste aparelho — sincroniza quando a internet voltar" | `gravarComEspera` |
 | Ausência de alarme é dita, não omitida | cartão que some vira "não existe" na cabeça de quem procura | `cardConferirGarmin`, `cardCaixaPreta` |
 | Procedência viaja com o dado | VFC da noite ≠ média semanal; parcial oficial ≠ digitada | `hrvF`, `origemParc`, `serieHRV` |
+| Parcial de prova se lê por trecho **ou** acumulada, e o app diz qual entendeu | o 200 livre de Buenos Aires foi anotado por trecho e não salvava; exigir um formato só faz o atleta digitar errado | `lerParciaisProva`, teste `tempo` |
+| A aspa de segundo é separador decimal | `30"68` virava 3068 segundos — 51 minutos — porque a aspa era apagada | `parseTempo`, teste `tempo` |
+| Balizamento com sorteio tem série e raia, e elas não podem se perder | o Meet Program de Buenos Aires foi lido pelo parser do psych sheet: achou a prova e perdeu série, raia e a série inteira — funcionou o bastante para parecer certo | `parseHytekPrograma`, teste `balizamento` |
 | Referência é do atleta, não universal | 6,5h de sono para todo mundo dizia que um atleta de 7h39 estava bem | `refSono`, `faixaHRV` |
 | Recusar é melhor que concluir fraco | cobertura < 60%, histórico < 8 semanas, amostra < 6 tiros | teste `extrato` |
 | ACWR só fala com passado | uma sessão na vida dava "4,0× a média das 4 semanas anteriores" e abria o relatório do atleta novo com REAVALIAR A CARGA | `ACWR_DIAS_BASE_MIN`, teste `carga` |
@@ -210,6 +213,17 @@ Reencenar, no navegador, com banco simulado:
 ## 5. Armadilhas conhecidas
 
 Cada uma custou tempo de verdade.
+
+- **O pdf.js não entrega o PDF como o olho lê.** No Meet Program do HY-TEK,
+  cada inscrito sai em DUAS linhas — equipe e tempo de inscrição acima,
+  raia e nome abaixo — porque estão em alturas diferentes na página. Antes
+  de escrever qualquer leitor de PDF novo, imprima o que `pdfTextos` devolve
+  para o arquivo de verdade; o texto do pypdf, do visualizador ou do
+  copiar-e-colar sai em outra ordem e leva a um parser que nunca funciona.
+- **Dois documentos com o mesmo nome popular.** "Balizamento" pode ser o
+  psych sheet (antes do sorteio: sem série e sem raia) ou o Meet Program
+  (depois: com as duas). Quando os dois leitores acham o atleta, o que tem
+  série ganha — ver a ordem em `minhasProvasDoBalizamento`.
 
 - **Testar o cadastro do zero encontra o que o dono do app nunca vê.** Quem já
   tem conta, equipe e meses de histórico nunca passa pelos ramos de "primeiro

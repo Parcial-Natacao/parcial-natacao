@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v179"></script>
-<script src="./inicio-e-grupos.js?v=v179"></script>
+<script src="./persistencia-segura.js?v=v180"></script>
+<script src="./inicio-e-grupos.js?v=v180"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v179';
+const VER='v180';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1355,7 +1355,16 @@ function fmt(ms,curto){
 }
 function parseTempo(x){
   if(x==null||x==='')return null;
-  const t=String(x).trim().replace(/["″]/g,'').replace(/['′h]/g,':').replace(',','.');
+  /* ⚠️ A ASPA DE SEGUNDO É SEPARADOR, NÃO LIXO (v180)
+     Antes a aspa era apagada: 30"68 virava "3068" e era lido como 3068
+     SEGUNDOS — 51 minutos. O atleta anota 30"68 porque é como se escreve
+     tempo de natação em português; 1'20"68 é um minuto, vinte segundos e 68
+     centésimos. Aspa ENTRE dígitos vira ponto decimal; aspa no fim só fecha
+     os segundos e sai. */
+  const t=String(x).trim()
+    .replace(/(\d)\s*["″“”]\s*(\d)/g,'$1.$2')     /* 30"68 → 30.68 (teclado de celular manda ”) */
+    .replace(/["″“”]/g,'')                       /* 1'20" → 1'20 */
+    .replace(/['′‘’h]/g,':').replace(',','.');
   const p=t.split(':').map(n=>parseFloat(n)).filter(n=>!isNaN(n));
   if(!p.length)return null;
   if(p.length===1)return Math.round(p[0]*1000);
@@ -1375,6 +1384,55 @@ function parseTempoDist(x,dist){
     if(seg<dist*0.4 && +m[2]<60) return Math.round((+m[1]*60 + +m[2])*1000);  // rápido demais p/ a distância → min:seg
   }
   return parseTempo(s);
+}
+/* ── PARCIAIS DE PROVA: POR TRECHO OU ACUMULADAS (v180) ─────────────────
+   O atleta anota do jeito que viu. A súmula e o placar dão a PASSAGEM
+   (acumulado: 30.68 · 1:04.47 · 1:40.58 · 2:16.50); o cronômetro da
+   arquibancada e o papel do técnico dão o TRECHO, cada 50 isolado
+   (30.68 · 33.79 · 36.11 · 35.92). As duas formas são legítimas e exigir uma
+   delas só faz o atleta digitar errado — foi o que aconteceu com o 200 livre
+   de Buenos Aires, que não salvou.
+
+   A diferença é VERIFICÁVEL, não um palpite: acumulado sempre cresce. A
+   sequência acima não cresce (35.92 depois de 36.11), então é trecho, e o
+   tempo final é a soma. Quando cresce dos dois jeitos — duas passagens de 100
+   — decide a plausibilidade: lido como acumulado, o segundo trecho sairia em
+   4,20 s para 50 m, que ninguém nada. E nada disso é decidido em silêncio: a
+   tela mostra o que entendeu ANTES de salvar. */
+const SEG_POR_METRO_MIN=0.35;   /* mais rápido que isso não existe (o recorde do 50 livre dá ~0,42 s/m) */
+function lerParciaisProva(txt,dist){
+  /* A vírgula é separador E separador decimal em português: "30,68 / 33,79".
+     Sem proteger a decimal, 30,68 virava dois tempos (30 e 68) e o 200 livre
+     saía com oito parciais. Vírgula ENTRE dígitos, sem espaço, é decimal. */
+  const SEP=String.fromCharCode(1);
+  const brutos=String(txt||'').replace(/(\d),(\d)/g,'$1'+SEP+'$2')
+    .split(/[\s\/,;|·]+/).filter(Boolean)
+    .map(x=>x.split(SEP).join(','));
+  if(!brutos.length)return null;
+  const v=brutos.map(s=>parseTempo(s));
+  const ruim=v.findIndex(x=>x==null||!(x>0));
+  if(ruim>=0)return{erro:'Não entendi "'+brutos[ruim]+'".'};
+  const n=v.length, trechoM=(dist&&n&&dist%n===0)?dist/n:null;
+  const soma=[]; {let s=0; for(const x of v){s+=x; soma.push(s);}}
+  let modo='trecho';
+  if(n>1&&v.every((x,i)=>!i||x>v[i-1])){
+    const impl=v.map((x,i)=>i?x-v[i-1]:x);
+    const piso=trechoM?trechoM*SEG_POR_METRO_MIN*1000:0;
+    if(impl.every(x=>x>=piso))modo='acumulado';
+  }
+  const acumuladas=modo==='acumulado'?v.slice():soma;
+  const trechos=acumuladas.map((x,i)=>i?x-acumuladas[i-1]:x);
+  return{n,trechoM,modo,acumuladas,trechos,total:acumuladas[n-1]};
+}
+/* o que o app entendeu, em uma frase, para o atleta conferir antes de salvar */
+function leituraParciais(p,dist){
+  if(!p)return'';
+  if(p.erro)return'<span style="color:var(--clock)">'+esc(p.erro)+'</span>';
+  const quanto=p.trechoM?p.n+' parciais de '+p.trechoM+' m':p.n+' parciais';
+  const como=p.modo==='acumulado'?'acumuladas (passagens)':'por trecho';
+  return quanto+', '+como+'. Tempo final <b>'+fmt(p.total,true)+'</b>.'
+    +'<br>Trechos: '+p.trechos.map(x=>fmt(x,true)).join(' · ')
+    +(p.trechoM?'':' <span style="color:var(--rope-ink)">— '+p.n+' parciais não dividem '+(dist||'?')+' m em trechos iguais; confira.</span>');
 }
 let tT,_focoAntesSheet=null;
 function toast(m){const e=document.getElementById('toast');e.textContent=m;e.classList.add('on');
@@ -6390,6 +6448,98 @@ const _HY_FLAT=[                    /* leitura achatada: colunas coladas na mesm
  '#5 Women 200 LC Meter Freestyle',
  '182 Twomey, Mary 72 CMAC 5:10.00 47 Barbato De Macedo, Bruno 43 TNTS 2:12.75 109 Monterrubio, Daniel 30 UNAM 2:27.01',
  '#6 Men 200 LC Meter Freestyle'].join('\n');
+/* ── TEMPO E PARCIAIS DE PROVA (v180) ──────────────────────────────────────
+   O 200 livre de Buenos Aires: quatro parciais por trecho, anotadas com aspa
+   de segundo, que não salvavam. */
+teste('tempo','a aspa de segundo é separador decimal, não lixo',a=>{
+  a.eq(parseTempo('30"68'),30680,'30"68 é 30,68 s — antes virava 3068 s (51 min)');
+  a.eq(parseTempo("1'20\"68"),80680,"1'20\"68 é 1 min 20,68 s");
+  a.eq(parseTempo("1'20\""),80000,'aspa no fim só fecha os segundos');
+  a.eq(parseTempo('30”68'),30680,'aspa curva do teclado do celular também');
+  a.eq(parseTempo('2:12.75'),132750,'o formato de sempre segue igual');});
+teste('tempo','quatro parciais por trecho viram o tempo final',a=>{
+  const p=lerParciaisProva('30"68 33"79 36"11 35"92',200);
+  a.eq(p.modo,'trecho','a sequência não cresce, então é trecho');
+  a.eq(p.total,136500,'soma dá 2:16.50');
+  a.eq(p.trechoM,50,'quatro parciais em 200 m são de 50 m');
+  a.eq(p.acumuladas[1],64470,'a segunda passagem é 1:04.47');});
+teste('tempo','passagens acumuladas continuam sendo lidas como passagens',a=>{
+  const p=lerParciaisProva('30.68 1:04.47 1:40.58 2:16.50',200);
+  a.eq(p.modo,'acumulado','cresce e cada trecho é nadável');
+  a.eq(p.total,136500,'o total é a última passagem, não a soma');
+  a.eq(p.trechos[3],35920,'e os trechos saem por diferença');});
+teste('tempo','quando cresce dos dois jeitos, decide a plausibilidade',a=>{
+  /* 100 m com dois números crescentes é ambíguo. Lido como passagem, o segundo
+     trecho sairia em 4,20 s para 50 m — ninguém nada isso. */
+  const tre=lerParciaisProva('29.50 33.70',100);
+  a.eq(tre.modo,'trecho','4,20 s num 50 m não existe');
+  a.eq(tre.total,63200,'total 1:03.20');
+  const acu=lerParciaisProva('29.50 1:03.20',100);
+  a.eq(acu.modo,'acumulado','aqui os dois trechos são nadáveis');
+  a.eq(acu.total,63200,'mesmo total, leitura certa');});
+teste('tempo','a vírgula decimal não vira separador de parcial',a=>{
+  const p=lerParciaisProva('30,68 / 33,79 / 36,11 / 35,92',200);
+  a.eq(p.n,4,'quatro parciais, não oito');
+  a.eq(p.total,136500,'e o mesmo 2:16.50');
+  a.eq(lerParciaisProva('14,10, 31,28',50).total,31280,'vírgula com espaço separa, colada é decimal');});
+teste('tempo','parcial ilegível recusa em vez de inventar',a=>{
+  a.ok(/xx/.test(lerParciaisProva('30.68 xx 36.11',200).erro||''),'diz qual token não entendeu');
+  a.eq(lerParciaisProva('',200),null,'campo vazio não é erro, é ausência');});
+
+/* ── MEET PROGRAM: SÉRIE, RAIA E A SÉRIE INTEIRA (v180) ────────────────────
+   Trecho real do PAQ Masters de Buenos Aires, como o pdf.js entrega: cada
+   inscrito em duas linhas, equipe e tempo antes da raia e do nome. */
+const _HY_PROG=[
+  'Event 6   Men 200 LC Meter Freestyle',
+  ' Heat   22 of 26   Timed Finals   Starts at 18:08 PM',
+  '(Mex) Aquatic Club and Swim  2:13.75',
+  '0   Diaz Diaz, Jose Antonio   32',
+  '(Arg) Club Atletico Union de S 2:11.15',
+  '4   Berli, Martin Leonardo   47',
+  '(Bra) Tnt Masters Sp 2:12.75',
+  '7   Barbato De Macedo, Bruno   43',
+  '(Chi) Equipe Sem Tempo NT',
+  '9   Sem Tempo, Fulano   30',
+  'Event 7   Women 200 LC Meter Freestyle',
+  ' Heat   1 of 2   Timed Finals   Starts at 19:00 PM',
+  '(Arg) Outra Equipe 2:30.00',
+  '3   Outra, Pessoa   40',
+  'Event 9   Men 200 LC Meter Freestyle Relay',
+  ' Heat   1 of 1   Timed Finals   Starts at 20:00 PM',
+  '(Bra) Tnt Masters Sp NT',
+  '5   Barbato De Macedo, Bruno   43'
+].join('\n');
+teste('balizamento','meet program traz série, raia e tempo de inscrição',a=>{
+  const r=hytekProgramaMinhas(_HY_PROG,'Bruno Barbato de Macedo');
+  a.eq(r.length,1,'só a prova individual — o revezamento fica de fora');
+  a.eq(r[0].dist,200,'200 m');
+  a.eq(r[0].estilo,'livre','livre');
+  a.eq(r[0].serie,22,'série 22');
+  a.eq(r[0].raia,7,'raia 7');
+  a.eq(r[0].inscricao,132750,'inscrição 2:12.75');
+  a.eq(r[0].codigo,'6','prova #6');});
+teste('balizamento','a série inteira vem junto, com quem nada ao lado',a=>{
+  const r=hytekProgramaMinhas(_HY_PROG,'Bruno Barbato de Macedo')[0];
+  a.eq(r.serieLista.length,4,'quatro na série');
+  a.eq(r.serieLista.filter(x=>x.eu).length,1,'um deles sou eu');
+  a.eq(r.serieLista.find(x=>x.raia===4).nome,'Berli, Martin Leonardo','a raia 4 é do Berli');
+  a.eq(r.serieLista.find(x=>x.raia===9).inscricao,null,'NT entra como sem tempo, não como zero');
+  a.eq(r.serieLista.find(x=>x.raia===7).equipe,'Tnt Masters Sp','a equipe sai da linha de cima');});
+teste('balizamento','a ordem na série sai do tempo de inscrição',a=>{
+  const r=hytekProgramaMinhas(_HY_PROG,'Bruno Barbato de Macedo')[0];
+  const o=ordemDaSerie(r.serieLista);
+  a.eq(o.n,3,'três com tempo; o NT não entra na conta');
+  a.eq(o.lider.nome,'Berli, Martin Leonardo','2:11.15 é o mais rápido');
+  a.eq(o.minha,2,'eu sou o segundo tempo');
+  a.eq(o.semTempo,1,'e um nadador está sem tempo');});
+teste('balizamento','o meet program ganha do psych sheet, que não tem raia',a=>{
+  /* os dois acham o atleta; só um sabe onde ele nada. Deixar o psych sheet
+     vencer foi o defeito de Buenos Aires. */
+  const r=minhasProvasDoBalizamento({linhas:_HY_PROG,colunas:_HY_COL},'Bruno Barbato');
+  a.eq(r[0].serie,22,'veio do meet program');
+  a.eq(r[0].raia,7,'com raia');});
+teste('balizamento','psych sheet não passa pelo leitor de meet program',a=>{
+  a.eq(hytekProgramaMinhas(_HY_COL,'Bruno Barbato').length,0,'sem série no documento, nada de raia inventada');});
 teste('balizamento','cabeçalho em inglês vira prova, revezamento e jarda ficam de fora',a=>{
   const c=hytekCabecalho('#14 Men 50 LC Meter Breaststroke');
   a.eq(c&&c.dist,50,'distância'); a.eq(c&&c.estilo,'peito','estilo'); a.eq(c&&c.codigo,'14','código');
@@ -7968,22 +8118,60 @@ function telaMinhaComp(){
   <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Competições</button></div>
   <div><div class="eyebrow">${brData(mc.data)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
   <div class="card"><div class="eyebrow">balizamento em PDF</div>
-    <p class="small muted" style="margin:4px 0 6px">Suba o balizamento ou o <b>psych sheet</b> e eu preencho as <b>suas</b> provas pelo seu nome. Entende o formato brasileiro (ABMN) e o internacional (HY-TEK, em inglês). Psych sheet não tem série nem raia — ainda não houve sorteio; vem a prova, o tempo de inscrição e a sua posição no seed. Melhor esforço — confira depois.</p>
+    <p class="small muted" style="margin:4px 0 6px">Suba o PDF e eu preencho as <b>suas</b> provas pelo seu nome — formato brasileiro (ABMN) ou internacional (HY-TEK). Do <b>Meet Program</b> (depois do sorteio) vem série, raia e a <b>série inteira</b>; do <b>psych sheet</b> (antes) vem só a prova e o tempo de inscrição, porque série e raia ainda não existem — subir o Meet Program depois completa a mesma prova, sem duplicar. Melhor esforço: confira na súmula.</p>
     <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarBalizamento(this)"></div>
   </div>
   <div class="row" style="margin:8px 0"><div class="eyebrow">minhas provas</div><div class="grow"></div>
     <button class="sm primary" onclick="abrirNovaProvaAtleta()">+ Prova</button></div>
+  ${/* os botões ganharam linha própria: com eles ao lado, a coluna de texto
+     ficava com um terço da tela e "série 22 · raia 7" quebrava em três linhas */''}
   ${(mc.provas||[]).length?mc.provas.map(pr=>`<div class="card tight" style="margin:8px 0">
-    <div class="row"><div class="grow"><b>${pr.dist}m ${pr.estilo}</b>
-      <div class="xs muted">${[pr.codigo?'prova #'+esc(String(pr.codigo)):'',pr.serie?'série '+pr.serie:'',pr.raia?'raia '+pr.raia:'',
+    <div><b>${pr.dist}m ${pr.estilo}</b>
+      <div class="xs muted">${[pr.codigo?'prova #'+esc(String(pr.codigo)):'',pr.serie?'<b>série '+pr.serie+'</b>':'',pr.raia!=null?'<b>raia '+pr.raia+'</b>':'',
         pr.inscricao?'insc. '+fmt(pr.inscricao,true):'',pr.seed?pr.seed+'º no seed':''].filter(Boolean).join(' · ')}</div>
-      ${pr.tempo?`<div class="small" style="color:var(--ok);font-weight:700">tempo: ${fmt(pr.tempo,true)}</div>`:''}</div>
-      <button class="sm ${pr.tempo?'ghost':'primary'}" onclick="abrirTempoRealizado('${pr.id}')">${pr.tempo?'Editar':'Lançar'}</button>
+      ${pr.serieLista&&pr.serieLista.length?linhaResumoSerie(pr):''}
+      ${pr.tempo?`<div class="small" style="color:var(--ok);font-weight:700;margin-top:3px">tempo: ${fmt(pr.tempo,true)}${(pr.parciais&&pr.parciais.length>1)?` <span class="xs muted" style="font-weight:400">(${pr.parciais.map((x,i)=>fmt(i?x-pr.parciais[i-1]:x,true)).join(' · ')})</span>`:''}</div>`:''}</div>
+    <div class="row" style="gap:6px;margin-top:8px">
+      ${pr.serieLista&&pr.serieLista.length?`<button class="sm ghost" onclick="abrirSerieProva('${pr.id}')">Ver a série</button>`:''}
+      <button class="sm ${pr.tempo?'ghost':'primary'} grow" onclick="abrirTempoRealizado('${pr.id}')">${pr.tempo?'Editar tempo':'Lançar tempo'}</button>
       <button class="sm ghost" style="color:var(--clock)" onclick="apagarProvaAtleta('${pr.id}')">✕</button></div>
   </div>`).join(''):'<div class="small muted">Nenhuma prova ainda. Toque em + Prova ou suba o balizamento.</div>'}
   ${S.u.perfil==='pro'&&(mc.provas||[]).some(p=>p.tempo)?`<button class="primary full" style="margin-top:12px" onclick="enviarProvasParaMarcas('${mc.id}')">Enviar tempos para Marcas</button>`:''}
   <button class="ghost full" style="margin-top:10px;color:var(--clock)" onclick="apagarCompeticaoAtleta('${mc.id}')">Apagar competição</button>
   <div style="height:20px"></div>`;
+}
+/* ── A SÉRIE NA BEIRA DA PISCINA ─────────────────────────────────
+   Quem está do lado, com que tempo entrou, e quem é o mais rápido. Ordenado
+   por RAIA, que é como se olha a piscina, com a posição no seed ao lado —
+   ordenar por tempo daria um ranking bonito e inútil para achar o vizinho. */
+function linhaResumoSerie(pr){
+  if(!pr.serieLista||!pr.serieLista.length)return'';
+  const o=ordemDaSerie(pr.serieLista);
+  if(!o.lider)return`<div class="xs muted">Série com ${pr.serieLista.length} nadador(es), nenhum com tempo de inscrição.</div>`;
+  const souEu=o.eu&&o.lider.raia===o.eu.raia;
+  const dif=(o.eu&&o.eu.inscricao!=null&&!souEu)?o.eu.inscricao-o.lider.inscricao:null;
+  return`<div class="xs muted">${o.minha?`<b>${o.minha}º tempo de ${o.n}</b> na série`:'Sem tempo de inscrição seu'}`
+    +` · mais rápido: ${souEu?'<b>você</b>':esc(prim(o.lider.nome.split(',').reverse().join(' ')))+' '+fmt(o.lider.inscricao,true)}`
+    +(dif!=null?` (${dif>0?'+':''}${(dif/1000).toFixed(2)}s)`:'')
+    +(o.semTempo?` · ${o.semTempo} sem tempo`:'')+`</div>`;
+}
+function abrirSerieProva(provaId){
+  const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
+  const pr=(mc.provas||[]).find(p=>p.id===provaId); if(!pr||!pr.serieLista)return;
+  const o=ordemDaSerie(pr.serieLista);
+  const linhas=pr.serieLista.slice().sort((a,b)=>a.raia-b.raia).map(x=>{
+    const pos=o.ordem[x.raia];
+    return`<div class="row" style="align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);${x.eu?'font-weight:800':''}">`
+      +`<span class="av" style="${x.eu?'background:var(--ink);color:var(--deck);border-color:var(--ink)':''}">${x.raia}</span>`
+      +`<span class="grow">${esc(x.nome)}${x.eu?' <span class="tag o">você</span>':''}`
+      +`<span class="xs muted" style="display:block;font-weight:400">${[x.equipe?esc(x.equipe):'',x.pais?esc(x.pais):'',x.idade?x.idade+' anos':''].filter(Boolean).join(' · ')}</span></span>`
+      +`<span style="text-align:right">${x.inscricao!=null?fmt(x.inscricao,true):'<span class="xs muted">s/ tempo</span>'}`
+      +(pos?`<span class="xs muted" style="display:block;font-weight:400">${pos}º</span>`:'')+`</span></div>`;
+  }).join('');
+  sheet(`<h2>Série ${pr.serie} · ${pr.dist}m ${pr.estilo}</h2>
+    <div class="xs muted" style="margin:2px 0 8px">Por raia, com a posição no tempo de inscrição. Tempo de inscrição é o que cada um declarou — não é previsão do que vai nadar hoje.</div>
+    ${linhas}
+    <div class="xs muted" style="margin-top:10px">Lido do balizamento. Confira na súmula oficial antes de contar com isso.</div>`);
 }
 function abrirNovaCompeticaoAtleta(){
   sheet(`<h2>Nova competição</h2>
@@ -8029,19 +8217,49 @@ async function apagarProvaAtleta(id){
 function abrirTempoRealizado(provaId){
   const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
   const pr=(mc.provas||[]).find(p=>p.id===provaId); if(!pr)return;
+  const jaTrechos=(pr.parciais&&pr.parciais.length>1)
+    ?pr.parciais.map((x,i)=>fmt(i?x-pr.parciais[i-1]:x,true)).join(' ') : '';
   sheet(`<h2>Tempo — ${pr.dist}m ${pr.estilo}</h2>
-    <div class="field"><label>Tempo realizado</label><input id="trTempo" placeholder="ex.: 31.28 ou 1:07.28" value="${pr.tempo!=null?fmt(pr.tempo,true):''}"></div>
-    <div class="field"><label>Parciais acumuladas <span class="xs muted">(opcional)</span></label><input id="trParc" placeholder="ex.: 14.10 / 31.28"></div>
+    <div class="field"><label>Parciais <span class="xs muted">por trecho ou acumuladas</span></label>
+      <input id="trParc" placeholder='ex.: 30”68 33”79 36”11 35”92' value="${esc(jaTrechos)}" oninput="previaTempoProva(${pr.dist})"></div>
+    <div class="field"><label>Tempo realizado <span class="xs muted">deixe vazio para somar as parciais</span></label>
+      <input id="trTempo" placeholder="ex.: 31.28 ou 2:16.50" value="${pr.tempo!=null?fmt(pr.tempo,true):''}" oninput="previaTempoProva(${pr.dist})"></div>
+    <div id="trPrev" class="xs muted" style="margin:-2px 0 10px;line-height:1.5"></div>
     <button class="primary full" onclick="salvarTempoRealizado('${provaId}')">Salvar</button>`);
+  previaTempoProva(pr.dist);
+}
+/* O app diz o que entendeu ENQUANTO se digita. Parcial lida errado vira marca
+   errada em Marcas, e marca errada contamina projeção, %PB e extrato. */
+function previaTempoProva(dist){
+  const el=document.getElementById('trPrev'); if(!el)return;
+  const p=lerParciaisProva(val('trParc'),dist);
+  const digitado=parseTempoDist(val('trTempo'),dist);
+  if(!p&&!digitado){el.innerHTML='';return;}
+  let h=p?leituraParciais(p,dist):'';
+  if(p&&!p.erro&&digitado){
+    const d=Math.abs(digitado-p.total);
+    h+=d>250
+      ?'<br><span style="color:var(--rope-ink)">O tempo digitado ('+fmt(digitado,true)+') não fecha com a soma das parciais ('+fmt(p.total,true)+'). O app grava o <b>digitado</b> — confira as parciais.</span>'
+      :'<br>Bate com o tempo digitado.';
+  }
+  if(!p&&digitado)h='Tempo <b>'+fmt(digitado,true)+'</b>, sem parciais.';
+  el.innerHTML=h;
 }
 async function salvarTempoRealizado(provaId){
   const mc=(S.u.competicoes||[]).find(x=>x.id===S.minhaComp); if(!mc)return;
   const pr=(mc.provas||[]).find(p=>p.id===provaId); if(!pr)return;
-  const ms=parseTempo(val('trTempo')); if(!ms)return toast('Tempo inválido');
+  const p=lerParciaisProva(val('trParc'),pr.dist);
+  if(p&&p.erro)return toast(p.erro);
+  /* o tempo oficial é o do placar; a soma das parciais só entra quando ele
+     não foi digitado — é aí que ela deixa de ser palpite e vira o único dado */
+  const ms=parseTempoDist(val('trTempo'),pr.dist)||(p?p.total:null);
+  if(!ms)return toast('Informe o tempo realizado ou as parciais');
   pr.tempo=ms;
-  const parc=val('trParc')?val('trParc').split(/[\/,;]+/).map(s=>parseTempo(s.trim())).filter(x=>x!=null):[];
-  pr.parciais=parc.length?parc:[ms];
-  await salvarUsuario(); fecharSheet(); toast('Tempo salvo'); render();
+  pr.parciais=p?p.acumuladas:[ms];
+  pr.trechoM=p&&p.trechoM?p.trechoM:null;
+  await salvarUsuario(); fecharSheet();
+  toast(p&&!parseTempoDist(val('trTempo'),pr.dist)?'Tempo somado das parciais: '+fmt(ms,true):'Tempo salvo');
+  render();
 }
 async function enviarProvasParaMarcas(mcId){
   const mc=(S.u.competicoes||[]).find(x=>x.id===mcId); if(!mc)return;
@@ -8124,6 +8342,82 @@ function parseHytek(txt){
   }
   return provas.filter(p=>p.inscritos.length);
 }
+/* ── MEET PROGRAM HY-TEK — BALIZAMENTO COM SÉRIE E RAIA (v180) ───────────
+   Não é o mesmo documento do psych sheet. O psych sheet sai ANTES do sorteio:
+   traz a prova, o tempo de inscrição e a posição no seed, e nada mais — por
+   isso `hytekMinhasProvas` devolve série e raia nulas. O Meet Program sai
+   DEPOIS, e é o papel que o atleta leva para a borda da piscina: série, raia,
+   horário e a lista inteira de quem nada junto.
+
+   Em Buenos Aires o app leu o Meet Program com o parser do psych sheet, achou
+   o atleta e mostrou a prova SEM série e SEM raia. Funcionou o bastante para
+   parecer que tinha dado certo, o que é pior do que falhar.
+
+   O LAYOUT, como o pdf.js entrega: cada inscrito sai em DUAS linhas, porque a
+   equipe e o tempo de inscrição ficam alguns pontos acima da raia e do nome.
+       "(Bra) Tnt Masters Sp 2:12.75"
+       "7   Barbato De Macedo, Bruno   43"
+   Juntar as duas é o que faz a leitura existir. O cabeçalho também muda: aqui
+   é "Event 6   Men 200 LC Meter Freestyle", sem o # do psych sheet, e a
+   continuação de página repete a prova dentro da linha da série. */
+const HYP_EVENTO=/(?:^|\()\s*Event\s*#?\s*(\d+[A-Za-z]?)\s+(Women|Men|Mixed|Girls|Boys)\s+(\d{2,4})\s+(?:LC|SC)?\s*(Meters?|Metres?|Yards?)\s+(Freestyle|Backstroke|Breaststroke|Butterfly|Individual Medley|IM)(\s+Relay)?/i;
+const HYP_SERIE=/^\s*(?:Heat|Flight)\s+(\d{1,3})\b/i;
+const HYP_EQUIPE=/^\s*\(([A-Za-z]{2,3})\)\s*(.*?)\s*(NT|\d{1,2}:\d{2}[.,]\d{2}|\d{1,3}[.,]\d{2})\s*$/;
+const HYP_RAIA=/^\s*(\d{1,2})\s+(\S.*?,\s*\S.*?)\s+(\d{1,3})\s*$/;
+function parseHytekPrograma(txt){
+  const provas=[]; let cur=null, serie=null, pend=null;
+  for(const raw of String(txt||'').split(/\r?\n/)){
+    const l=raw.replace(/\s+/g,' ').trim(); if(!l)continue;
+    const ms=l.match(HYP_SERIE); if(ms)serie=+ms[1];
+    const me=l.match(HYP_EVENTO);
+    if(me){
+      pend=null; if(!ms)serie=null;              /* cabeçalho puro zera a série; continuação de página traz as duas coisas */
+      if(me[6]||/yard/i.test(me[4])){cur=null;continue;}   /* revezamento e jarda ficam de fora */
+      const par=HY_ESTILO.find(([en])=>en.toLowerCase()===me[5].toLowerCase());
+      if(!par){cur=null;continue;}
+      cur=provas.find(p=>String(p.codigo)===String(me[1]));
+      if(!cur){cur={codigo:me[1],dist:+me[3],estilo:par[1],genero:/^(w|g)/i.test(me[2])?'F':'M',series:{}};provas.push(cur);}
+      continue;
+    }
+    if(!cur)continue;
+    const mq=l.match(HYP_EQUIPE); if(mq){pend={pais:mq[1],equipe:mq[2].trim(),t:mq[3]};continue;}
+    const mr=l.match(HYP_RAIA);
+    if(mr&&serie!=null){
+      const e=pend||{}; pend=null;
+      (cur.series[serie]=cur.series[serie]||[]).push({
+        raia:+mr[1],nome:mr[2].trim(),idade:+mr[3],pais:e.pais||null,equipe:e.equipe||null,
+        inscricao:(!e.t||/^NT$/i.test(e.t))?null:parseTempo(e.t)});
+    }
+  }
+  return provas.filter(p=>Object.keys(p.series).length);
+}
+/* as minhas provas num Meet Program, com a série inteira junto */
+function hytekProgramaMinhas(txt,nome){
+  const toks=tokensNome(nome); if(!toks.length)return[];
+  const out=[];
+  for(const p of parseHytekPrograma(txt))
+    for(const s of Object.keys(p.series)){
+      const lista=p.series[s];
+      for(const i of lista){
+        if(!toks.every(t=>normNome(i.nome).includes(t)))continue;
+        out.push({id:uid(),dist:p.dist,estilo:p.estilo,codigo:p.codigo,
+          serie:+s,raia:i.raia,inscricao:i.inscricao,
+          /* a série inteira viaja junto: é o que o atleta quer ver na beira da
+             piscina, e reler o PDF depois exigiria tê-lo de novo no celular */
+          serieLista:lista.map(x=>({raia:x.raia,nome:x.nome,equipe:x.equipe,pais:x.pais,idade:x.idade,inscricao:x.inscricao,
+                                    eu:normNome(x.nome)===normNome(i.nome)&&x.raia===i.raia}))});
+      }
+    }
+  return out;
+}
+/* posição do atleta entre os tempos de inscrição da própria série */
+function ordemDaSerie(lista){
+  const com=(lista||[]).filter(x=>x.inscricao!=null).slice().sort((a,b)=>a.inscricao-b.inscricao);
+  const pos={}; com.forEach((x,i)=>{pos[x.raia]=i+1;});
+  const eu=(lista||[]).find(x=>x.eu);
+  return{ordem:pos,n:com.length,minha:eu?pos[eu.raia]||null:null,
+         lider:com[0]||null,eu:eu||null,semTempo:(lista||[]).length-com.length};
+}
 /* balizamento (start list) em PDF — extrai as provas do próprio atleta pelo nome */
 /* Formato ABMN Competição: cabeçalho "Nº PROVA - <dist> METROS <estilo> <gênero>",
    séries "Nª SÉRIE ...", e linhas "raia matrícula faixa + NOME  EQUIPE  TEMPO".
@@ -8175,9 +8469,14 @@ function minhasProvasDoBalizamento(t,nome){
      empatava e ficava. Cada formato tem UM layout certo, e é esse que vale:
      ABMN é de uma coluna, HY-TEK é de três. */
   const tentativas=[
-    ()=>parseBalizamento(t.linhas,nome),      /* ABMN (pt-BR), uma coluna */
-    ()=>hytekMinhasProvas(t.colunas,nome),    /* HY-TEK (en), três colunas */
-    ()=>hytekMinhasProvas(t.linhas,nome),     /* HY-TEK de meet pequeno, uma coluna */
+    ()=>parseBalizamento(t.linhas,nome),       /* ABMN (pt-BR), uma coluna */
+    /* O Meet Program vem ANTES do psych sheet de propósito: os dois têm o
+       atleta, mas só este tem série e raia. Deixar o psych sheet ganhar era o
+       defeito de Buenos Aires — achava a prova e perdia o que importava. */
+    ()=>hytekProgramaMinhas(t.linhas,nome),    /* HY-TEK Meet Program: série, raia e a série inteira */
+    ()=>hytekProgramaMinhas(t.colunas,nome),
+    ()=>hytekMinhasProvas(t.colunas,nome),     /* HY-TEK psych sheet, três colunas */
+    ()=>hytekMinhasProvas(t.linhas,nome),      /* HY-TEK de meet pequeno, uma coluna */
     ()=>parseBalizamento(t.colunas,nome)
   ];
   for(const f of tentativas){const r=f(); if(r.length)return r;}
@@ -8211,16 +8510,28 @@ async function importarBalizamento(inp){
   const provas=minhasProvasDoBalizamento(t,S.u.nome);
   if(!provas.length)return alerta('Balizamento',diagBalizamento(t,S.u.nome));
   mc.provas=mc.provas||[];
-  const ex=new Set(mc.provas.map(p=>`${p.dist}|${p.estilo}|${p.serie}|${p.raia}`));
-  let add=0;
-  for(const p of provas){ const k=`${p.dist}|${p.estilo}|${p.serie}|${p.raia}`; if(ex.has(k))continue; ex.add(k); mc.provas.push(p); add++; }
+  /* Quem sobe o psych sheet antes do sorteio e o Meet Program depois estava
+     ficando com a prova DUPLICADA, porque a chave incluía série e raia e a
+     primeira versão tinha as duas nulas. Agora a leitura com série COMPLETA a
+     que não tinha, em vez de criar uma segunda. */
+  const mesmaProva=(a,b)=>a.dist===b.dist&&a.estilo===b.estilo
+    &&(a.codigo==null||b.codigo==null||String(a.codigo)===String(b.codigo));
+  let add=0, compl=0;
+  for(const p of provas){
+    const igual=mc.provas.find(x=>mesmaProva(x,p)&&x.serie===p.serie&&x.raia===p.raia);
+    if(igual){ if(p.serieLista&&!igual.serieLista){igual.serieLista=p.serieLista;compl++;} continue; }
+    const vago=mc.provas.find(x=>mesmaProva(x,p)&&x.serie==null&&x.raia==null&&p.serie!=null);
+    if(vago){ vago.serie=p.serie; vago.raia=p.raia; vago.serieLista=p.serieLista||null;
+              if(p.inscricao!=null)vago.inscricao=p.inscricao; compl++; continue; }
+    mc.provas.push(p); add++;
+  }
   mc.provas.sort((a,b)=>(+a.codigo||0)-(+b.codigo||0)||a.dist-b.dist);
   await salvarUsuario();
   /* psych sheet declara a piscina no cabeçalho das provas; se bater diferente
      da competição cadastrada, avisa em vez de gravar tempo na piscina errada */
   const lc=/\bLC\s*Meter/i.test(t.colunas||t.linhas), sc=/\bSC\s*Meter/i.test(t.colunas||t.linhas);
   const conflito=(lc&&!sc&&mc.piscina!=='LC50')?'longa (50 m)':(sc&&!lc&&mc.piscina!=='SC25')?'curta (25 m)':null;
-  toast(add?`${add} prova(s) importada(s)`:'Tudo já estava lançado');
+  toast(add?`${add} prova(s) importada(s)`:(compl?`${compl} prova(s) com série e raia`:'Tudo já estava lançado'));
   if(conflito)alerta('Confira a piscina',`O PDF é de piscina <b>${conflito}</b>, mas esta competição está cadastrada como <b>${mc.piscina==='LC50'?'longa (50 m)':'curta (25 m)'}</b>. Corrija antes de lançar os tempos — marca em piscina errada entra errada em Marcas.`);
   render();
 }
