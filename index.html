@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v181"></script>
-<script src="./inicio-e-grupos.js?v=v181"></script>
+<script src="./persistencia-segura.js?v=v182"></script>
+<script src="./inicio-e-grupos.js?v=v182"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v181';
+const VER='v182';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -6565,6 +6565,28 @@ teste('balizamento','pela coluna da equipe, acha quem ainda não está no Elenco
     a.eq(r[0].inscritos[0].nome,'Barbato De Macedo, Bruno','e o nome vem como está no PDF');
     a.eq(parseHytekProgramaEquipe(_HY_PROG,['Outro Clube']).length,0,'equipe que não está no PDF não traz ninguém');
   } finally { S.elenco=bk; }});
+teste('balizamento','o nome da equipe vem cortado do PDF e ainda tem de casar',a=>{
+  /* O HY-TEK trunca a coluna da equipe em ~24 caracteres. Exigir igualdade
+     exata jogava fora o atleta por causa do corte da impressão. */
+  a.ok(equipeBate('Tnt Masters Sp','TNT MASTERS SP'),'maiúscula não separa');
+  a.ok(equipeBate('Club Atletico San Lorenz','Club Atletico San Lorenzo de Almagro'),'o corte do PDF ainda casa');
+  a.ok(equipeBate('Tnt Masters Sp','Tnt Masters Sp'),'igual casa');
+  a.ok(!equipeBate('Club','Club Atletico San Lorenzo'),'prefixo curto não casa meio campeonato');
+  a.ok(!equipeBate('Tnt Masters Sp','Clube Curitibano'),'clube diferente não casa');
+  a.ok(!equipeBate('','Tnt Masters Sp'),'vazio não casa');
+  a.ok(!equipeBate('Tnt Masters Sp',''),'vazio do outro lado também não');});
+teste('balizamento','quando não acha, o técnico recebe o que foi lido',a=>{
+  /* "Não achei atletas da sua equipe" não dizia se o PDF era ilegível, se o
+     nome da equipe estava diferente ou se ninguém da equipe se inscreveu. */
+  const bkEl=S.elenco, bkEq=S.eq;
+  try{
+    _atleta(); S.elenco=[]; S.eq={nome:'Clube Que Nao Existe'}; S.u.equipeNome='Clube Que Nao Existe';
+    const d=diagBalizTec(_HY_PROG);
+    a.ok(/inscrito/.test(d),'diz quantos inscritos leu');
+    a.ok(/Tnt Masters Sp/.test(d),'e lista as equipes que apareceram no PDF');
+    a.ok(/Elenco está vazio/.test(d),'e avisa que o Elenco está vazio');
+    a.ok(/Não reconheci/.test(diagBalizTec('texto que nao e balizamento')),'formato irreconhecível é dito como tal');
+  } finally { S.elenco=bkEl; S.eq=bkEq; }});
 teste('balizamento','cabeçalho em inglês vira prova, revezamento e jarda ficam de fora',a=>{
   const c=hytekCabecalho('#14 Men 50 LC Meter Breaststroke');
   a.eq(c&&c.dist,50,'distância'); a.eq(c&&c.estilo,'peito','estilo'); a.eq(c&&c.codigo,'14','código');
@@ -7641,8 +7663,9 @@ async function lerBalizamento(inp){
   if(f.type!=='application/pdf'){ if(st)st.textContent='Envie o balizamento em PDF (foto não dá para ler sem servidor) — ou cole o texto abaixo.'; return; }
   if(st)st.textContent='Lendo o balizamento…';
   try{
-    const provas=parseBalizTec(await pdfTextos(f));
-    if(!provas.length){ if(st)st.textContent='Não achei atletas da sua equipe no balizamento. Confira se a equipe bate com a coluna EQUIPE do PDF e se os nomes do Elenco batem com os do balizamento, ou cole o texto abaixo.'; return; }
+    const t=await pdfTextos(f);
+    const provas=parseBalizTec(t);
+    if(!provas.length){ if(st)st.innerHTML=diagBalizTec(t); return; }
     await incorporar(provas);
     const n=provas.reduce((s,p)=>s+p.inscritos.length,0);
     if(st)st.textContent=`${provas.length} prova(s) e ${n} inscrição(ões) da sua equipe importadas.`;
@@ -7736,7 +7759,7 @@ function parseHytekEquipe(txt,alvos){
     for(const i of p.inscritos){
       const n=normNome(i.nome);
       const doElenco=elenco.find(x=>x.toks.every(t=>n.includes(t)));
-      if(!doElenco&&!AL.has(normNome(i.equipe)))continue;
+      if(!doElenco&&!(alvos||[]).some(al=>equipeBate(i.equipe,al)))continue;
       ins.push({serie:0,raia:0,nome:doElenco?doElenco.a.nome:i.nome,equipe:i.equipe,
         inscricao:i.inscricao,seed:i.seed});
     }
@@ -7753,6 +7776,53 @@ function parseHytekEquipe(txt,alvos){
    propósito — 20 atletas × 5 provas × 10 adversaários engordaria o documento
    sem necessidade; para ver quem nada ao lado, o atleta sobe o PDF no espaço
    dele. */
+/* ── O NOME DA EQUIPE VEM CORTADO DO PDF (v182) ────────────────────────────
+   O HY-TEK trunca a coluna da equipe em ~24 caracteres: "Club Atletico San
+   Lorenz", "Universidad Auto noma de", "Centro Acuaitico Montecil". Exigir
+   igualdade exata joga fora o atleta por causa do corte da impressão, e o
+   técnico recebe "não achei atletas da sua equipe" sem ter o que fazer.
+   Prefixo com pelo menos 8 caracteres não casa clube errado — "Club" sozinho
+   casaria meio campeonato, "Tnt Mast" não casa nada além do Tnt Masters. */
+function equipeBate(a,b){
+  const x=normNome(a), y=normNome(b);
+  if(!x||!y)return false;
+  if(x===y)return true;
+  const curto=x.length<=y.length?x:y, longo=x.length<=y.length?y:x;
+  return curto.length>=8 && longo.startsWith(curto);
+}
+/* ── QUANDO NÃO ACHA, DIZER O QUE LEU ──────────────────────────────────────
+   "Não achei atletas da sua equipe" não diz se o PDF é ilegível, se o nome da
+   equipe está diferente ou se ninguém da equipe está inscrito. O lado do
+   atleta já tinha diagBalizamento; o do técnico não tinha nada. */
+function equipesNoDocumento(t){
+  const linhas=typeof t==='string'?t:t.linhas, colunas=typeof t==='string'?t:(t.colunas||t.linhas);
+  const cont={};
+  const guarda=e=>{const n=(e||'').trim(); if(n)cont[n]=(cont[n]||0)+1;};
+  for(const txt of [linhas,colunas]){
+    for(const p of parseHytekPrograma(txt))
+      for(const s of Object.keys(p.series))for(const i of p.series[s])guarda(i.equipe);
+    for(const p of parseHytek(txt))for(const i of p.inscritos)guarda(i.equipe);
+  }
+  return Object.keys(cont).map(nome=>({nome,n:cont[nome]})).sort((a,b)=>b.n-a.n);
+}
+function diagBalizTec(t){
+  const linhas=typeof t==='string'?t:t.linhas, colunas=typeof t==='string'?t:(t.colunas||t.linhas);
+  const nProg=parseHytekPrograma(linhas).length||parseHytekPrograma(colunas).length;
+  const nPsy=parseHytek(colunas).length||parseHytek(linhas).length;
+  const eqs=equipesNoDocumento(t);
+  const total=eqs.reduce((s,e)=>s+e.n,0);
+  if(!nProg&&!nPsy&&!total)
+    return 'Não reconheci o formato deste PDF (nem ABMN, nem psych sheet, nem Meet Program do HY-TEK). Cole o texto abaixo, ou me mande o arquivo.';
+  const alvos=alvosEquipe();
+  const toks=alvos.flatMap(a=>normNome(a).split(' ')).filter(x=>x.length>=3);
+  const parecidas=eqs.map(e=>({...e,bate:toks.filter(x=>normNome(e.nome).includes(x)).length}))
+    .sort((a,b)=>b.bate-a.bate||b.n-a.n).slice(0,5);
+  const nomes=(S.elenco||[]).length;
+  return `Li <b>${nProg||nPsy} prova(s)</b> e <b>${total} inscrito(s)</b>, mas nenhum da equipe `
+    +`<b>${esc(alvos[0]||'(sem nome)')}</b>${nomes?` nem com os ${nomes} nome(s) do seu Elenco`:' (e o seu Elenco está vazio)'}.<br>`
+    +`Equipes no PDF que mais se parecem: ${parecidas.map(e=>esc(e.nome)+' ('+e.n+')').join(' · ')||'—'}.<br>`
+    +`Se uma delas é a sua, ajuste o nome da equipe — ou cadastre os atletas no Elenco com o nome como aparece no balizamento.`;
+}
 function parseHytekProgramaEquipe(txt,alvos){
   const elenco=(S.elenco||[]).map(a=>({a,toks:tokensNome(a.nome)})).filter(x=>x.toks.length);
   const AL=new Set((alvos||[]).map(s=>normNome(s)).filter(Boolean));
@@ -7762,7 +7832,7 @@ function parseHytekProgramaEquipe(txt,alvos){
     for(const s of Object.keys(p.series))for(const i of p.series[s]){
       const n=normNome(i.nome);
       const doElenco=elenco.find(x=>x.toks.every(t=>n.includes(t)));
-      if(!doElenco&&!AL.has(normNome(i.equipe||'')))continue;
+      if(!doElenco&&!(alvos||[]).some(al=>equipeBate(i.equipe,al)))continue;
       ins.push({serie:+s,raia:i.raia,nome:doElenco?doElenco.a.nome:i.nome,
         equipe:i.equipe||'',inscricao:i.inscricao});
     }
