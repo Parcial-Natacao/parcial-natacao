@@ -23,7 +23,7 @@
    O nome do cache deriva dela; sem incrementar, o cache antigo continua sendo
    servido e o arquivo novo nunca chega. Aconteceu na v86: o ícone foi trocado,
    a VERSAO não, e o app seguiu mostrando o ícone velho. */
-const VERSAO = 'v182';
+const VERSAO = 'v183';
 const CACHE  = 'meros360-' + VERSAO;
 /* Os ícones têm NOME versionado (app-icone-*) em vez de `?v=`: para o ícone da
    tela de início o iOS às vezes ignora a query e guarda por caminho, e o ícone
@@ -34,7 +34,7 @@ const CACHE  = 'meros360-' + VERSAO;
    — uma cópia velha dela atrapalharia exatamente quem mais precisa. Ela é
    servida pela regra de documento (rede primeiro) como qualquer página. */
 const ESSENCIAIS = ['./', './index.html', './manifest.webmanifest', './privacidade.html',
-                    './persistencia-segura.js?v=v182', './inicio-e-grupos.js?v=v182',
+                    './persistencia-segura.js?v=v183', './inicio-e-grupos.js?v=v183',
                     './icone-m360-192.png', './icone-m360-512.png', './icone-m360-180.png',
                     './logo-m360.png', './logo-m360-claro.png'];
 
