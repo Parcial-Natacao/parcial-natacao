@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v182"></script>
-<script src="./inicio-e-grupos.js?v=v182"></script>
+<script src="./persistencia-segura.js?v=v183"></script>
+<script src="./inicio-e-grupos.js?v=v183"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v182';
+const VER='v183';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -6587,6 +6587,18 @@ teste('balizamento','quando não acha, o técnico recebe o que foi lido',a=>{
     a.ok(/Elenco está vazio/.test(d),'e avisa que o Elenco está vazio');
     a.ok(/Não reconheci/.test(diagBalizTec('texto que nao e balizamento')),'formato irreconhecível é dito como tal');
   } finally { S.elenco=bkEl; S.eq=bkEq; }});
+teste('tempo','a prova da equipe sabe a distância de cada passagem',a=>{
+  /* é esse número que vai para lerParciaisProva no "colar parciais" da tela da
+     equipe; errando ele, quatro trechos de 50 virariam trechos de outra coisa */
+  const p200={tipo:'ind',dist:200,estilo:'livre'};
+  a.eq(passoDe(p200,'LC50'),50,'200 em piscina longa: passagem de 50 m');
+  a.eq(nPassagens(p200,'LC50')*passoDe(p200,'LC50'),200,'e quatro passagens fecham os 200 m');
+  const p100={tipo:'ind',dist:100,estilo:'peito'};
+  a.eq(nPassagens(p100,'SC25')*passoDe(p100,'SC25'),100,'100 em curta: quatro de 25 m');
+  const p800={tipo:'ind',dist:800,estilo:'livre'};
+  a.eq(nPassagens(p800,'LC50')*passoDe(p800,'LC50'),800,'800 em longa: oito de 100 m');
+  a.eq(lerParciaisProva('30"68 33"79 36"11 35"92',nPassagens(p200,'LC50')*passoDe(p200,'LC50')).trechoM,50,
+    'e os quatro trechos colados caem em cima das quatro passagens');});
 teste('balizamento','cabeçalho em inglês vira prova, revezamento e jarda ficam de fora',a=>{
   const c=hytekCabecalho('#14 Men 50 LC Meter Breaststroke');
   a.eq(c&&c.dist,50,'distância'); a.eq(c&&c.estilo,'peito','estilo'); a.eq(c&&c.codigo,'14','código');
@@ -8012,7 +8024,8 @@ function telaProvaDetalhe(){
         const ix=p.inscritos.indexOf(i),ps=i.parciais||[],fin=ps.length>=np?ps[np-1]:null;
         const dif=(fin&&i.inscricao)?fin-i.inscricao:null;
         return`<tr><td class="n"><b>${i.raia||'—'}</b></td>
-          <td class="nome">${esc(prim(i.nome))}<div class="xs muted" style="font-weight:400">${esc(i.equipe||'')}</div></td>
+          <td class="nome">${esc(prim(i.nome))}<div class="xs muted" style="font-weight:400">${esc(i.equipe||'')}</div>
+            <button class="sm ghost" style="width:auto;min-height:0;padding:2px 7px;margin-top:3px;font-size:11px" onclick="abrirParciaisInscrito(${ix})">colar parciais</button></td>
           ${cols.map((_,k)=>`<td><input inputmode="decimal" placeholder="—" value="${ps[k]!=null?fmt(ps[k],true):''}"
             onchange="setParcial(${ix},${k},this.value)">
             ${k>0&&ps[k]!=null&&ps[k-1]!=null?`<div class="xs t" style="color:var(--water)">${fmt(ps[k]-ps[k-1],true)}</div>`:''}</td>`).join('')}
@@ -8026,6 +8039,41 @@ function telaProvaDetalhe(){
   </div>
   ${leituraProva(p,np,passo)}
   <div style="height:20px"></div>`;
+}
+/* ── COLAR AS PARCIAIS NA PROVA DA EQUIPE (v183) ────────────────────
+   A tabela desta tela pede PASSAGEM em cada célula (50m, 100m, 150m, 200m).
+   Quem cronometrou na arquibancada tem o TRECHO de cada 50, e digitando trecho
+   nas células de passagem o 200 fica com 35.92 de tempo final e diferenças
+   negativas. A v180 resolveu isso na tela do atleta e deixou esta de fora —
+   a mesma armadilha dos dois lados que já custou o balizamento (SDD §5).
+   Aqui o atleta cola do jeito que anotou e o app converte. */
+function abrirParciaisInscrito(ix){
+  const c=S.comp,p=c.provas[S.provaSel],i=p.inscritos[ix]; if(!i)return;
+  const np=nPassagens(p,c.piscina), passo=passoDe(p,c.piscina), dist=np*passo;
+  const atual=(i.parciais||[]).filter(x=>x!=null);
+  const trechos=atual.map((x,k)=>fmt(k?x-atual[k-1]:x,true)).join(' ');
+  sheet(`<h2>Parciais — ${esc(prim(i.nome))}</h2>
+    <div class="small muted">${nomeProva(p)} · ${np} passagem(ns) de ${passo} m</div>
+    <div class="field" style="margin-top:10px"><label>Cole as parciais <span class="xs muted">por trecho ou acumuladas</span></label>
+      <textarea id="piTxt" style="min-height:62px" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" placeholder='ex.: 30”68 33”79 36”11 35”92' oninput="previaParciaisInscrito(${dist})">${esc(trechos)}</textarea></div>
+    <div id="piPrev" class="xs muted" style="margin:-2px 0 10px;line-height:1.5"></div>
+    <button class="primary full" onclick="salvarParciaisInscrito(${ix},${dist},${np})">Salvar</button>`);
+  previaParciaisInscrito(dist);
+}
+function previaParciaisInscrito(dist){
+  const el=document.getElementById('piPrev'); if(!el)return;
+  const p=lerParciaisProva(val('piTxt'),dist);
+  el.innerHTML=p?leituraParciais(p,dist):'';
+}
+async function salvarParciaisInscrito(ix,dist,np){
+  const p=lerParciaisProva(val('piTxt'),dist);
+  if(!p)return toast('Cole as parciais');
+  if(p.erro)return toast(p.erro);
+  if(p.n!==np&&!confirm(`Você colou ${p.n} parcial(is) e esta prova tem ${np} passagem(ns) de ${dist/np} m.\n\nGravar assim mesmo?`))return;
+  const ip=S.provaSel;
+  await mutarComp(c=>{ c.provas[ip].inscritos[ix].parciais=p.acumuladas.slice(); });
+  await gravarResultadoPro(ix);
+  fecharSheet(); toast('Parciais salvas · '+fmt(p.total,true)); render();
 }
 async function setParcial(ix,k,v){
   const ms=parseTempo(v),ip=S.provaSel;
@@ -8349,7 +8397,10 @@ function abrirTempoRealizado(provaId){
     ?pr.parciais.map((x,i)=>fmt(i?x-pr.parciais[i-1]:x,true)).join(' ') : '';
   sheet(`<h2>Tempo — ${pr.dist}m ${pr.estilo}</h2>
     <div class="field"><label>Parciais <span class="xs muted">por trecho ou acumuladas</span></label>
-      <input id="trParc" placeholder='ex.: 30”68 33”79 36”11 35”92' value="${esc(jaTrechos)}" oninput="previaTempoProva(${pr.dist})"></div>
+      ${/* TEXTAREA, não input: quem anota no celular cola as quatro parciais
+           uma por linha, e um <input> não guarda quebra de linha — dependendo
+           do navegador ele fica só com a primeira. */''}
+      <textarea id="trParc" style="min-height:62px" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" placeholder='ex.: 30”68 33”79 36”11 35”92' oninput="previaTempoProva(${pr.dist})">${esc(jaTrechos)}</textarea></div>
     <div class="field"><label>Tempo realizado <span class="xs muted">deixe vazio para somar as parciais</span></label>
       <input id="trTempo" placeholder="ex.: 31.28 ou 2:16.50" value="${pr.tempo!=null?fmt(pr.tempo,true):''}" oninput="previaTempoProva(${pr.dist})"></div>
     <div id="trPrev" class="xs muted" style="margin:-2px 0 10px;line-height:1.5"></div>
