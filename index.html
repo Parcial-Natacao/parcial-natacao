@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v183"></script>
-<script src="./inicio-e-grupos.js?v=v183"></script>
+<script src="./persistencia-segura.js?v=v184"></script>
+<script src="./inicio-e-grupos.js?v=v184"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v183';
+const VER='v184';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1350,26 +1350,50 @@ const prim=n=>(n||'').trim().split(/\s+/)[0];
 function fmt(ms,curto){
   if(ms==null||isNaN(ms))return'—';
   const cs=Math.floor(Math.abs(ms)/10),s=Math.floor(cs/100),c=cs%100,m=Math.floor(s/60),sg=s%60,sn=ms<0?'-':'';
+  /* Acima de uma hora o tempo PRECISA mostrar a hora: uma travessia de
+     1h06min30 saía como "66:30.50", que se lê como 66 minutos e passa por
+     erro de digitação. Abaixo disso nada muda — nenhum tiro de piscina chega
+     perto, e o formato de sempre continua igual em toda a tela. */
+  if(m>=60)return`${sn}${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(sg).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
   if(m>0)return`${sn}${m}:${String(sg).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
   return`${sn}${curto?sg:String(sg).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
 }
 function parseTempo(x){
   if(x==null||x==='')return null;
-  /* ⚠️ A ASPA DE SEGUNDO É SEPARADOR, NÃO LIXO (v180)
+  /* ⚠️ O TECLADO DO CELULAR NÃO TEM DOIS-PONTOS (v184)
+     Na beira da piscina os campos de tempo abrem com inputmode="decimal": o
+     teclado traz dígitos e o separador decimal, e mais nada. Digitar
+     "1:06.74" ali é impossível sem trocar de teclado, e o atleta acabava
+     digitando 66.74 — que é certo e é contraintuitivo ao mesmo tempo.
+
+     Então o PONTO (ou a vírgula) também separa minuto. A regra que desfaz a
+     ambiguidade sem quebrar nada: de todos os separadores, só o ÚLTIMO é
+     decimal, e mesmo assim só quando for ponto ou vírgula.
+         34.80        → 34,80 s
+         1:06.74      → 1 min 06,74 s   (continua valendo)
+         1.06.74      → 1 min 06,74 s   (teclado numérico)
+         1.06.30.50   → 1 h 06 min 30,50 s   (águas abertas)
+         1:06         → 1 min 06 s      (dois-pontos no fim não é decimal)
+
+     ⚠️ A ASPA DE SEGUNDO É SEPARADOR, NÃO LIXO (v180)
      Antes a aspa era apagada: 30"68 virava "3068" e era lido como 3068
-     SEGUNDOS — 51 minutos. O atleta anota 30"68 porque é como se escreve
-     tempo de natação em português; 1'20"68 é um minuto, vinte segundos e 68
-     centésimos. Aspa ENTRE dígitos vira ponto decimal; aspa no fim só fecha
-     os segundos e sai. */
+     SEGUNDOS — 51 minutos. 1'20"68 é um minuto, vinte segundos e 68
+     centésimos. */
   const t=String(x).trim()
     .replace(/(\d)\s*["″“”]\s*(\d)/g,'$1.$2')     /* 30"68 → 30.68 (teclado de celular manda ”) */
     .replace(/["″“”]/g,'')                       /* 1'20" → 1'20 */
-    .replace(/['′‘’h]/g,':').replace(',','.');
-  const p=t.split(':').map(n=>parseFloat(n)).filter(n=>!isNaN(n));
-  if(!p.length)return null;
-  if(p.length===1)return Math.round(p[0]*1000);
-  if(p.length===2)return Math.round((p[0]*60+p[1])*1000);
-  return Math.round((p[0]*3600+p[1]*60+p[2])*1000);
+    .replace(/['′‘’h]/g,':')                     /* 1'20 → 1:20 */
+    .replace(/[^\d:.,]/g,'');                    /* o resto é ruído de digitação */
+  const campos=t.split(/[:.,]/);
+  if(campos.length===1){const n=parseFloat(campos[0]); return isNaN(n)?null:Math.round(n*1000);}
+  const seps=t.match(/[:.,]/g)||[];
+  const temDecimal=/[.,]/.test(seps[seps.length-1]||'');
+  const cent=temDecimal?Math.round(parseFloat('0.'+(campos[campos.length-1]||'0'))*1000):0;
+  const unidades=(temDecimal?campos.slice(0,-1):campos).map(c=>c===''?0:parseInt(c,10));
+  if(unidades.some(n=>isNaN(n))||isNaN(cent))return null;
+  if(unidades.length>3)return null;              /* mais que h:m:s não é tempo de prova */
+  let seg=0; for(const n of unidades)seg=seg*60+n;
+  return Math.round(seg*1000)+cent;
 }
 /* Igual a parseTempo, mas usa a DISTÂNCIA para desfazer a ambiguidade de "1.09":
    num 100m, 1,09s é impossível → interpreta como 1:09 (min:seg). Se já vier com
@@ -1383,7 +1407,25 @@ function parseTempoDist(x,dist){
     const seg=parseFloat(s.replace(',','.'));
     if(seg<dist*0.4 && +m[2]<60) return Math.round((+m[1]*60 + +m[2])*1000);  // rápido demais p/ a distância → min:seg
   }
-  return parseTempo(s);
+  const v=parseTempo(s);
+  /* Mesmo remédio, um degrau acima: "1.22.15" num 1500 sairia como 1 min 22,15
+     s, que ninguém nada — o atleta quis dizer 1 h 22 min 15 s. Só desloca
+     quando o tempo lido é FISICAMENTE impossível para a distância, nunca
+     quando ele é apenas ruim, e só com dois separadores (três já é hora). */
+  if(v!=null&&dist){
+    const piso=dist*SEG_POR_METRO_MIN*1000;
+    if(v<piso&&(s.match(/[:.,]/g)||[]).length===2){
+      const c=s.split(/[:.,]/);
+      /* só vale como hora:minuto:segundo se os dois últimos campos forem
+         minuto e segundo de verdade: "1.06.74" tem 74, que não é segundo, e
+         deslocar transformaria em 1:07:14 — um número que ninguém digitou */
+      if(+c[1]<60&&+c[2]<60){
+        const alt=parseTempo(c[0]+':'+c[1]+':'+c[2]);
+        if(alt!=null&&alt>=piso)return alt;
+      }
+    }
+  }
+  return v;
 }
 /* ── PARCIAIS DE PROVA: POR TRECHO OU ACUMULADAS (v180) ─────────────────
    O atleta anota do jeito que viu. A súmula e o placar dão a PASSAGEM
@@ -3632,7 +3674,7 @@ function abrirLancamento(itemId,atletaId){
   if(bkAqui){ return abrirBroken(itemId,atletaId,item,at,rec,nrd); }
   if(splitElegivel(item,t.piscina)){ return abrirSplits(itemId,atletaId,item,at,rec); }
   const btnAdd=`<button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>`;
-  const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1:08.50</b> (min:seg). Em provas de 100m+ pode digitar <b>1.08</b> que entendo como 1:08. Cada tempo é salvo ao tocar no ✓.</div>
+  const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1.06.74</b> ou <b>1:06.74</b> (min.seg.cent) · <b>1.06.30.50</b> (hora.min.seg.cent, para águas abertas). O teclado do celular não tem dois-pontos, então o <b>ponto também separa minuto</b>: só o último é decimal. Cada tempo é salvo ao tocar no ✓.</div>
     ${btnAdd}
     ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`;
@@ -4602,6 +4644,39 @@ function _atleta(extra){
 }
 
 /* ── DURAÇÃO — a confusão hh:mm × mm:ss (v96/v102) ───────────────────────── */
+/* ── O TECLADO DO CELULAR NÃO TEM DOIS-PONTOS (v184) ───────────────────────
+   Os campos de tempo abrem com inputmode="decimal" para dar teclado numérico
+   na beira da piscina. Esse teclado tem dígitos e o separador decimal, e mais
+   nada: digitar "1:06.74" é impossível sem trocar de teclado, e nos 4x100 o
+   atleta tinha de anotar 66.74. */
+teste('duração','o ponto também separa minuto, não só decimal',a=>{
+  a.eq(parseTempo('1.06.74'),66740,'1.06.74 é 1 min 06,74 s');
+  a.eq(parseTempo('1,06,74'),66740,'com vírgula do teclado pt-BR também');
+  a.eq(parseTempo('1.06.30.50'),3990500,'1.06.30.50 é 1 h 06 min 30,50 s (águas abertas)');
+  a.eq(parseTempo('34.80'),34800,'um separador só continua sendo decimal');
+  a.eq(parseTempo('1:06.74'),66740,'e o formato com dois-pontos não muda');
+  a.eq(parseTempo('1:06'),66000,'dois-pontos no fim não é decimal');
+  a.eq(parseTempo('1:15:30'),4530000,'h:m:s continua valendo');
+  a.eq(parseTempo('2:12.75'),132750,'o 200 de Buenos Aires segue igual');
+  a.eq(parseTempo('66.74'),66740,'e quem já digitava em segundos não é obrigado a mudar');
+  a.eq(parseTempo('abc'),null,'texto não vira tempo');
+  a.eq(parseTempo('1.2.3.4.5'),null,'mais que h:m:s não é tempo de prova');});
+teste('duração','acima de uma hora o tempo mostra a hora',a=>{
+  a.eq(fmt(3990500,true),'1:06:30.50','travessia de 1h06 não pode sair como 66:30');
+  a.eq(fmt(3599990,true),'59:59.99','abaixo de uma hora nada muda');
+  a.eq(fmt(66740,true),'1:06.74','nem no tiro de piscina');
+  a.eq(parseTempo(fmt(3990500,true)),3990500,'e o que o app escreve ele sabe ler de volta');
+  a.eq(parseTempo(fmt(66740,true)),66740,'ida e volta sem perder centésimo');});
+teste('duração','tempo impossível para a distância sobe um degrau',a=>{
+  /* "1.22.15" num 1500 seria 1 min 22,15 s — ninguém nada isso. O atleta quis
+     dizer 1 h 22 min 15 s. Só desloca quando o tempo lido é fisicamente
+     impossível, e nunca quando ele é apenas ruim. */
+  a.eq(parseTempoDist('1.22.15',1500),4935000,'1500 em 1:22:15');
+  a.eq(parseTempoDist('1.06.74',100),66740,'no 100 o mesmo formato fica como está');
+  a.eq(parseTempoDist('22.15',1500),1335000,'22.15 num 1500 já era 22:15 pela regra antiga');
+  a.eq(parseTempoDist('1.06.74',1500),66740,'74 não é segundo: não desloca e não inventa 1:07:14');
+  a.eq(parseTempoDist('1.06.30.50',3000),3990500,'com três separadores a hora já está escrita');
+  a.eq(parseTempoDist('2.16.50',200),136500,'e o 200 de Buenos Aires continua intacto');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
