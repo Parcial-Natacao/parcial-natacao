@@ -557,14 +557,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v184"></script>
-<script src="./inicio-e-grupos.js?v=v184"></script>
+<script src="./persistencia-segura.js?v=v185"></script>
+<script src="./inicio-e-grupos.js?v=v185"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v184';
+const VER='v185';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3415,14 +3415,83 @@ function alternarParcialAvulsa(itemId,atletaId,rd){
   if(S.parcialAvulsa[itemId])delete S.parcialAvulsa[itemId]; else S.parcialAvulsa[itemId]=true;
   abrirLancamento(itemId,atletaId,rd==null?undefined:rd);
 }
+/* ── TEMPO EM CASAS SEPARADAS (v185) ───────────────────────────────────────
+   A v184 ensinou o ponto a separar minuto. Resolveu o teclado, mas deixou uma
+   REGRA para o atleta decorar — "de todos os separadores, só o último é
+   decimal" — e regra decorada é regra esquecida na beira da piscina, de mão
+   molhada. Casa separada não tem regra: cada caixa é uma unidade, com o nome
+   dela em cima. É o mesmo padrão que "+ Tempo" em Marcas já usava.
+
+   Quantas casas aparecem depende da distância, porque caixa vazia é trabalho
+   à toa: num tiro de 50 não existe minuto. De 1500 para cima, e em águas
+   abertas, entra a hora. */
+const CASA_ROT={h:'h',min:'min',s:'seg',cent:'cent'};
+function casasTempo(dist,aa){
+  if(aa||(+dist||0)>=1500)return['h','min','s','cent'];
+  if((+dist||0)>=100)return['min','s','cent'];
+  return['s','cent'];
+}
+function partesTempo(ms,casas){
+  const o={h:'',min:'',s:'',cent:''};
+  if(ms==null||isNaN(ms))return o;
+  const cs=Math.round(Math.abs(ms)/10);
+  o.cent=String(cs%100).padStart(2,'0');
+  const s=Math.floor(cs/100);
+  if(casas.includes('h')){
+    o.s=String(s%60).padStart(2,'0');
+    const m=Math.floor(s/60); o.min=String(m%60).padStart(2,'0'); o.h=String(Math.floor(m/60));
+  } else if(casas.includes('min')){
+    o.s=String(s%60).padStart(2,'0'); o.min=String(Math.floor(s/60));
+  } else o.s=String(s);
+  return o;
+}
+function campoTempoCasas(base,ms,dist,aa){
+  const casas=casasTempo(dist,aa), p=partesTempo(ms,casas);
+  return`<span class="casas" style="display:inline-flex;gap:2px;align-items:baseline">`
+    +casas.map((k,i)=>(i?`<span class="xs muted">${k==='cent'?'.':':'}</span>`:'')
+      +`<input inputmode="numeric" maxlength="2" id="${base}_${k}" value="${p[k]}" placeholder="${CASA_ROT[k]}"`
+      +` oninput="avancaCasa(this)" aria-label="${CASA_ROT[k]}"${k==='cent'?' onblur="fechaCent(this)"':''}`
+      +` style="width:46px;text-align:center;padding:9px 2px">`).join('')
+    +`</span>`;
+}
+/* O teclado numérico tem ponto, e quem já digitava "1.06.74" vai continuar
+   digitando: aqui o separador não vira dígito inválido, ele pula para a casa
+   seguinte. Casa cheia (2 dígitos) também pula sozinha. */
+function avancaCasa(el){
+  const sep=/[.,:;'"]/.test(el.value);
+  el.value=el.value.replace(/\D/g,'').slice(0,2);
+  if(!sep&&el.value.length<2)return;
+  const caixa=el.closest('.casas'); if(!caixa)return;
+  const todas=[...caixa.querySelectorAll('input')];
+  const prox=todas[todas.indexOf(el)+1];
+  if(prox){ prox.focus(); try{prox.select();}catch(_){} }
+}
+/* "1:06.8" quer dizer oito DÉCIMOS, como todo mundo escreve tempo — não oito
+   centésimos. A casa de centésimo com um dígito só completa com zero à
+   direita, e o atleta VÊ o 80 aparecer na caixa, em vez de descobrir depois
+   que o app guardou 0,08 s. */
+function fechaCent(el){
+  const t=(el.value||'').replace(/\D/g,'');
+  if(t.length===1)el.value=t+'0';
+}
+function lerTempoCasas(base,dist,aa){
+  const casas=casasTempo(dist,aa); const v={}; let algum=false;
+  for(const k of casas){
+    const el=document.getElementById(base+'_'+k);
+    const t=((el&&el.value)||'').replace(/\D/g,'');
+    if(t!=='')algum=true;
+    v[k]=+t||0;
+  }
+  return algum?msHMSC(v.h||0,v.min||0,v.s||0,v.cent||0):null;
+}
 function tabelaReps(item,r,itemId,atletaId,rd){
   const arg=rd==null?'':(','+rd);
   const cp=parcialLigada(item,itemId);
   return`<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>#</th>
       ${cp?`<th style="text-align:center">${item.dist/2}m</th>`:''}<th style="text-align:center">Tempo</th><th></th></tr></thead><tbody>
       ${Array.from({length:item.reps},(_,i)=>`<tr><td class="n">${i+1}</td>
-        ${cp?`<td><input inputmode="decimal" id="lp${i}" placeholder="—" value="${r.parciais&&r.parciais[i]!=null?fmt(r.parciais[i],true):''}"></td>`:''}
-        <td><input inputmode="decimal" id="lt${i}" placeholder="—" value="${r.tempos&&r.tempos[i]!=null?fmt(r.tempos[i],true):''}"></td>
+        ${cp?`<td>${campoTempoCasas('lp'+i,(r.parciais&&r.parciais[i]!=null)?r.parciais[i]:null,item.dist/2,false)}</td>`:''}
+        <td>${campoTempoCasas('lt'+i,(r.tempos&&r.tempos[i]!=null)?r.tempos[i]:null,item.dist,false)}</td>
         <td style="white-space:nowrap;text-align:right">
           <button class="sm" style="background:var(--ok);color:var(--sobre-acento);padding:6px 11px;font-weight:800" onclick="confTempo('${itemId}','${atletaId}',${i}${arg})">✓</button>
           ${r.tempos&&r.tempos[i]!=null?`<button class="sm" style="background:var(--clock);color:var(--sobre-acento);padding:6px 11px;margin-left:5px;font-weight:800" onclick="delTempo('${itemId}','${atletaId}',${i}${arg})">✕</button>`:''}
@@ -3664,8 +3733,8 @@ function abrirLancamento(itemId,atletaId){
     sheet(`<h2>${item.reps>1?item.reps+'×':''}${item.dist} ${item.estilo}</h2>
       <div class="small muted">${esc(at.nome)} · águas abertas</div>
       <div class="field" style="margin-top:12px"><label>Ritmo médio por 100m</label>
-        <input inputmode="decimal" id="aaRitmo" placeholder="1:45" value="${rec.ritmo100!=null?fmt(rec.ritmo100,true):''}"></div>
-      <div class="xs muted">Formato mm:ss — ex.: 1:45</div>
+        ${campoTempoCasas('aaRitmo',rec.ritmo100!=null?rec.ritmo100:null,100,false)}</div>
+      <div class="xs muted">Uma casa para cada unidade: minuto, segundo, centésimo — ex.: 1 : 45 . 00</div>
       <button class="primary full" style="margin-top:12px" onclick="salvarRitmoAA('${itemId}','${atletaId}')">Salvar</button>`);
     return;
   }
@@ -3674,7 +3743,7 @@ function abrirLancamento(itemId,atletaId){
   if(bkAqui){ return abrirBroken(itemId,atletaId,item,at,rec,nrd); }
   if(splitElegivel(item,t.piscina)){ return abrirSplits(itemId,atletaId,item,at,rec); }
   const btnAdd=`<button class="ghost full" style="margin-top:10px" onclick="addRodada('${itemId}','${atletaId}')">+ adicionar rodada${nrd>1?' ('+(nrd+1)+'ª)':''}</button>`;
-  const rodInfo=`<div class="xs muted" style="margin-top:8px">Formatos: <b>34.80</b> (segundos) · <b>1.06.74</b> ou <b>1:06.74</b> (min.seg.cent) · <b>1.06.30.50</b> (hora.min.seg.cent, para águas abertas). O teclado do celular não tem dois-pontos, então o <b>ponto também separa minuto</b>: só o último é decimal. Cada tempo é salvo ao tocar no ✓.</div>
+  const rodInfo=`<div class="xs muted" style="margin-top:8px">Uma casa para cada unidade — <b>min</b>, <b>seg</b>, <b>cent</b> (a de <b>h</b> aparece em prova longa e em águas abertas). A casa pula sozinha ao completar dois dígitos, e o <b>ponto também pula</b>, para quem já digita 1.06.74 de hábito. Cada tempo é salvo ao tocar no ✓.</div>
     ${btnAdd}
     ${nrd>1?`<button class="ghost full" style="margin-top:8px" onclick="apagarRodada('${itemId}','${atletaId}',${S.rd||0})">Apagar a rodada ${(S.rd||0)+1}</button>`:''}
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet();render()">Fechar</button>`;
@@ -3793,8 +3862,8 @@ async function addRodada(itemId,atletaId){
 function lerCamposLancamento(reps,temParcial,dist){
   const tempos=[],parciais=[];
   for(let k=0;k<reps;k++){
-    const el=document.getElementById('lt'+k); tempos.push(el?parseTempoDist(el.value,dist):null);
-    if(temParcial){const ep=document.getElementById('lp'+k); parciais.push(ep?parseTempoDist(ep.value,dist?dist/2:null):null);}
+    tempos.push(lerTempoCasas('lt'+k,dist,false));
+    if(temParcial)parciais.push(lerTempoCasas('lp'+k,dist?dist/2:null,false));
   }
   return {tempos,parciais};
 }
@@ -3851,7 +3920,7 @@ async function delTempo(itemId,atletaId,i,rd){
   abrirLancamento(itemId,atletaId);
 }
 async function salvarRitmoAA(itemId,atletaId){
-  const ms=parseTempo(document.getElementById('aaRitmo').value);
+  const ms=lerTempoCasas('aaRitmo',100,false);
   const t=await lerTreinoUsuario(S.treino.id)||S.treino;
   t.registros=t.registros||{}; t.registros[atletaId]=t.registros[atletaId]||{};
   t.registros[atletaId][itemId]={ritmo100:ms,tempos:[],parciais:[],em:Date.now(),por:S.u.nome};
@@ -4677,6 +4746,41 @@ teste('duração','tempo impossível para a distância sobe um degrau',a=>{
   a.eq(parseTempoDist('1.06.74',1500),66740,'74 não é segundo: não desloca e não inventa 1:07:14');
   a.eq(parseTempoDist('1.06.30.50',3000),3990500,'com três separadores a hora já está escrita');
   a.eq(parseTempoDist('2.16.50',200),136500,'e o 200 de Buenos Aires continua intacto');});
+/* ── TEMPO EM CASAS SEPARADAS (v185) ───────────────────────────────────────
+   A v184 resolveu o teclado mas deixou uma regra para decorar. Casa separada
+   não tem regra: cada caixa é uma unidade, com o nome dela em cima. */
+teste('duração','quantas casas aparecem depende da distância',a=>{
+  a.eq(casasTempo(50,false).join(),'s,cent','no 50 não existe minuto');
+  a.eq(casasTempo(100,false).join(),'min,s,cent','do 100 em diante entra o minuto');
+  a.eq(casasTempo(1500,false).join(),'h,min,s,cent','no 1500 entra a hora');
+  a.eq(casasTempo(100,true).join(),'h,min,s,cent','e em águas abertas também');});
+teste('duração','casa separada escreve e lê de volta sem perder nada',a=>{
+  const d=document.createElement('div');
+  d.innerHTML=campoTempoCasas('qa1',66740,100,false)
+    +campoTempoCasas('qa2',null,50,false)
+    +campoTempoCasas('qa3',3990500,3000,true)
+    +campoTempoCasas('qa4',34800,50,false);
+  document.body.appendChild(d);
+  try{
+    a.eq(lerTempoCasas('qa1',100,false),66740,'1:06.74 volta inteiro');
+    a.eq(lerTempoCasas('qa2',50,false),null,'casa vazia é ausência, não zero');
+    a.eq(lerTempoCasas('qa3',3000,true),3990500,'1:06:30.50 de águas abertas volta inteiro');
+    a.eq(lerTempoCasas('qa4',50,false),34800,'e o tiro de 50 em segundos e centésimos');
+    a.eq(document.getElementById('qa1_min').value,'1','o minuto vai na casa do minuto');
+    a.eq(document.getElementById('qa1_s').value,'06','o segundo na do segundo');
+    a.eq(document.getElementById('qa1_cent').value,'74','o centésimo na do centésimo');
+    a.ok(!document.getElementById('qa2_min'),'tiro de 50 não ganha casa de minuto');
+    a.ok(!!document.getElementById('qa3_h'),'e águas abertas ganha casa de hora');
+  } finally { d.remove(); }});
+teste('duração','centésimo com um dígito só é décimo, não centésimo',a=>{
+  /* "1:06.8" é oito décimos, como todo mundo escreve tempo. Guardar 0,08 s
+     seria mudar o tempo do atleta em silêncio. */
+  const e=document.createElement('input'); e.value='8'; fechaCent(e);
+  a.eq(e.value,'80','8 vira 80 centésimos');
+  const f=document.createElement('input'); f.value='08'; fechaCent(f);
+  a.eq(f.value,'08','dois dígitos ficam como estão');
+  const g=document.createElement('input'); g.value=''; fechaCent(g);
+  a.eq(g.value,'','vazio continua vazio');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
