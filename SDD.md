@@ -220,6 +220,12 @@ Cada uma custou tempo de verdade.
   de escrever qualquer leitor de PDF novo, imprima o que `pdfTextos` devolve
   para o arquivo de verdade; o texto do pypdf, do visualizador ou do
   copiar-e-colar sai em outra ordem e leva a um parser que nunca funciona.
+- **Campo de tempo não se resolve com regra, se resolve com casa.** O campo
+  único abria teclado numérico, que não tem dois-pontos: o atleta anotava
+  66.74 em vez de 1:06.74. Ensinar o ponto a separar minuto (v184) resolveu
+  o teclado e deixou uma regra para decorar. Onde o atleta DIGITA, o tempo
+  vai em casas separadas (`campoTempoCasas`); onde ele COLA ou importa, a
+  regra de separador continua valendo e tem de continuar.
 - **Leitor de formato novo tem DOIS lados.** O Meet Program entrou na v180 só
   na tela do atleta; na do técnico o mesmo PDF voltou zero inscritos na véspera
   seguinte. São cadeias separadas — `minhasProvasDoBalizamento` para o atleta,
