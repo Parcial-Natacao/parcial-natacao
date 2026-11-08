@@ -137,6 +137,8 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
 /* TRILHO DE COR POR DOMINIO. O relatorio e uma coluna de vinte retangulos
    brancos iguais; a cor na borda da o mapa que faltava e deixa claro, ao
    rolar, se aquilo fala de prova, de treino, de carga ou de corpo. */
+.info-i{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;min-height:0;margin-left:6px;padding:0;border:1px solid var(--line-forte);border-radius:50%;background:transparent;color:var(--ink-3);font-size:11px;font-weight:800;font-style:italic;line-height:1;vertical-align:middle;flex:0 0 auto}
+.info-i:hover{color:var(--ink);border-color:var(--ink-3)}
 .card[data-dom]{position:relative;padding-left:19px}
 .card[data-dom]::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--dom)}
 .card[data-dom="prova"]{--dom:var(--rope)}
@@ -557,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v185"></script>
-<script src="./inicio-e-grupos.js?v=v185"></script>
+<script src="./persistencia-segura.js?v=v186"></script>
+<script src="./inicio-e-grupos.js?v=v186"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v185';
+const VER='v186';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3574,8 +3576,7 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
   const campos=bk.trechos.map((m,k)=>`
     <div class="field" style="margin:0">
       <label>${k+1}º trecho · ${m}m</label>
-      <input id="bk${k}" inputmode="decimal" placeholder="${m<=25?'13.80':'31.50'}"
-        value="${tv[k]!=null?fmt(tv[k],true):''}" oninput="atualizaSomaBroken(${bk.n})">
+      <span oninput="atualizaSomaBroken(${bk.n})">${campoTempoCasas('bk'+k,tv[k]!=null?tv[k]:null,m,false)}</span>
     </div>`).join('');
   const tot=atual.tot;
   sheet(`<h2>Broken ${bk.dist} ${esc(item.estilo)}</h2>
@@ -3595,8 +3596,7 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
     <div class="grid2" style="gap:8px">${campos}</div>
     <div class="field" style="margin:12px 0 0">
       <label>Tempo total · ${bk.dist}m</label>
-      <input id="bkTot" inputmode="decimal" placeholder="${soma!=null?fmt(soma,true):(bk.dist<=50?'30.29':'1:08.50')}"
-        value="${tot!=null?fmt(tot,true):''}" oninput="atualizaSomaBroken(${bk.n})">
+      <span oninput="atualizaSomaBroken(${bk.n})">${campoTempoCasas('bkTot',tot!=null?tot:null,bk.dist,false)}</span>
       <div class="xs muted" style="margin-top:2px">O que o cronômetro marcou. Em branco, o app usa a soma dos trechos.</div>
     </div>
     <div class="card" style="margin-top:12px;text-align:center">
@@ -3695,19 +3695,19 @@ async function mutarRegistro(itemId,atletaId,fn){
   if(salvo)S.treino=salvo;
 }
 function atualizaSomaBroken(n){
-  const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
+  const tv=[]; for(let k=0;k<n;k++)tv.push(lerTempoCasas('bk'+k,null,false));
   const s=somaBroken(tv), el=document.getElementById('bkSoma');
   if(el)el.textContent=s!=null?fmt(s,true):'—';
   /* Confere soma × cronômetro. Diferença de alguns centésimos é cronometragem
      manual e não é erro; acima de 1s por trecho é tempo digitado na linha
      errada, e é melhor o atleta ver isso na hora do que o técnico descobrir
      depois numa análise torta. */
-  const et=document.getElementById('bkTot'), ed=document.getElementById('bkDif');
-  const t=et&&et.value?parseTempo(et.value):null;
+  const ed=document.getElementById('bkDif');
+  const t=lerTempoCasas('bkTot',null,false);
   const ep=document.getElementById('bkPB'), pb=ep?+ep.dataset.pb:0, ref=t!=null?t:s;
   if(ep&&pb&&ref!=null)ep.textContent=`${(pb/ref*100).toFixed(1)}% do seu PB (${fmt(pb,true)})`;
   /* o campo vazio mostra a soma que o app vai usar — não um exemplo inventado */
-  if(et&&s!=null&&!tv.some(x=>x==null))et.placeholder=fmt(s,true);
+
   if(!ed)return;
   if(t==null||s==null||tv.some(x=>x==null)){ed.textContent='';ed.style.color='';return}
   const d=t-s, lim=Math.max(1000,n*1000);
@@ -3717,9 +3717,8 @@ function atualizaSomaBroken(n){
       +(Math.abs(d)>lim?' — confira se algum trecho ficou trocado':'');
 }
 async function salvarBroken(itemId,atletaId,n,rd,dist){
-  const tv=[]; for(let k=0;k<n;k++){const el=document.getElementById('bk'+k); tv.push(el&&el.value?parseTempo(el.value):null);}
-  const et=document.getElementById('bkTot');
-  const tot=(et&&et.value)?parseTempoDist(et.value,dist):null;
+  const tv=[]; for(let k=0;k<n;k++)tv.push(lerTempoCasas('bk'+k,null,false));
+  const tot=lerTempoCasas('bkTot',null,false);
   if(!tv.some(x=>x!=null)&&tot==null)return toast('Anote ao menos um trecho ou o tempo total');
   await gravarReg(itemId,atletaId,rd,tv,[],{tot});
   const s=tot!=null?tot:somaBroken(tv);
@@ -3807,7 +3806,7 @@ function abrirSplits(itemId,atletaId,item,at,rec){
   const corpo=Array.from({length:reps},(_,r)=>{
     const arr=(Array.isArray(par[r])&&par[r].length===np)?par[r]:[];   /* só pré-preenche se o intervalo bate */
     const inputs=Array.from({length:np},(_,k)=>`<div class="field" style="margin:0"><label>${(k+1)*iv}m</label>
-      <input inputmode="decimal" id="sp_${r}_${k}" placeholder="—" value="${arr[k]!=null?fmt(arr[k],true):''}"></div>`).join('');
+      ${campoTempoCasas('sp_'+r+'_'+k,arr[k]!=null?arr[k]:null,(k+1)*iv,false)}</div>`).join('');
     return`${reps>1?`<div class="eyebrow" style="margin-top:12px">repetição ${r+1}</div>`:''}<div class="grid2">${inputs}</div>`;
   }).join('');
   sheet(`<h2>${reps>1?reps+'×':''}${item.dist} ${item.estilo}${nrd>1?' · rodada '+(S.rd+1):''}</h2>
@@ -3828,7 +3827,7 @@ async function salvarSplits(itemId,atletaId){
   const nrd=nRodadas(item,rec), rdIdx=nrd>1?(S.rd||0):null;
   const tempos=[],parciais=[];
   for(let r=0;r<reps;r++){
-    const arr=[]; for(let k=0;k<np;k++){const el=document.getElementById('sp_'+r+'_'+k); arr.push((el&&el.value.trim())?parseTempoDist(el.value,(k+1)*iv):null);}
+    const arr=[]; for(let k=0;k<np;k++)arr.push(lerTempoCasas('sp_'+r+'_'+k,(k+1)*iv,false));
     /* monotonia: passagem acumulada não pode ser menor que a anterior preenchida */
     let ant=null,ok=true; for(const v of arr){ if(v!=null){ if(ant!=null&&v<ant)ok=false; ant=v; } }
     if(!ok)return toast('As parciais acumuladas devem crescer (cada passagem ≥ a anterior).');
@@ -4781,6 +4780,53 @@ teste('duração','centésimo com um dígito só é décimo, não centésimo',a=
   a.eq(f.value,'08','dois dígitos ficam como estão');
   const g=document.createElement('input'); g.value=''; fechaCent(g);
   a.eq(g.value,'','vazio continua vazio');});
+/* ── A PISCINA CURTA NÃO PODE SER MAIS LENTA QUE A LONGA (v186) ────────────
+   O app projetava o 50 livre em 25.53–26.62 na curta e 24.81–25.88 na longa,
+   e publicava os dois lado a lado. Em piscina de 25 m há uma virada a mais a
+   cada 50 m: ela tem de ser a mais rápida. */
+function _prev(pis,pb,c,l,h){return{prova:'50 livre '+pis,d:50,es:'livre',pis,pb,central:c,low:l,high:h,qual:70,fatores:['base']};}
+teste('previsão','curta mais lenta que longa é corrigida e explicada',a=>{
+  const sc=_prev('SC25',26100,26070,25530,26620), lc=_prev('LC50',25300,25340,24810,25880);
+  ordenarPorPiscina([sc,lc]);
+  a.ok(sc.central<lc.central,'a curta passa a ser a mais rápida');
+  a.ok(lc.central-sc.central>=GANHO_CURTA_MS(50),'por pelo menos o ganho de uma virada');
+  a.eq(sc.derivada,true,'a derivada é a do PB frouxo (a curta)');
+  a.eq(lc.derivada,undefined,'a longa, que estava coerente, não é mexida');
+  a.ok(/virada a mais/.test(sc.aviso||''),'e o app diz por quê');
+  a.ok(sc.qual<=45,'projeção derivada não vale como projeção medida');
+  a.ok(/vs PB/.test(sc.banda),'a banda contra o PB é recalculada');});
+teste('previsão','ordem física certa não é mexida',a=>{
+  const sc=_prev('SC25',25300,25340,24810,25880), lc=_prev('LC50',26100,26070,25530,26620);
+  ordenarPorPiscina([sc,lc]);
+  a.eq(sc.low,24810,'os limites da curta ficam como estavam');
+  a.eq(lc.low,25530,'os da longa também');
+  a.ok(!sc.derivada&&!lc.derivada,'ninguém vira derivada');
+  a.ok(!sc.aviso&&!lc.aviso,'e não há aviso nenhum');});
+teste('previsão','com PBs coerentes, quem deriva é a projeção que saiu torta',a=>{
+  /* os PBs estão na ordem certa (curta 25.00, longa 26.00); foi o ajuste de
+     forma que inverteu as centrais. Aí a âncora boa é a curta. */
+  const sc=_prev('SC25',25000,25800,25500,26100), lc=_prev('LC50',26000,25600,25300,25900);
+  ordenarPorPiscina([sc,lc]);
+  a.eq(lc.derivada,true,'a longa é a derivada');
+  a.eq(sc.derivada,undefined,'a curta, com PB coerente, fica intacta');
+  a.ok(lc.central-sc.central>=GANHO_CURTA_MS(50),'e a ordem física fecha');});
+teste('previsão','uma piscina só não tem par para conferir',a=>{
+  const sc=_prev('SC25',26100,26070,25530,26620);
+  ordenarPorPiscina([sc]);
+  a.eq(sc.low,25530,'nada muda');
+  a.ok(!sc.derivada,'e nada é derivado');});
+teste('previsão','o piso cresce com a distância',a=>{
+  a.eq(GANHO_CURTA_MS(50),500,'50 m: meio segundo');
+  a.eq(GANHO_CURTA_MS(100),1000,'100 m: um segundo');
+  a.eq(GANHO_CURTA_MS(1500),15000,'1500 m: quinze segundos');
+  a.eq(GANHO_CURTA_MS(25),300,'nunca menos que três décimos');});
+teste('interface','a explicação cabe atrás de um "i"',a=>{
+  const h=info('Teste de info','Texto que <b>explica</b> alguma coisa.');
+  a.ok(/class="info-i"/.test(h),'devolve o botão redondo');
+  a.ok(/abrirInfo\('teste-de-info'\)/.test(h),'com id estável vindo do título');
+  a.ok(_INFO['teste-de-info'],'e guarda o texto para a folha');
+  a.eq(info('Teste de info','outro').match(/abrirInfo\('([^']+)'\)/)[1],'teste-de-info',
+    'o mesmo título não gera um id novo a cada render');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -10224,6 +10270,28 @@ function pioraIncomum(garmin){
   return (hoje_-med)>=2?{hoje:hoje_,habitual:med,n:base.length}:null;
 }
 const TIPOS_SINT=[['dor','dor'],['doenca','doença'],['outro','outro']];
+/* ── EXPLICAÇÃO ATRÁS DE UM TOQUE (v186) ───────────────────────────────────
+   O app explicava cada coisa em três linhas de texto corrido, e empilhado
+   isso vira parede: em Medições do Dia, metade do que se lia era explicação
+   de algo que o atleta entendeu da segunda vez em diante. Parede de texto não
+   é honestidade, é ruído — e ruído faz o atleta parar de ler, inclusive o
+   aviso que importa.
+
+   A explicação NÃO some: vai para um "i" ao lado do título. Quem precisa,
+   toca. O que nunca entra no "i" é alarme, recusa ou limite do dado — isso
+   continua na cara, porque é o que muda a decisão de hoje. */
+const _INFO={};
+function info(titulo,texto){
+  const id=slug(titulo)||('i'+Object.keys(_INFO).length);
+  _INFO[id]={titulo,texto};
+  return `<button class="info-i" onclick="abrirInfo('${id}')" aria-label="o que é ${esc(titulo)}" title="o que é isto">i</button>`;
+}
+function abrirInfo(id){
+  const o=_INFO[id]; if(!o)return;
+  sheet(`<h2>${esc(o.titulo)}</h2>
+    <div class="small" style="line-height:1.55">${o.texto}</div>
+    <button class="ghost full" style="margin-top:16px" onclick="fecharSheet()">Fechar</button>`);
+}
 function cardMedicoes(){
   const d=hoje(), rec=(S.pro?.garmin||[]).find(x=>x.data===d)||{};
   const lr=lactatoResumo(rec), gr=glicemiaResumo(rec);
@@ -10235,9 +10303,7 @@ function cardMedicoes(){
       <span class="muted" style="margin-right:8px">${esc(x.q||x.obs||'')}</span>
       <button class="sm ghost" onclick="apagarMedicao('${tipo}',${i})">✕</button></div>`;
   return`
-    <p class="xs muted" style="margin:2px 0 10px">Entram no mesmo dia do check-in e do relógio. Registro e cálculo — <b>leitura clínica é do seu médico</b>.</p>
-
-    <div class="eyebrow">hidratação ao acordar</div>
+    <div class="eyebrow">hidratação ao acordar${info('Hidratação ao acordar','A urinálise é o marcador que o atleta de ponta usa — mais informativo que o volume bebido. Densidade até 1.020 é euidratação; acima de 1.025 as referências convergem para desidratação. A escala de cor entra ao lado, não fundida com a densidade.<br><br>Tudo em Medições entra no mesmo dia do check-in e do relógio. É registro e cálculo: <b>leitura clínica é do seu médico</b>.')}</div>
     ${leituraUrina(rec)}
     <div class="row" style="gap:8px;margin-top:6px">
       <button class="sm primary grow" onclick="abrirUrina()">${rec.uDens!=null||rec.uCor!=null?'Alterar urinálise':'+ Urinálise'}</button></div>
@@ -10262,19 +10328,19 @@ function cardMedicoes(){
     ${((rec.lac)||[]).map((x,i)=>linha(x,i,'lac')).join('')}
     <button class="sm primary full" style="margin-top:8px" onclick="abrirMedicao('lac')">+ Lactato</button>
 
-    <div class="sep"></div><div class="eyebrow">peso do dia</div>
+    <div class="sep"></div><div class="eyebrow">peso do dia${info('Peso do dia','É diferente do peso da bioimpedância: aqui é o do dia, lançado por você. Com três dias o app mostra a faixa de oscilação e a média — variação rápida de 1,5% ou mais costuma ser água, não massa.')}</div>
     ${pr?`<div class="xs" style="margin:4px 0 6px">
         ${pr.data===d?`Hoje: <b>${pr.hoje} kg</b>`:`Último (${brCurta(pr.data)}): <b>${pr.hoje} kg</b>`}
         ${pr.n>=3?`<div class="muted" style="margin-top:2px">Faixa de ${pr.n} dias: <b>${pr.min}–${pr.max} kg</b> · média ${pr.media} kg
           ${Math.abs(pr.deltaPct)>=1.5?`<br><span style="color:var(--clock)">Hoje está ${pr.delta>0?'+':''}${pr.delta} kg (${pr.deltaPct>0?'+':''}${pr.deltaPct}%) em relação à média — variação rápida costuma ser água.</span>`:''}</div>`:''}
-      </div>`:'<div class="xs muted" style="margin:4px 0 6px">Sem peso lançado ainda. É diferente do peso da bioimpedância: aqui é o do dia.</div>'}
+      </div>`:'<div class="xs muted" style="margin:4px 0 6px">Sem peso lançado ainda.</div>'}
     <button class="sm primary full" onclick="abrirPeso()">${rec.peso!=null?'Alterar peso de hoje':'+ Peso de hoje'}</button>
 
-    <div class="sep"></div><div class="eyebrow">dor e sintomas</div>
+    <div class="sep"></div><div class="eyebrow">dor e sintomas${info('Dor e sintomas','Isto sai do seu <b>check-in diário</b> — não precisa lançar nada aqui. O app olha dois padrões: dor alta por vários dias seguidos (um dia ruim é um dia ruim; vários merecem atenção) e piora fora do seu habitual. Registrar sintoma é para o que o check-in não cobre.')}</div>
     ${dp&&dp.dias>=3?`<div class="note warn" style="margin:4px 0"><div class="xs"><b>Dor ${dp.nivel}/5 há ${dp.dias} dias seguidos</b>, desde ${brCurta(dp.desde)}. Um dia ruim é um dia ruim; vários seguidos merecem atenção.</div></div>`
       :dp?`<div class="xs muted" style="margin:4px 0">Dor alta hoje${dp.dias>1?` e ontem (${dp.dias} dias)`:''}.</div>`:''}
     ${pi?`<div class="note warn" style="margin:4px 0"><div class="xs"><b>Piora incomum:</b> dor ${pi.hoje}/5 hoje contra ${pi.habitual}/5 habitual nos últimos ${pi.n} dias.</div></div>`:''}
-    ${!dp&&!pi?`<div class="xs muted" style="margin:4px 0">Sem dor persistente nem piora fora do padrão. Isto sai do seu check-in diário — não precisa lançar nada.</div>`:''}
+    ${!dp&&!pi?`<div class="xs muted" style="margin:4px 0">Sem dor persistente nem piora fora do padrão.</div>`:''}
     ${((rec.sint)||[]).map((x,i)=>`<div class="row xs" style="padding:6px 0;border-top:1px solid var(--line)">
         <span class="chip" style="margin-right:8px">${esc(({dor:'dor',doenca:'doença',outro:'outro'})[x.o]||x.o)}</span>
         <span class="grow">${esc(x.txt||'')}</span>
@@ -10318,7 +10384,7 @@ function mediaHidratacao(){
 const UCOR=['#f6f3c8','#f2eca3','#ede07a','#e8d24f','#ddbf35','#cfa32a','#b5831f','#8d5a14'];
 function leituraUrina(rec){
   if(rec.uDens==null&&rec.uCor==null)
-    return'<div class="xs muted" style="margin:4px 0">Sem urinálise hoje. É o marcador que o atleta de ponta usa — mais informativo que o volume bebido.</div>';
+    return'<div class="xs muted" style="margin:4px 0">Sem urinálise hoje.</div>';
   const p=[];
   if(rec.uDens!=null){
     const d=rec.uDens;
@@ -10765,9 +10831,8 @@ function cardContexto(){
     const on=marcas.includes(m[0]);
     return '<button class="'+(on?'on':'')+'" onclick="alternarCtx(\''+m[0]+'\')">'+m[1]+'</button>';
   }).join('');
-  return '<div class="sep"></div><div class="eyebrow">o que mais houve hoje</div>'+
-    '<div class="xs muted" style="margin:4px 0 6px">Marque o que pode explicar um número fora do normal. '+
-    'Isso <b>não muda cálculo nenhum</b> — serve para o app não tratar uma noite de viagem como se fosse queda de forma.</div>'+
+  return '<div class="sep"></div><div class="eyebrow">o que mais houve hoje'+
+    info('O que mais houve hoje','Marque o que pode explicar um número fora do normal. Isso <b>não muda cálculo nenhum</b> — serve para o app não tratar uma noite de viagem como se fosse queda de forma: um dia fora da faixa com explicação marcada deixa de alarmar, mas continua aparecendo na leitura.')+'</div>'+
     '<div class="opt">'+botoes+'</div>'+
     (f&&f.posicao&&f.posicao!=='dentro'&&marcas.length
       ? '<div class="xs muted" style="margin-top:6px">A VFC de hoje está <b>'+f.posicao+'</b> da sua faixa habitual, e você marcou <b>'+
@@ -12813,6 +12878,53 @@ function calibProva(pro,comPct,d,e,pis){
   const conf=exato?1:(nv.esc==='nesta prova'?0.6:0.3);
   return{k:Math.exp(m*(n/(n+1))*conf),n,dv,esc:nv.esc,exato};
 }
+/* ── A PISCINA CURTA NÃO PODE SER MAIS LENTA QUE A LONGA (v186) ────────────
+   Mesma prova, mesmo atleta: em piscina de 25 m há uma virada a mais a cada
+   50 m, e virada com saída submersa é mais rápida que nadar. O app projetava
+   o 50 livre em 25.53–26.62 na curta e 24.81–25.88 na longa, e publicava os
+   dois lado a lado sem notar que um deles não pode existir.
+
+   A causa está na âncora: cada piscina é ancorada no SEU PB, e um PB de curta
+   velho ou mal digitado arrasta a projeção inteira daquela piscina. A âncora
+   continua sendo o PB — é a informação mais forte que existe sobre o atleta —
+   mas o PAR passa por uma conferência física antes de sair. Quando não fecha,
+   o app conserta a ordem e DIZ o que fez, em vez de mostrar o impossível ou
+   de apagar a projeção em silêncio.
+
+   O piso NÃO é tabela de conversão: a conversão oficial do 50 livre passa de
+   0,7 s, e aqui 0,5 s basta para impedir o impossível sem fingir uma precisão
+   que o app não tem. */
+const GANHO_CURTA_MS=d=>Math.max(300,Math.round((+d||50)*10));
+function ordenarPorPiscina(out){
+  const grupos={};
+  for(const p of (out||[])){const k=p.d+'|'+p.es;(grupos[k]=grupos[k]||{})[p.pis]=p;}
+  for(const k of Object.keys(grupos)){
+    const sc=grupos[k].SC25, lc=grupos[k].LC50;
+    if(!sc||!lc)continue;
+    const piso=GANHO_CURTA_MS(sc.d);
+    if(sc.central<=lc.central-piso)continue;            /* a ordem física já está certa */
+    /* qual das duas âncoras é a frouxa: a curta só é plausível se o PB dela
+       for pelo menos o piso mais rápido que o da longa */
+    const curtaFrouxa=sc.pb>lc.pb-piso;
+    const alvo=curtaFrouxa?sc:lc, base=curtaFrouxa?lc:sc;
+    const desloc=curtaFrouxa?-piso:piso;
+    for(const campo of ['central','low','high'])alvo[campo]=Math.round(base[campo]+desloc);
+    alvo.high=Math.max(alvo.high,alvo.low+Math.round(alvo.central*0.02));
+    alvo.derivada=true;
+    const nomePis=p=>p==='SC25'?'curta':'longa';
+    alvo.aviso=`O seu melhor tempo de piscina ${nomePis(alvo.pis)} (${fmt(alvo.pb,true)}) não fecha com o de `
+      +`${nomePis(base.pis)} (${fmt(base.pb,true)}): em piscina curta há uma virada a mais, então ela tem de ser a mais rápida. `
+      +`Esta projeção foi derivada da piscina ${nomePis(base.pis)} — confira a marca em Marcas.`;
+    alvo.fatores=['⚠ Derivada da piscina '+nomePis(base.pis)+' (ordem física entre piscinas)'].concat(alvo.fatores||[]);
+    alvo.qual=Math.min(alvo.qual||0,45);                /* projeção derivada não é projeção medida */
+    /* os percentuais contra o PB precisam ser refeitos: os limites mudaram */
+    const pct=v=>+((v-alvo.pb)/alvo.pb*100).toFixed(1);
+    alvo.deltaLowPct=pct(alvo.low); alvo.deltaHighPct=pct(alvo.high);
+    const sinal=v=>(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(1)+'%';
+    alvo.banda=`${sinal(alvo.deltaLowPct)} / ${sinal(alvo.deltaHighPct)} vs PB`;
+  }
+  return out;
+}
 function predicao(pro,comPct,est){
   const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[]; if(!alvos.length||!comPct||!comPct.length)return[];
   const pbs=(pro&&pro.pbs)||{};
@@ -12898,6 +13010,7 @@ function predicao(pro,comPct,est){
         banda:`${sinal(dLow)} / ${sinal(dHigh)} vs PB`,fatores:fat});
     }
   }
+  ordenarPorPiscina(out);
   /* A PROVA EM FOCO NUNCA PODE SER CORTADA NEM PERDER O PRIMEIRO LUGAR.
      A ordenação era só por qualidade do dado, e o `slice(0,4)` podia até
      descartar a prova escolhida. Como quatro lugares do relatório liam
@@ -13244,7 +13357,8 @@ function cardPredicao(pro,comPct,est){
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
       <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
-      <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div></div>`;}).join('');
+      <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div>
+      ${p.aviso?`<div class="note warn" style="margin-top:6px">${esc(p.aviso)}</div>`:''}</div>`;}).join('');
   return`<div class="card" data-dom="prova"><div class="eyebrow">projeção de tempo — provas-alvo</div>
     <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
     ${linhas}
