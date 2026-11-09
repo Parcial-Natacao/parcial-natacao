@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v186"></script>
-<script src="./inicio-e-grupos.js?v=v186"></script>
+<script src="./persistencia-segura.js?v=v187"></script>
+<script src="./inicio-e-grupos.js?v=v187"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v186';
+const VER='v187';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4330,6 +4330,110 @@ async function abrirDiagnostico(){
    ═══════════════════════════════════════════════════════════════════════ */
 const EXTRATO_MIN_SEMANAS=8;
 const EXTRATO_COBERTURA_MIN=0.6;
+/* ── A FAIXA DE DIAS DO MÊS (v187) ─────────────────────────────────────────
+   Dor, sono ruim e marcador de contexto viram alarme no dia e depois somem.
+   Aqui eles ficam: o mês inteiro numa linha, cada dia com a carga que teve, o
+   treino que houve e o que foi marcado naquele dia.
+
+   A faixa NÃO conclui nada, e isso é de propósito. Comparar "os dias com dor"
+   contra "os outros" é a pergunta certa, mas com 5 dias de um lado e 14 do
+   outro a diferença não distingue efeito de acaso — e o erro é caro: o atleta
+   passa a treinar em cima de ruído. Pior, a causa pode ser a inversa (o
+   treino forte de ontem é que gerou a dor de hoje). Então aqui vai o que
+   aconteceu, lado a lado, e a leitura é de quem viveu o mês. A comparação com
+   número entra depois, com mínimo de amostra, como no resto do extrato. */
+const MARCA_DIA={
+  dor:     {cor:'var(--clock)', rot:'dor'},
+  sono:    {cor:'var(--water)', rot:'sono ruim'},
+  sintoma: {cor:'var(--ink)',   rot:'sintoma'},
+  ctx:     {cor:'var(--rope)',  rot:'contexto'}
+};
+function diasDoMes(ym){
+  const L=limitesMes(ym), pro=S.pro||proVazio();
+  const carga={};
+  const add=(d,v)=>{ if(d&&d>=L.ini&&d<=L.fim)carga[d]=(carga[d]||0)+v; };
+  for(const s of (SESSOES||[]))add(s.data,s.load||0);
+  for(const s of (pro.seco||[]))if(s.rpe!=null&&s.dur)add(s.data,s.rpe*s.dur);
+  const jaTem=(typeof diasComCargaInformada==='function')?diasComCargaInformada():{};
+  const id=(typeof idadeDoUsuario==='function')?idadeDoUsuario():null;
+  for(const g of (pro.garmin||[])){
+    if(jaTem[g.data])continue;
+    const e=(typeof loadGarminDia==='function')?loadGarminDia(g,id):null;
+    if(e)add(g.data,e.load);
+  }
+  /* treino existe mesmo sem carga: quem não marcou RPE e duração treinou do
+     mesmo jeito, e um dia em branco na faixa mentiria sobre o mês */
+  const comTreino=new Set();
+  for(const t of (S.tridx||[]))if(t.data&&(t._pessoal||(t.para||[]).includes(S.u.id)))comTreino.add(t.data);
+  for(const s of (pro.seco||[]))if(s.data)comTreino.add(s.data);
+  for(const d of Object.keys(carga))comTreino.add(d);
+  const ref=(typeof refSono==='function')?refSono(pro):null;
+  const out=[];
+  for(let n=1;n<=L.dias;n++){
+    const data=ym+'-'+String(n).padStart(2,'0');
+    const g=(pro.garmin||[]).find(x=>x&&x.data===data)||{};
+    const marcas=[];
+    if(g.dor!=null&&g.dor>=4)marcas.push('dor');
+    if((g.sonoQ!=null&&g.sonoQ<=2)||(g.sono!=null&&ref&&g.sono<=ref.h-1))marcas.push('sono');
+    if((g.sint||[]).length)marcas.push('sintoma');
+    if((g.ctx||[]).length)marcas.push('ctx');
+    out.push({data,n,carga:Math.round(carga[data]||0),treinou:comTreino.has(data),
+      marcas,ctx:(g.ctx||[]).slice(),dor:g.dor??null,sonoQ:g.sonoQ??null,sono:g.sono??null,
+      checkin:(typeof checkinScore==='function')?checkinScore(g):null});
+  }
+  return out;
+}
+function faixaDiasMes(ym,dias,tiros){
+  if(!dias||!dias.length)return'';
+  const max=Math.max(1,...dias.map(d=>d.carga));
+  const porData={};
+  for(const t of (tiros||[]))if(t.data)(porData[t.data]=porData[t.data]||[]).push(t);
+  const col=d=>{
+    const h=d.carga?Math.max(14,Math.round(d.carga/max*38)):(d.treinou?6:0);
+    const barra=h?`<div style="height:${h}px;background:${d.carga?'var(--water)':'var(--line-forte)'};border-radius:2px 2px 0 0"></div>`:'';
+    const pontos=d.marcas.map(m=>`<span style="display:block;width:100%;height:3px;background:${MARCA_DIA[m].cor};border-radius:2px"></span>`).join('');
+    const tem=porData[d.data]?`<div style="height:3px;width:100%;background:var(--ok);border-radius:2px"></div>`:'';
+    return`<button onclick="abrirDiaExtrato('${ym}','${d.data}')" title="dia ${d.n}"
+      style="flex:1;min-width:0;min-height:0;padding:0;background:none;border:0;display:flex;flex-direction:column;align-items:stretch;gap:1px">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;height:40px;width:100%">${barra}</div>
+      ${tem}${pontos}
+      <span style="font-size:7px;color:var(--ink-3);line-height:1">${d.n%5===0||d.n===1?d.n:''}</span></button>`;
+  };
+  const leg=(k,txt)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:9px"><span style="width:10px;height:3px;background:${MARCA_DIA[k].cor};border-radius:2px"></span>${txt}</span>`;
+  /* alinhado pelo TOPO: com os dois marcadores de um dia empurrando a coluna,
+     a linha de base das barras deixava de existir e o mês parecia irregular */
+  return'<div class="sep"></div><div class="eyebrow">dia a dia'
+    +info('Dia a dia do mês','Cada coluna é um dia. A barra é a <b>carga</b> daquele dia (duração × RPE, ou a estimativa do relógio quando você não marcou); barra fininha cinza é treino sem carga lançada. Abaixo, em traços: verde quando houve tiro medido, e os marcadores do dia — dor alta no check-in, sono ruim, sintoma lançado e marcador de contexto.<br><br>A faixa <b>não conclui nada</b>, de propósito. Comparar os dias com dor contra os outros é a pergunta certa, mas com poucos dias de cada lado a diferença não separa efeito de acaso — e a causa pode ser a inversa, com o treino forte de ontem gerando a dor de hoje. Aqui fica o que aconteceu, lado a lado. Toque num dia para ver o detalhe.')
+    +'</div>'
+    +'<div style="display:flex;align-items:flex-start;gap:1px;margin:8px 0 4px">'+dias.map(col).join('')+'</div>'
+    +'<div class="xs muted" style="line-height:1.7">'
+      +'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:9px"><span style="width:10px;height:3px;background:var(--ok);border-radius:2px"></span>tiro medido</span>'
+      +leg('dor','dor alta')+leg('sono','sono ruim')+leg('sintoma','sintoma')+leg('ctx','contexto')
+    +'</div>';
+}
+function abrirDiaExtrato(ym,data){
+  const x=(S.extratoCalc||{})[ym]; if(!x)return;
+  const d=(x.diasMes||[]).find(y=>y.data===data); if(!d)return;
+  const tiros=(x.tiros||[]).filter(t=>t.data===data);
+  const rot={doenca:'doença',alcool:'álcool',viagem:'viagem',estresse:'estresse fora do treino',ciclo:'ciclo menstrual'};
+  const linhas=[];
+  linhas.push(d.carga?`Carga do dia: <b>${d.carga} UA</b>`
+                     :(d.treinou?'Treinou, mas sem RPE e duração lançados — sem carga.':'Sem treino registrado.'));
+  if(d.checkin!=null)linhas.push(`Check-in: <b>${d.checkin}</b>/100`);
+  if(d.dor!=null)linhas.push(`Dor: <b>${d.dor}</b>/5`);
+  if(d.sono!=null)linhas.push(`Sono: <b>${d.sono}h</b>${d.sonoQ!=null?` · qualidade ${d.sonoQ}/5`:''}`);
+  if(d.ctx.length)linhas.push(`Marcado: <b>${d.ctx.map(c=>rot[c]||c).join(', ')}</b>`);
+  sheet(`<h2>${brData(data)}</h2>
+    ${linhas.map(t=>`<div class="small" style="margin:6px 0">${t}</div>`).join('')}
+    ${tiros.length?'<div class="sep"></div><div class="eyebrow">tiros medidos</div>'
+      +tiros.map(t=>`<div class="row xs" style="padding:5px 0;border-top:1px solid var(--line)">
+         <span class="grow">${t.dist}m ${esc(t.estilo||'')} <span class="muted">${t.pis==='LC50'?'50m':'25m'}</span></span>
+         <b style="margin-right:8px">${fmt(t.tempo,true)}</b>
+         <span style="width:44px;text-align:right">${t.pct!=null?'<b>'+t.pct.toFixed(0)+'%</b>':'—'}</span></div>`).join('')
+      :'<div class="xs muted" style="margin-top:8px">Nenhum tiro medido neste dia.</div>'}
+    <div class="xs muted" style="margin-top:12px">Um dia não é tendência. A faixa serve para enxergar o mês inteiro de uma vez.</div>
+    <button class="ghost full" style="margin-top:12px" onclick="fecharSheet()">Fechar</button>`);
+}
 function limitesMes(ym){
   const Y=+String(ym).slice(0,4), M=+String(ym).slice(5,7);
   const dias=new Date(Y,M,0).getDate();
@@ -4411,6 +4515,8 @@ async function extratoMes(ym){
     dor:dorPersistente(pro.garmin),
     faixa:faixaHRV(pro.garmin),
     ctx:ctxNoPeriodo(pro.garmin,L.ini,L.fim),
+    /* depois de cargaTotal, que é quem enche SESSOES */
+    diasMes:diasDoMes(ym),
     nSeco:(pro.seco||[]).filter(x=>dentro(x.data)).length};
 }
 
@@ -4561,6 +4667,7 @@ function cardExtrato(ym){
     '</div>'+
     (x.deltaCarga!=null?'<div class="xs muted">Mês anterior: '+x.porSemAnt+' UA/semana ('+(x.deltaCarga>=0?'+':'')+x.deltaCarga+'%).</div>':'')+
     (x.cobertura!=null?'<div class="xs muted" style="margin-top:2px">Cobertura de esforço registrado: <b>'+Math.round(x.cobertura*100)+'%</b>'+(x.nSeco?' · '+x.nSeco+' sessão(ões) fora d\'água':'')+'.</div>':'')+
+    faixaDiasMes(ym,x.diasMes,x.tiros)+
     graficoSemanas(x)+
     (x.faixa?'<div class="xs muted" style="margin-top:6px">Faixa habitual de VFC: <b>'+x.faixa.de+' a '+x.faixa.ate+' ms</b> (média '+x.faixa.media+', '+x.faixa.n+' dias).</div>':'')+
     (x.ctx&&x.ctx.lista.length?'<div class="xs muted" style="margin-top:2px">Marcado no mês: '+
@@ -4827,6 +4934,45 @@ teste('interface','a explicação cabe atrás de um "i"',a=>{
   a.ok(_INFO['teste-de-info'],'e guarda o texto para a folha');
   a.eq(info('Teste de info','outro').match(/abrirInfo\('([^']+)'\)/)[1],'teste-de-info',
     'o mesmo título não gera um id novo a cada render');});
+/* ── A FAIXA DE DIAS DO MÊS (v187) ─────────────────────────────────────────
+   Dor e sono ruim viravam alarme do dia e sumiam. A faixa guarda o mês
+   inteiro lado a lado — e não conclui nada, de propósito. */
+teste('extrato','a faixa cobre o mês inteiro, dia por dia',a=>{
+  const bk=[S.pro,S.tridx,SESSOES];
+  try{
+    _atleta(); SESSOES=[];
+    S.pro.garmin=[{data:'2026-10-07',ctx:['viagem'],dor:2,sonoQ:4},
+                  {data:'2026-10-13',dor:5,sonoQ:4,sono:7.5},
+                  {data:'2026-10-18',sint:[{o:'dor',txt:'ombro'}],dor:2,sonoQ:1,sono:5}];
+    S.tridx=[{id:'t1',data:'2026-10-13',_pessoal:true,para:['A1']}];
+    const d=diasDoMes('2026-10');
+    a.eq(d.length,31,'outubro tem 31 colunas');
+    a.eq(d[0].data,'2026-10-01','começa no dia 1');
+    a.eq(d[30].data,'2026-10-31','e termina no 31');
+    a.eq(d.find(x=>x.n===7).marcas.join(),'ctx','o dia 7 só tem contexto');
+    a.eq(d.find(x=>x.n===13).marcas.join(),'dor','o 13 tem dor alta');
+    a.eq(d.find(x=>x.n===13).treinou,true,'e treino, mesmo sem carga lançada');
+    a.eq(d.find(x=>x.n===18).marcas.sort().join(),'sintoma,sono','o 18 junta sono ruim e sintoma');
+    a.eq(d.find(x=>x.n===2).marcas.length,0,'dia sem nada não inventa marcador');
+  } finally { S.pro=bk[0]; S.tridx=bk[1]; SESSOES=bk[2]; }});
+teste('extrato','dor só vira marcador quando é alta',a=>{
+  const bk=[S.pro,S.tridx,SESSOES];
+  try{
+    _atleta(); SESSOES=[]; S.tridx=[];
+    S.pro.garmin=[{data:'2026-10-05',dor:3},{data:'2026-10-06',dor:4}];
+    const d=diasDoMes('2026-10');
+    a.eq(d.find(x=>x.n===5).marcas.length,0,'dor 3 de 5 é dia comum');
+    a.eq(d.find(x=>x.n===6).marcas.join(),'dor','dor 4 de 5 marca');
+  } finally { S.pro=bk[0]; S.tridx=bk[1]; SESSOES=bk[2]; }});
+teste('extrato','a faixa desenha o mês e não afirma nada sobre ele',a=>{
+  const dias=[{data:'2026-10-01',n:1,carga:400,treinou:true,marcas:['dor'],ctx:[],dor:4,sonoQ:4,sono:7,checkin:60},
+              {data:'2026-10-02',n:2,carga:0,treinou:false,marcas:[],ctx:[],dor:null,sonoQ:null,sono:null,checkin:null}];
+  const h=faixaDiasMes('2026-10',dias,[{data:'2026-10-01',dist:50,estilo:'peito',pis:'SC25',tempo:32000,pct:96}]);
+  a.ok(/dia a dia/.test(h),'tem o título');
+  a.ok(/abrirDiaExtrato\('2026-10','2026-10-01'\)/.test(h),'cada dia abre o detalhe');
+  a.ok(/tiro medido/.test(h)&&/dor alta/.test(h),'e a legenda diz o que é cada traço');
+  a.ok(!/queda|rendimento|por causa|efeito/i.test(h),'a faixa não conclui nada sobre o mês');
+  a.eq(faixaDiasMes('2026-10',[],[]),'','mês sem dias não desenha nada');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
