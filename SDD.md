@@ -126,6 +126,9 @@ provar que ainda vale.
 | As quatro faixas ocupam **45° cada** no arco, e o placar se posiciona dentro da sua | v179 | em pontos elas são desiguais (40, 15, 20, 25); proporcional, a faixa estreita — onde 41 e 54 são coisas diferentes — ficava com menos espaço. A escala do arco deixa de ser linear em pontos: isso é proposital, o número no meio continua exato |
 | O medidor **não tira média** entre relógio e check-in | v175 | a discordância entre os dois é a informação; o ponteiro mostra um, diz qual, e avisa quando discordam mais de 20 pontos |
 | **Strava está fora** | out/2026 | a política proíbe combinar dados e uso em IA, incluindo derivados |
+| A faixa de dias do mês **descreve, não conclui** | v187 | comparar "dias com dor" com "os outros" é a pergunta certa, mas com poucos dias de cada lado a diferença não separa efeito de acaso — e a causa pode ser a inversa (o treino forte de ontem gera a dor de hoje). A comparação com número entra depois, com mínimo de amostra e dizendo "associação observada" |
+| Outro relógio entra por **arquivo**, nunca por API com segredo | v187 | a API da WHOOP exige client secret e troca de token no servidor; o app não tem servidor, e pôr segredo no HTML é publicá-lo |
+| Um atleta, **uma fonte de VFC** | v187 | RMSSD de relógios diferentes não se mistura na mesma linha de base: trocar de aparelho recomeça a base, não a continua |
 | Sem app nativo por enquanto | — | sincronização automática exigiria HealthKit/Health Connect |
 | Identificadores de armazenamento **não** são renomeados | — | `PFX='parcial_'`, projeto `parcial-cdb0e`, chaves `u_`/`pro_`/`eq_` |
 
