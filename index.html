@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v187"></script>
-<script src="./inicio-e-grupos.js?v=v187"></script>
+<script src="./persistencia-segura.js?v=v188"></script>
+<script src="./inicio-e-grupos.js?v=v188"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v187';
+const VER='v188';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2842,6 +2842,23 @@ const RECURSOS=[[/pernad|perna|kick/i,'pernada'],[/braçad|braço|pull/i,'braça
  [/progressiv/i,'progressivo'],[/boia|pull\s*buoy/i,'boia']];
 const CABECA=/^(aquecimen|aquec|warm|ativa|t[ée]cnic|educativ|parte\s*princip|principal|s[ée]rie|conjunto|main|set\b|tiros?\b|velocidad|aer[óo]bi|limiar|soltura|volta[\s-]*[àa]?\s*calma|volta calma|desaquec|pr[ée][\s-]*principal|complemento|final|regenerat|poliment|core|seco|dryland|travessia|simula|prepara|recupera|trote|bloco\s+princip|prova\s*teste|teste\s*de\s*prova)/i;
 
+/* ── UMA LINHA PODE TER MAIS DE UMA SÉRIE (v188) ───────────────────────────
+   "2x (4x50 forte + 200 solto)" são DUAS séries repetidas duas vezes: 800 m.
+   O parser lia só a primeira e perdia o multiplicador — saía 200 m, e é esse
+   o "não registra ambas as seções". Metragem errada não fica só na tela: vira
+   volume, carga, ACWR e extrato errados.
+
+   A expansão é literal: tira o multiplicador da frente, quebra no "+" e cada
+   pedaço vira uma série própria. Sem "+" e sem multiplicador não há o que
+   expandir, e a linha segue pelo caminho de sempre. */
+function expandirLinha(l){
+  const m=String(l||'').match(/^\s*(\d{1,2})\s*[x\u00d7]\s*\(([^)]+)\)\s*(.*)$/i);
+  let mult=1, corpo=String(l||'');
+  if(m){ mult=Math.min(+m[1],12)||1; corpo=m[2]+(m[3]?' '+m[3]:''); }
+  const partes=corpo.split(/\s*\+\s*/).map(x=>x.trim()).filter(Boolean);
+  if(mult===1&&partes.length<2)return null;
+  return {mult,partes};
+}
 function interpretar(txt){
   const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]}; let mult=1;
   /* CONTEXTO do bloco: o título MAIS as linhas soltas já lidas nele. O "3x
@@ -2866,9 +2883,25 @@ function interpretar(txt){
     if(mm){ mult=Math.min(+mm[1],12)||1; continue; }   /* linha "Nx" define o multiplicador do bloco */
     /* linha que é só descanso/observação vira NOTA (não se perde) */
     const soRest=/^(descanso|pausa|rest|intervalo|recupera)/i.test(l)&&!/\d\s*[x×]\s*\d/.test(l);
-    const it=soRest?null:linhaParaItem(l,ctx);
-    if(it){ if(mult>1){it.rodadas=Math.min((it.rodadas||1)*mult,12); it.vol=(it.rodadas||1)*it.reps*it.dist;} atual.itens.push(it); }
-    else if(!ehHeader){ atual.itens.push({id:uid(),nota:true,texto:l,vol:0}); ctx+=' '+l; }
+    const exp=soRest?null:expandirLinha(l);
+    const brutos=exp?exp.partes.map(p=>linhaParaItem(p,ctx)):[soRest?null:linhaParaItem(l,ctx)];
+    const achou=brutos.filter(Boolean);
+    const fator=(mult>1?mult:1)*(exp?exp.mult:1);
+    if(achou.length){
+      for(const it of achou){
+        if(fator>1){ it.rodadas=Math.min((it.rodadas||1)*fator,12); it.vol=(it.rodadas||1)*it.reps*it.dist; }
+        atual.itens.push(it);
+      }
+    }
+    else if(!ehHeader){
+      atual.itens.push({id:uid(),nota:true,texto:l,vol:0}); ctx+=' '+l;
+      /* ⚠️ O "2x" vale para o GRUPO que vem logo abaixo dele, não para o resto
+         do bloco. Sem este corte, "2x: / 8x50 / Depois: / 400 solto" dobrava
+         também o 400 — 1600 m onde eram 1200. Linha de descanso NÃO corta: ela
+         faz parte do grupo, e cortar ali derrubava o segundo 4x50 de um
+         "2x: / 4x50 / descanso 1' / 4x50". */
+      if(!soRest)mult=1;
+    }
   }
   if(atual.itens.length)blocos.push(atual);
   return blocos.length?blocos:[{id:uid(),titulo:'TREINO',itens:[]}];
@@ -2986,7 +3019,11 @@ function linhaParaItem(l,tit){
   if(mi)intervalo=(+mi[1]*60+ +mi[2])*1000;
   const forte=/máxim|maxim|all\s*out|tiro|forte|sprint|ritmo de prova|\brp\b|9[0-9]\s*%|100\s*%/i.test(l);
   const parcial=/parcia|broken|quebrad|25\s*a\s*25|split/i.test(l)||(forte&&dist>=50&&dist<=100);
-  const mo=l.match(/\(([^)]+)\)/); const obs=mo?mo[1].trim():'';
+  const mo=l.match(/\(([^)]+)\)/); let obs=mo?mo[1].trim():'';
+  /* "8x50 peito (2x)" é a série repetida duas vezes, e isso ia parar em `obs`
+     como se fosse um comentário — 400 m onde eram 800. */
+  const mr=obs.match(/^(\d{1,2})\s*[x\u00d7]$/i);
+  if(mr){ rodadas=Math.min(rodadas*(+mr[1]||1),12); obs=''; }
   return{id:uid(),rodadas,reps,dist,estilo,tags,intervalo,pausa:parsePausa(l),parcial,forte,obs,texto:l,vol:rodadas*reps*dist};
 }
 const volTreino=t=>(t.blocos||[]).reduce((a,b)=>a+b.itens.reduce((x,i)=>x+i.vol,0),0);
@@ -3099,12 +3136,15 @@ function calendarioTreinos(lista,cardFn,criarFn){
   const Y=+S.calYM.slice(0,4), M=+S.calYM.slice(5,7);
   const inicioSemana=new Date(Y,M-1,1).getDay(), diasNoMes=new Date(Y,M,0).getDate(), hj=hoje();
   const nav=dl=>{let y=Y,m=M+dl; if(m<1){m=12;y--} if(m>12){m=1;y++} return y+'-'+String(m).padStart(2,'0');};
+  const comp=diasDeCompeticao();
   const cell=d=>{const ds=`${Y}-${String(M).padStart(2,'0')}-${String(d).padStart(2,'0')}`, arr=porDia[ds]||[], sel=S.calDia===ds, eHoje=ds===hj;
-    const bg=sel?'var(--ink)':arr.length?'var(--deck)':'transparent', cor=sel?'var(--deck)':'inherit';
+    const emComp=!!comp[ds];
+    const bg=sel?'var(--ink)':emComp?'var(--rope)':arr.length?'var(--deck)':'transparent';
+    const cor=sel?'var(--deck)':emComp?'var(--sobre-amarelo)':'inherit';
     /* `cal-d` zera o min-height do botão comum (48px). Com aspect-ratio:1 esse
        mínimo virava também a LARGURA, e sete células de 48px somavam 360px num
        espaço de 307 — o calendário saía torto e vazando para fora do cartão. */
-    return`<button class="cal-d" onclick="S.calDia='${ds}';render()" style="border-color:${eHoje?'var(--water)':'var(--line)'};background:${bg};color:${cor}">
+    return`<button class="cal-d" title="${emComp?esc(comp[ds]):''}" onclick="S.calDia='${ds}';render()" style="border-color:${eHoje?'var(--water)':'var(--line)'};background:${bg};color:${cor}">
       <span style="font-size:13px;font-weight:${arr.length?'800':'400'}">${d}</span>
       ${arr.length?`<span style="font-size:8px;line-height:1;color:${sel?'var(--deck)':'var(--water)'}">●${arr.length>1?arr.length:''}</span>`:''}</button>`;};
   let cells=''; for(let i=0;i<inicioSemana;i++)cells+='<div></div>'; for(let d=1;d<=diasNoMes;d++)cells+=cell(d);
@@ -3115,7 +3155,11 @@ function calendarioTreinos(lista,cardFn,criarFn){
       <div class="grow" style="text-align:center;font-weight:800;text-transform:capitalize">${MESES[M-1]} ${Y}</div>
       <button class="sm ghost" onclick="S.calYM='${nav(1)}';S.calDia=null;render()">›</button></div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:10px;color:var(--ink-2);margin-bottom:5px">${['dom','seg','ter','qua','qui','sex','sáb'].map(n=>`<div>${n}</div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
+    ${(()=>{const c=diasDeCompeticao(); const noMes=Object.keys(c).filter(d=>d.slice(0,7)===S.calYM);
+      if(!noMes.length)return'';
+      const nomes=[...new Set(noMes.map(d=>c[d]))];
+      return`<div class="xs muted" style="margin-top:8px"><span style="display:inline-block;width:10px;height:10px;background:var(--rope);border-radius:3px;vertical-align:-1px;margin-right:5px"></span>${noMes.length} dia(s) de competição: ${nomes.map(esc).join(' · ')}.</div>`;})()}</div>
   ${/* O extrato mora AQUI, preso ao mes que o calendario esta mostrando: e
        esta a vista padrao, e e nela que o atleta navega mes a mes. Botei na
        lista primeiro e ele ficou invisivel para quem nunca troca de vista. */''}
@@ -4973,6 +5017,92 @@ teste('extrato','a faixa desenha o mês e não afirma nada sobre ele',a=>{
   a.ok(/tiro medido/.test(h)&&/dor alta/.test(h),'e a legenda diz o que é cada traço');
   a.ok(!/queda|rendimento|por causa|efeito/i.test(h),'a faixa não conclui nada sobre o mês');
   a.eq(faixaDiasMes('2026-10',[],[]),'','mês sem dias não desenha nada');});
+/* ── UMA LINHA PODE TER MAIS DE UMA SÉRIE (v188) ───────────────────────────
+   "2x (4x50 forte + 200 solto)" são duas séries repetidas duas vezes: 800 m.
+   O parser lia só a primeira e perdia o multiplicador — saía 200 m. Metragem
+   errada não fica na tela: vira volume, carga, ACWR e extrato errados. */
+function _vol(txt){const b=interpretar(txt);return b.reduce((a,x)=>a+x.itens.reduce((y,i)=>y+(i.vol||0),0),0);}
+teste('metragem','linha com duas séries entre parênteses conta as duas',a=>{
+  a.eq(_vol('Principal\n2x (4x50 forte + 200 solto)'),800,'2×(200+200)');
+  a.eq(_vol('Principal\n3x (4x50 peito + 100 livre)'),900,'3×(200+100)');
+  a.eq(_vol('Principal\n100 livre + 100 costas'),200,'soma sem multiplicador também conta as duas');});
+teste('metragem','o multiplicador vale para o grupo, não para o bloco inteiro',a=>{
+  a.eq(_vol('Principal\n2x:\n4x50 forte\n200 solto'),800,'o grupo inteiro dobra');
+  a.eq(_vol('Principal\n2x:\n8x50 peito\nDepois:\n400 livre solto'),1200,
+    'depois de uma linha que não é série, o 2x acaba — antes dobrava o 400 também');
+  a.eq(_vol("Principal\n2x:\n4x50 forte\ndescanso 1'\n4x50 peito"),800,
+    'mas linha de descanso não corta o grupo');});
+teste('metragem','"(2x)" no fim da linha é repetição, não observação',a=>{
+  a.eq(_vol('Principal\n8x50 peito (2x)'),800,'a série repete duas vezes');
+  a.eq(_vol('Principal\n8x50 peito (forte)'),400,'e uma observação de verdade continua observação');});
+teste('metragem','as formas que já funcionavam continuam iguais',a=>{
+  a.eq(_vol('Principal\n3x 100 livre'),300,'3x100');
+  a.eq(_vol('Principal\n2x 4x50 peito'),400,'2x 4x50 na mesma linha');
+  a.eq(_vol('Principal\n3x4x25 forte'),300,'sem espaço entre os x');
+  a.eq(_vol("Aquecimento\n400 livre solto\n\nPrincipal\n3x (4x50 peito forte saída 1'20 + 100 livre solto)\n\nSoltura\n200 costas"),
+    1500,'treino inteiro: 400 + 3×(200+100) + 200');});
+/* ── O MARCADOR TEM DE CAIR NO DIA CERTO (v188) ────────────────────────────
+   O álcool da festa de ontem à noite só é lembrado hoje de manhã, quando a
+   VFC aparece baixa — e ia para o registro de hoje. */
+teste('contexto','a marcação escolhe o dia, com ontem a um toque',a=>{
+  const bk=S.ctxDia;
+  try{
+    S.ctxDia=null;  a.eq(ctxDiaAlvo(),hoje(),'sem escolha, é hoje');
+    S.ctxDia='hoje';a.eq(ctxDiaAlvo(),hoje(),'hoje é hoje');
+    S.ctxDia='ontem';a.eq(ctxDiaAlvo(),_dAtras(1),'ontem é o dia anterior');
+  } finally { S.ctxDia=bk; }});
+teste('contexto','marcado em ontem fica em ontem, não em hoje',a=>{
+  const bk=[S.pro,S.ctxDia];
+  try{
+    _atleta(); S.ctxDia='ontem';
+    const d=_dAtras(1);
+    S.pro.garmin=[{data:d,ctx:['alcool']},{data:hoje(),sonoQ:4}];
+    a.eq(ctxDoDia(S.pro.garmin,d).join(),'alcool','o marcador está no dia em que se bebeu');
+    a.eq(ctxDoDia(S.pro.garmin,hoje()).length,0,'e não no dia seguinte');
+    a.ok(/ontem/.test(cardContexto()),'o cartão mostra qual dia está selecionado');
+  } finally { S.pro=bk[0]; S.ctxDia=bk[1]; }});
+
+/* ── A COMPETIÇÃO OCUPA UM PERÍODO (v188) ──────────────────────────────────
+   O Pan-Americano foi de 21 a 27/10 e o app guardava só o 21. */
+teste('competição','o período inteiro entra no calendário',a=>{
+  const bk=S.u&&S.u.competicoes;
+  try{
+    _atleta();
+    S.u.competicoes=[{id:'c1',nome:'PAQ Masters',data:'2026-10-21',dataFim:'2026-10-27'}];
+    const d=diasDeCompeticao();
+    a.eq(Object.keys(d).length,7,'sete dias ocupados');
+    a.ok(d['2026-10-21']&&d['2026-10-27'],'do primeiro ao último, inclusive');
+    a.ok(!d['2026-10-28'],'e nada depois do fim');
+    a.eq(periodoComp(S.u.competicoes[0]),'21/10/2026 a 27/10/2026','o período aparece escrito');
+  } finally { if(S.u)S.u.competicoes=bk; }});
+teste('competição','competição de um dia só, e data de fim torta',a=>{
+  const bk=S.u&&S.u.competicoes;
+  try{
+    _atleta();
+    S.u.competicoes=[{id:'c1',nome:'Copa',data:'2026-05-10'}];
+    a.eq(Object.keys(diasDeCompeticao()).length,1,'sem dataFim vale um dia (cadastro antigo)');
+    a.eq(periodoComp({data:'2026-05-10'}),'10/05/2026','e o texto não inventa período');
+    a.eq(fimComp({data:'2026-05-10',dataFim:'2026-05-01'}),'2026-05-10',
+      'fim antes do início é erro de digitação: vale o início');
+  } finally { if(S.u)S.u.competicoes=bk; }});
+
+/* ── DOIS MELHORES TEMPOS, E ELES NÃO SÃO A MESMA COISA (v188) ─────────────*/
+teste('marcas','dá para ver o melhor da faixa de hoje ou o da vida inteira',a=>{
+  const bk=[S.pro,S.pbVida];
+  try{
+    _atleta();
+    S.pro.pbs={'50 peito SC25':31000};
+    S.pro.pbAllTime={'50 peito SC25':{tempo:29800,faixa:'35+',data:'2019-11-02'}};
+    S.pbVida=false;
+    const faixa=pbsTabela(S.pro.pbs,'SC25');
+    a.ok(faixa.indexOf('31.00')>=0,'na faixa de hoje o número grande é 31.00');
+    a.ok(/alimenta proje/.test(faixa),'e o texto diz que é esse que entra nas contas');
+    S.pbVida=true;
+    const vida=pbsTabela(S.pro.pbs,'SC25');
+    a.ok(vida.indexOf('29.80')>=0,'na vida inteira o número grande é 29.80');
+    a.ok(/não entra/.test(vida),'e o texto diz que esse NÃO entra nas contas');
+    a.ok(vida.indexOf('2019')<0&&vida.indexOf('02/11')>=0,'com a data em que foi feito');
+  } finally { S.pro=bk[0]; S.pbVida=bk[1]; }});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -8663,7 +8793,7 @@ function telaMinhaComp(){
   if(!mc){S.minhaComp=null;return telaCompAtleta();}
   return`
   <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Competições</button></div>
-  <div><div class="eyebrow">${brData(mc.data)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
+  <div><div class="eyebrow">${periodoComp(mc)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
   <div class="card"><div class="eyebrow">balizamento em PDF</div>
     <p class="small muted" style="margin:4px 0 6px">Suba o PDF e eu preencho as <b>suas</b> provas pelo seu nome — formato brasileiro (ABMN) ou internacional (HY-TEK). Do <b>Meet Program</b> (depois do sorteio) vem série, raia e a <b>série inteira</b>; do <b>psych sheet</b> (antes) vem só a prova e o tempo de inscrição, porque série e raia ainda não existem — subir o Meet Program depois completa a mesma prova, sem duplicar. Melhor esforço: confira na súmula.</p>
     <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarBalizamento(this)"></div>
@@ -8720,19 +8850,49 @@ function abrirSerieProva(provaId){
     ${linhas}
     <div class="xs muted" style="margin-top:10px">Lido do balizamento. Confira na súmula oficial antes de contar com isso.</div>`);
 }
+/* ── A COMPETIÇÃO OCUPA UM PERÍODO, NÃO UM DIA (v188) ────────────────────────
+   O Pan-Americano foi de 21 a 27/10, e o app guardava só o 21. Para o atleta
+   esse período inteiro é informação de treino: normalmente não se treina
+   durante o campeonato, e um calendário que mostra sete dias vazios sem dizer
+   por quê faz a semana parecer abandonada. Competição antiga, sem `dataFim`,
+   segue valendo como um dia só. */
+const fimComp=c=>(c&&c.dataFim&&c.dataFim>=c.data)?c.dataFim:(c&&c.data);
+function periodoComp(c){
+  if(!c)return'';
+  const f=fimComp(c);
+  return f&&f!==c.data?`${brData(c.data)} a ${brData(f)}`:brData(c.data);
+}
+/* dias ocupados por competição, para o calendário de Treinos */
+function diasDeCompeticao(){
+  const m={};
+  for(const c of ((S.u&&S.u.competicoes)||[])){
+    if(!c||!c.data)continue;
+    const f=fimComp(c); let d=c.data, n=0;
+    while(d<=f&&n<60){ m[d]=c.nome||'competição';
+      const x=new Date(d+'T00:00:00'); x.setDate(x.getDate()+1);
+      d=x.toISOString().slice(0,10); n++; }
+  }
+  return m;
+}
 function abrirNovaCompeticaoAtleta(){
   sheet(`<h2>Nova competição</h2>
     <div class="field"><label>Nome</label><input id="mcNome" autocapitalize="words" placeholder="ex.: Copa Estadual"></div>
     <div class="grid2">
-      <div class="field"><label>Data</label><input type="date" id="mcData" value="${hoje()}"></div>
-      <div class="field"><label>Piscina</label><select id="mcPis"><option value="SC25">Curta · 25m</option><option value="LC50">Longa · 50m</option></select></div>
+      <div class="field"><label>Começa em</label><input type="date" id="mcData" value="${hoje()}"></div>
+      <div class="field"><label>Termina em</label><input type="date" id="mcFim" value="${hoje()}"></div>
     </div>
+    <div class="field"><label>Piscina</label><select id="mcPis"><option value="SC25">Curta · 25m</option><option value="LC50">Longa · 50m</option></select></div>
+    <div class="xs muted" style="margin:-4px 0 10px">Campeonato de vários dias ocupa o período inteiro no calendário de Treinos — é quando normalmente não se treina.</div>
     <button class="primary full" onclick="salvarCompeticaoAtleta()">Criar</button>`);
 }
 async function salvarCompeticaoAtleta(){
   const nome=val('mcNome'); if(!nome)return toast('Informe o nome');
   S.u.competicoes=S.u.competicoes||[];
-  const mc={id:uid(),nome,data:val('mcData')||hoje(),piscina:document.getElementById('mcPis').value,provas:[]};
+  const ini=val('mcData')||hoje();
+  /* fim antes do início é erro de digitação; vale o início em vez de gravar um
+     período negativo que some do calendário */
+  const fim=(val('mcFim')&&val('mcFim')>=ini)?val('mcFim'):ini;
+  const mc={id:uid(),nome,data:ini,dataFim:fim,piscina:document.getElementById('mcPis').value,provas:[]};
   S.u.competicoes.push(mc); await salvarUsuario();
   S.minhaComp=mc.id; fecharSheet(); toast('Competição criada'); render();
 }
@@ -9116,22 +9276,42 @@ async function gravarResultadoPro(ix){
 /* tempo a partir dos campos horas:min:seg:centésimo → milissegundos */
 function msHMSC(h,m,s,cc){ h=+h||0;m=+m||0;s=+s||0;cc=+cc||0; return ((h*3600+m*60+s)*1000)+cc*10; }
 /* tabela de melhores tempos de uma piscina (SC25 curta / LC50 longa) */
+/* ── DOIS MELHORES TEMPOS, E ELES NÃO SÃO A MESMA COISA (v188) ──────────────
+   O da FAIXA DE HOJE é o que alimenta projeção, %PB e prontidão: é contra
+   quem se compete agora. O da VIDA INTEIRA pode ser de vinte anos atrás e não
+   entra em conta nenhuma — mas é o que o atleta quer ver quando a pergunta é
+   "qual foi o meu melhor tempo". Os dois apareciam na mesma linha, um com
+   asterisco; agora dá para escolher qual é o número grande.
+
+   Mesmo em "vida inteira", a lista de PROVAS continua sendo a da faixa de
+   hoje: é o inventário do atleta de agora, não um museu. */
+function setPbVida(v){ S.pbVida=!!v; render(); }
 function pbsTabela(pbs,pis){
   const ent=Object.entries(pbs||{}).filter(([k])=>k.endsWith(' '+pis)).sort((a,b)=>a[0].localeCompare(b[0]));
   if(!ent.length)return'<div class="small muted" style="margin:6px 0 2px">Nenhuma marca nesta piscina.</div>';
+  const vida=!!S.pbVida;
+  const seletor='<div class="row" style="gap:6px;margin:8px 0 2px">'
+    +'<button class="sm '+(vida?'ghost':'primary')+'" onclick="setPbVida(false)">faixa de hoje'
+      +(S.pro&&S.pro.faixa?' ('+S.pro.faixa+'+)':'')+'</button>'
+    +'<button class="sm '+(vida?'primary':'ghost')+'" onclick="setPbVida(true)">vida inteira</button></div>';
   /* duas colunas de tempo, e elas significam coisas diferentes: a primeira é
      o melhor da FAIXA ATUAL — a que alimenta projeção e %PB — e a segunda é
      o melhor da vida inteira, marcado com *, que não entra em conta nenhuma */
   const at=(S.pro&&S.pro.pbAllTime)||{};
   const temAT=ent.some(([k,v])=>at[k]&&at[k].tempo<v);
-  return`<table style="margin-top:6px"><tbody>${ent.map(([k,v])=>{const[d,e]=k.split(' ');
+  return seletor+`<table style="margin-top:6px"><tbody>${ent.map(([k,v])=>{const[d,e]=k.split(' ');
     const a=at[k];
     const melhorDaVida=a&&a.tempo<v;
-    return`<tr><td><b>${d}m ${e}</b>${melhorDaVida?`<div class="xs muted">${a.faixa} · ${brCurta(a.data)}</div>`:''}</td>
-      <td class="n" style="text-align:right;font-weight:700">${fmt(v,true)}</td>
-      ${temAT?`<td class="n" style="text-align:right;color:var(--ink-2)">${melhorDaVida?fmt(a.tempo,true)+'<b style="color:var(--rope-ink)">*</b>':''}</td>`:''}
+    const grande=(vida&&melhorDaVida)?a.tempo:v;
+    const lado=vida?(melhorDaVida?v:null):(melhorDaVida?a.tempo:null);
+    return`<tr><td><b>${d}m ${e}</b>${melhorDaVida?`<div class="xs muted">${vida?a.faixa+' · '+brCurta(a.data):'vida: '+a.faixa}</div>`:''}</td>
+      <td class="n" style="text-align:right;font-weight:700">${fmt(grande,true)}</td>
+      ${temAT?`<td class="n" style="text-align:right;color:var(--ink-2)">${lado!=null?fmt(lado,true)+'<b style="color:var(--rope-ink)">*</b>':''}</td>`:''}
       <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}</tbody></table>
-    ${temAT?`<div class="xs muted" style="margin-top:7px"><b>*</b> melhor tempo da <b>vida inteira</b>, feito em outra faixa etária — está aqui como referência e <b>não entra</b> em projeção, %PB nem prontidão. O número da esquerda é o melhor da sua <b>faixa de hoje</b>${S.pro&&S.pro.faixa?` (${S.pro.faixa}+)`:''}, que é contra quem você compete.</div>`:''}`;
+    <div class="xs muted" style="margin-top:7px">${vida
+      ? 'Mostrando o melhor tempo da <b>vida inteira</b>, com a faixa etária e a data em que foi feito. Ele <b>não entra</b> em projeção, %PB nem prontidão — quem alimenta essas contas é o da faixa de hoje, com <b>*</b> ao lado.'
+      : 'Mostrando o melhor da sua <b>faixa de hoje</b>'+(S.pro&&S.pro.faixa?' ('+S.pro.faixa+'+)':'')+', que é contra quem você compete e o que alimenta projeção, %PB e prontidão.'
+        +(temAT?' Com <b>*</b>, o melhor da vida inteira, feito em outra faixa.':'')}</div>`;
 }
 /* provas principais do atleta — foco da projeção e da assinatura de sprint */
 function provasAlvo(pro){
@@ -10255,11 +10435,12 @@ function cardMedidorProntidao(){
   /* HOJE, o número e o nome da faixa moram DENTRO do svg, no vazio do arco —
      fora dele o cartão ficava alto demais e o olho tinha de descer para saber
      onde estava. */
-  return `<div class="card" data-dom="corpo" id="c-medidor"><div class="eyebrow">prontidão</div>
+  const porQue=(linhasProcedenciaProntidao(p)||[]).map(t=>'<div style="margin:7px 0">'+t+'</div>').join('')
+    +'<div class="note" style="margin-top:12px">Leitura de estado, não diagnóstico.</div>';
+  return `<div class="card" data-dom="corpo" id="c-medidor"><div class="eyebrow">prontidão${info('Prontidão — de onde vem o número',porQue)}</div>
     <div style="display:flex;justify-content:center;margin:2px 0 2px">${svgMedidorProntidao(p.score)}</div>
     ${vivo?'':`<div class="xs muted" style="margin-top:10px;text-align:center">${p.falta.join(' e ')}.</div>`}
     ${disc?`<div class="note warn" style="margin-top:10px"><b>Corpo e percepção discordam em ${Math.abs(p.delta)} pontos.</b> ${p.delta<0?'Você está se sentindo pior do que o relógio indica.':'Você está se sentindo melhor do que os sinais do corpo.'} É o sinal mais útil do dia — vale olhar antes de mexer na carga.</div>`:''}
-    <div style="text-align:center;margin-top:10px"><button class="sm ghost" style="width:auto;min-height:0;padding:5px 12px" onclick="abrirProcedenciaProntidao()">${vivo?'de onde vem este número':'por que não há número'}</button></div>
   </div>`;
 }
 function cardProntidaoSubj(){
@@ -10952,8 +11133,22 @@ function ctxDoDia(garmin,data){
   const r=(garmin||[]).find(x=>x&&x.data===data);
   return (r&&Array.isArray(r.ctx))?r.ctx:[];
 }
+/* ── O MARCADOR TEM DE CAIR NO DIA CERTO (v188) ────────────────────────────
+   O álcool do aniversário de ontem à noite só é lembrado hoje de manhã, quando
+   a VFC aparece baixa — e ia parar no registro de HOJE, dizendo que se bebeu
+   num dia em que não se bebeu. Agora a marcação escolhe o dia, com ontem a um
+   toque, porque é o caso que acontece.
+
+   Vale notar a sutileza: a VFC medida esta manhã descreve a NOITE DE ONTEM.
+   Marcar álcool em ontem explica os dois — o dia em que se bebeu e a medida
+   da manhã seguinte. */
+function ctxDiaAlvo(){
+  const d=S.ctxDia==='ontem'?_dAtras(1):hoje();
+  return d;
+}
+function setCtxDia(q){ S.ctxDia=q; render(); }
 async function alternarCtx(k){
-  const r=regDia(hoje());
+  const r=regDia(ctxDiaAlvo());
   const atual=Array.isArray(r.ctx)?r.ctx:[];
   const tem=atual.includes(k);
   const novo=tem?atual.filter(x=>x!==k):atual.concat([k]);
@@ -10971,17 +11166,22 @@ function ctxNoPeriodo(garmin,ini,fim){
   return {lista,dias:g.filter(x=>(x.ctx||[]).length).length};
 }
 function cardContexto(){
-  const d=hoje(), marcas=ctxDoDia(S.pro&&S.pro.garmin,d);
+  const d=ctxDiaAlvo(), marcas=ctxDoDia(S.pro&&S.pro.garmin,d);
   const f=faixaHRV(S.pro&&S.pro.garmin);
   const botoes=CTX_MARCAS.map(function(m){
     const on=marcas.includes(m[0]);
     return '<button class="'+(on?'on':'')+'" onclick="alternarCtx(\''+m[0]+'\')">'+m[1]+'</button>';
   }).join('');
-  return '<div class="sep"></div><div class="eyebrow">o que mais houve hoje'+
-    info('O que mais houve hoje','Marque o que pode explicar um número fora do normal. Isso <b>não muda cálculo nenhum</b> — serve para o app não tratar uma noite de viagem como se fosse queda de forma: um dia fora da faixa com explicação marcada deixa de alarmar, mas continua aparecendo na leitura.')+'</div>'+
+  const ontem=S.ctxDia==='ontem';
+  return '<div class="sep"></div><div class="eyebrow">contexto do dia'+
+    info('Contexto do dia','Marque o que pode explicar um número fora do normal: doença, álcool, viagem, estresse fora do treino, ciclo menstrual. Isso <b>não muda cálculo nenhum</b> — serve para o app não tratar uma noite de viagem como se fosse queda de forma: o dia fora da faixa com explicação marcada deixa de alarmar, mas continua aparecendo na leitura.<br><br>O botão <b>ontem</b> existe porque o álcool da festa de ontem à noite só é lembrado hoje de manhã, quando a VFC aparece baixa. E a VFC desta manhã descreve justamente a noite de ontem — marcar em ontem explica os dois.')+'</div>'+
+    '<div class="row" style="gap:6px;margin:4px 0 6px">'+
+      '<button class="sm '+(ontem?'ghost':'primary')+'" onclick="setCtxDia(\'hoje\')">hoje</button>'+
+      '<button class="sm '+(ontem?'primary':'ghost')+'" onclick="setCtxDia(\'ontem\')">ontem '+brCurta(_dAtras(1))+'</button>'+
+    '</div>'+
     '<div class="opt">'+botoes+'</div>'+
     (f&&f.posicao&&f.posicao!=='dentro'&&marcas.length
-      ? '<div class="xs muted" style="margin-top:6px">A VFC de hoje está <b>'+f.posicao+'</b> da sua faixa habitual, e você marcou <b>'+
+      ? '<div class="xs muted" style="margin-top:6px">A VFC de hoje está <b>'+f.posicao+'</b> da sua faixa habitual, e você marcou em '+(ontem?'ontem':'hoje')+' <b>'+
         marcas.map(ctxRotulo).join(', ')+'</b>. O app registra os dois lado a lado.</div>'
       : '');
 }
