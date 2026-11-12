@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v189"></script>
-<script src="./inicio-e-grupos.js?v=v189"></script>
+<script src="./persistencia-segura.js?v=v190"></script>
+<script src="./inicio-e-grupos.js?v=v190"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v189';
+const VER='v190';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2859,6 +2859,20 @@ function expandirLinha(l){
   if(mult===1&&partes.length<2)return null;
   return {mult,partes};
 }
+/* ── O TREINO VEM DO WHATSAPP, COM ENFEITE (v190) ──────────────────────────
+   "🔹Aquecimento" não era reconhecido como cabeçalho, porque CABECA começa
+   com ^ e o emoji vem antes. O treino inteiro virava UM bloco, as seções se
+   perdiam — e junto com elas `aplicarParciais`, que procura "principal" no
+   título do bloco para decidir onde marcar parcial de 25 m. */
+const semEnfeite=l=>String(l||'').replace(/^[^\p{L}\p{N}]+/u,'').trim();
+/* "Série Principal (2x - sem material / com pp)" repete o BLOCO duas vezes.
+   O "2x" sozinho numa linha já era entendido; dentro do título, não — e era
+   assim que o treino de 11/11 saiu 400 m menor. O "x" seguido de número é
+   série ("8x50"), não multiplicador de bloco. */
+function multNoTexto(l){
+  const m=String(l||'').match(/(?:^|[(\s\u2013\u2014-])(\d{1,2})\s*[x\u00d7](?!\s*\d)/i);
+  return m?(Math.min(+m[1],12)||1):1;
+}
 function interpretar(txt){
   const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]}; let mult=1;
   /* CONTEXTO do bloco: o título MAIS as linhas soltas já lidas nele. O "3x
@@ -2870,14 +2884,16 @@ function interpretar(txt){
   const multLine=/^(\d{1,2})\s*[x×]\s*:?\s*$/i;   /* "2x", "2x:", "3 x" sozinho = o bloco repete N vezes */
   for(const raw of (txt||'').split(/\r?\n/)){
     const l=raw.trim(); if(!l)continue;
-    const ehHeader=!notaPref.test(l)&&CABECA.test(l);
+    const lx=semEnfeite(l);
+    const ehHeader=!notaPref.test(lx)&&CABECA.test(lx);
     if(ehHeader){
       if(atual.itens.length)blocos.push(atual);
-      atual={id:uid(),titulo:l.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]}; mult=1;  /* novo bloco zera o multiplicador */
+      atual={id:uid(),titulo:lx.replace(/[:•\-–]+\s*$/,'').toUpperCase(),itens:[]};
+      mult=multNoTexto(lx);   /* o título pode trazer o "(2x)" do bloco */
       ctx=atual.titulo;                                                                     /* …e o contexto */
       /* a linha de cabeçalho só vira TAMBÉM um item se traz uma série explícita (NxDist),
          ex.: "Principal 8x50". Um título com número solto ("Simulação — 200 Livre") é só título. */
-      if(!/\d{1,3}\s*[x×]\s*\d{2,5}/.test(l))continue;
+      if(!/\d{1,3}\s*[x×]\s*\d{2,5}/.test(lx))continue;
     }
     const mm=l.match(multLine);
     if(mm){ mult=Math.min(+mm[1],12)||1; continue; }   /* linha "Nx" define o multiplicador do bloco */
@@ -2900,7 +2916,8 @@ function interpretar(txt){
          também o 400 — 1600 m onde eram 1200. Linha de descanso NÃO corta: ela
          faz parte do grupo, e cortar ali derrubava o segundo 4x50 de um
          "2x: / 4x50 / descanso 1' / 4x50". */
-      if(!soRest)mult=1;
+      /* linha solta também pode trazer o multiplicador do grupo ("2x - com pp") */
+      if(!soRest)mult=multNoTexto(l);
     }
   }
   if(atual.itens.length)blocos.push(atual);
@@ -3338,6 +3355,78 @@ async function recalcularMetragem(){
     if(i>=0){ idx[i]={...idx[i],vol:volTreino(t)}; await gravarComEspera(chaveIdx,idx); S.tridx=null; await carregarDados(); S.treino=t; }
   }catch(_){}
   toast(`Metragem corrigida: ${(d.antes/1000).toFixed(1)}k → ${(d.depois/1000).toFixed(1)}k`);
+  render();
+}
+/* ── CONFERIR E CORRIGIR A METRAGEM DE TODOS OS TREINOS (v190) ─────────────
+   A correção do parser não é retroativa: o texto é interpretado uma vez, ao
+   salvar. Reler todos os treinos a cada abertura do app seria caro (são
+   dezenas de documentos) e arriscado (grava em massa sem ninguém pedir).
+
+   Aqui a conferência é um toque, mostra o que mudaria ANTES de gravar, e só
+   então corrige — preservando os tempos lançados, via casarItens. */
+async function conferirMetragemTodos(){
+  const metas=(S.tridx||[]).filter(m=>m&&m.id);
+  if(!metas.length)return toast('Nenhum treino para conferir');
+  toast('Conferindo '+metas.length+' treino(s)…');
+  const achados=[];
+  for(const m of metas){
+    let t=null; try{ t=await lerTreinoUsuario(m.id); }catch(_){}
+    if(!t||!t.textoBruto)continue;
+    if(!(ehGestor()||t.criadoPor===S.u.id||t._pessoal))continue;
+    const dv=metragemDivergente(t);
+    if(dv)achados.push({id:m.id,data:m.data,titulo:m.titulo||'Treino',antes:dv.antes,depois:dv.depois});
+  }
+  S._metraDiv=achados;
+  if(!achados.length)return alerta('Metragem conferida',
+    `Os ${metas.length} treinos estão com a metragem certa. Nada a corrigir.`);
+  const soma=achados.reduce((a,x)=>a+(x.depois-x.antes),0);
+  const linhas=achados.slice(0,40).map(x=>`<div class="row xs" style="padding:5px 0;border-top:1px solid var(--line)">
+      <span class="muted" style="width:46px">${brCurta(x.data)}</span>
+      <span class="grow">${esc(x.titulo)}</span>
+      <span><b>${(x.antes/1000).toFixed(1)}k</b> → <b style="color:var(--ok)">${(x.depois/1000).toFixed(1)}k</b></span></div>`).join('');
+  sheet(`<h2>Metragem desatualizada</h2>
+    <div class="small muted" style="margin:4px 0 8px">${achados.length} de ${metas.length} treino(s) foram lidos antes das correções do parser. Os tempos lançados são preservados: a série que não mudou mantém o registro dela.</div>
+    ${linhas}
+    ${achados.length>40?`<div class="xs muted" style="margin-top:6px">…e mais ${achados.length-40}.</div>`:''}
+    <div class="note" style="margin-top:10px">No total, <b>${soma>=0?'+':''}${(soma/1000).toFixed(1)}k</b> de diferença.</div>
+    <button class="primary full" style="margin-top:12px" onclick="corrigirMetragemTodos()">Corrigir os ${achados.length} treino(s)</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Agora não</button>`);
+}
+async function corrigirMetragemTodos(){
+  const lista=S._metraDiv||[];
+  if(!lista.length)return toast('Nada a corrigir');
+  fecharSheet(); toast('Corrigindo '+lista.length+' treino(s)…');
+  let ok=0, falhou=0;
+  const volNovo={};
+  for(const x of lista){
+    try{
+      const t=await lerTreinoUsuario(x.id);
+      const dv=t?metragemDivergente(t):null;
+      if(!dv){continue;}
+      casarItens(itensDe(t),dv.relida.blocos.flatMap(b=>b.itens||[]));
+      t.blocos=dv.relida.blocos; t.atualizado=Date.now();
+      if(await gravarTreinoUsuario(t)===false){falhou++;continue;}
+      volNovo[x.id]=volTreino(t); ok++;
+      if(S.treino&&S.treino.id===t.id)S.treino=t;
+    }catch(_){ falhou++; }
+  }
+  /* o índice guarda o volume separado: sem atualizá-lo, a lista e o cartão do
+     topo continuariam mostrando o número velho */
+  for(const pessoal of [true,false]){
+    try{
+      const chave=pessoal?kPTrIdx(S.u.id):(S.u.equipe?kTrIdx(S.u.equipe):null);
+      if(!chave)continue;
+      const idx=(await DB.get(chave))||[];
+      let mexeu=false;
+      for(let i=0;i<idx.length;i++)if(volNovo[idx[i].id]!=null&&idx[i].vol!==volNovo[idx[i].id]){
+        idx[i]={...idx[i],vol:volNovo[idx[i].id]}; mexeu=true;
+      }
+      if(mexeu)await gravarComEspera(chave,idx);
+    }catch(_){}
+  }
+  S._metraDiv=[];
+  await carregarDados();
+  alerta('Metragem corrigida',`${ok} treino(s) atualizado(s)${falhou?`, ${falhou} não deu para gravar agora (tente de novo com internet)`:''}. Os tempos lançados foram preservados.`);
   render();
 }
 async function salvarTreino(){
@@ -4194,7 +4283,9 @@ function telaTreinosAtleta(){
     <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
   </div>
   ${S.treinoView==='lista'?grupoTreinos(lista,cardFn):calendarioTreinos(lista,cardFn,'abrirTreinoExtra')}`:
-    ''}`;
+    ''}
+  ${lista.length?`<button class="ghost full" style="margin-top:14px" onclick="conferirMetragemTodos()">Conferir a metragem dos treinos</button>
+  <div class="xs muted" style="margin-top:4px;text-align:center">Relê o texto de cada treino com as correções mais novas do app. Mostra o que mudaria antes de gravar.</div>`:''}`;
 }
 
 /* =====================================================================
@@ -5219,6 +5310,34 @@ teste('metragem','treino já certo não pede recálculo',a=>{
   try{ aplicarParciais(bom.blocos,'SC25',true); }catch(_){}
   a.eq(metragemDivergente(bom),null,'nada a corrigir');
   a.eq(metragemRelida({id:'x'}),null,'treino sem o texto original não dá para reler');});
+/* ── O TREINO VEM DO WHATSAPP, COM ENFEITE (v190) ──────────────────────────
+   Trecho real do treino de 11/11: "🔹Aquecimento" não era cabeçalho, porque
+   CABECA começa com ^ e o emoji vem antes. O treino virava um bloco só, as
+   seções se perdiam — e com elas o "(2x)" do título da série principal. */
+teste('metragem','emoji antes do título não esconde o cabeçalho',a=>{
+  a.eq(_vol('🔹Aquecimento\n400 livre'),400,'com emoji');
+  a.eq(_vol('Aquecimento\n400 livre'),400,'e sem emoji, igual');
+  const b=interpretar('🔹Aquecimento\n400 livre\n\n🔹Soltura\n200 costas');
+  a.eq(b.length,2,'duas seções, não uma só');
+  a.eq(b[0].titulo,'AQUECIMENTO','e o título sai sem o enfeite');});
+teste('metragem','"(2x)" no título repete o bloco',a=>{
+  a.eq(_vol('Série Principal (2x)\n4x50 peito'),400,'2×(4×50)');
+  a.eq(_vol('Série Principal – 2x\n4x50 peito'),400,'com travessão também');
+  a.eq(_vol('Principal 8x50'),400,'título que É uma série não vira multiplicador');
+  a.eq(_vol('Principal\n2x 50 livre'),100,'"2x 50" é série de 2×50, não bloco dobrado');
+  a.eq(multNoTexto('Série Principal (2x - sem material / com pp)'),2,'lê o 2 do título');
+  a.eq(multNoTexto('Principal 8x50'),1,'8x50 é série');
+  a.eq(multNoTexto('Aquecimento'),1,'sem número, sem multiplicador');});
+teste('metragem','o treino de 11/11 inteiro, como veio',a=>{
+  const txt='🔹Aquecimento\n\n300m livre (75m livre / 25m palmateio)\n\n'
+    +'🔹Ativação\n4x25m livre (1 submerso / 1 crawl em apneia) c/ 1’\n4x25m livre velocidade c/ 1’\n\n'
+    +'🔹Série Principal (2x - sem material / com pp)\n\n'
+    +'1x50m do bloco c/5’\n1x25m do bloco c/2’ (crawl / peito)\n1x25m do bloco c/2’\n100m solto\n\n'
+    +'🔹Soltura \n200m livre';
+  const b=interpretar(txt);
+  a.eq(b.length,4,'quatro seções');
+  a.eq(b[2].itens.reduce((y,i)=>y+(i.vol||0),0),400,'a principal conta em dobro: 2×(50+25+25+100)');
+  a.eq(_vol(txt),1100,'300 + 200 + 400 + 200 — antes saía 900');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
