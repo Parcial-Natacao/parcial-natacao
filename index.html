@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v188"></script>
-<script src="./inicio-e-grupos.js?v=v188"></script>
+<script src="./persistencia-segura.js?v=v189"></script>
+<script src="./inicio-e-grupos.js?v=v189"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v188';
+const VER='v189';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3276,6 +3276,70 @@ function fileTreinoPDF(inp){
     if(p)p.innerHTML=`<b>PDF muito grande</b> (${kb(f.size)}; máximo ${kb(TETO_TREINO_PDF)}). O treino guarda também os tempos de todos os atletas, e o documento tem teto de 1 MB.`; return; }
   const r=new FileReader(); r.onload=()=>{ TREINOPDF=r.result; if(p)p.textContent='PDF anexado ✓'; }; r.readAsDataURL(f);
 }
+/* ── O ID DO ITEM TEM DE SOBREVIVER À RELEITURA (v189) ─────────────────────
+   `interpretar` gera um id novo a cada leitura, e os tempos lançados moram em
+   `registros[atleta][itemId]`. Então reler o texto — ao EDITAR o treino, ou
+   ao recalcular a metragem — trocava todos os ids e os tempos ficavam órfãos:
+   continuavam dentro do documento e sumiam da tela, que é o pior dos dois
+   mundos (não dá para ver nem para saber que sumiu).
+
+   Isto já era verdade antes da v188: editar um treino com tempos lançados
+   apagava os tempos da tela. Só apareceu agora porque a correção da metragem
+   obrigava a reler.
+
+   O casamento é por TEXTO, em ordem, cada item antigo usado uma vez. A linha
+   que a v188 passou a expandir ("2x (4x50 + 200)") não acha par exato, porque
+   o item novo guarda só o pedaço; aí vale o item antigo cujo texto CONTÉM o
+   novo e tem a mesma distância e repetições — que é exatamente a série cujos
+   tempos foram lançados. */
+function itensDe(t){ return ((t&&t.blocos)||[]).flatMap(b=>(b&&b.itens)||[]); }
+function casarItens(antigos,novos){
+  const livres=(antigos||[]).filter(x=>x&&x.id&&!x.nota);
+  const usado=new Set();
+  const pega=f=>{
+    for(let k=0;k<livres.length;k++){ if(usado.has(k))continue; if(f(livres[k])){usado.add(k);return livres[k];} }
+    return null;
+  };
+  for(const n of (novos||[])){
+    if(!n||n.nota)continue;
+    const a=pega(x=>x.texto===n.texto)
+      ||pega(x=>x.texto&&n.texto&&x.texto.indexOf(n.texto)>=0&&x.dist===n.dist&&x.reps===n.reps);
+    if(a)n.id=a.id;
+  }
+  return novos;
+}
+/* Relê o texto original SEM gravar nada: serve para comparar o que está
+   guardado com o que a leitura de hoje diria. */
+function metragemRelida(t){
+  if(!t||!t.textoBruto)return null;
+  const b=interpretar(t.textoBruto);
+  try{ aplicarParciais(b,t.piscina,t.parcial25!==false); }catch(_){}
+  return {blocos:b,vol:b.reduce((a,x)=>a+(x.itens||[]).reduce((y,i)=>y+(i.vol||0),0),0)};
+}
+function metragemDivergente(t){
+  const r=metragemRelida(t); if(!r)return null;
+  const antes=volTreino(t);
+  return Math.abs(r.vol-antes)>=1?{antes,depois:r.vol,relida:r}:null;
+}
+async function recalcularMetragem(){
+  const t=S.treino; if(!t)return;
+  const d=metragemDivergente(t); if(!d)return toast('A metragem já está certa');
+  casarItens(itensDe(t),d.relida.blocos.flatMap(b=>b.itens||[]));
+  t.blocos=d.relida.blocos; t.atualizado=Date.now();
+  if(await gravarTreinoUsuario(t)===false)return;
+  S.treino=t;
+  /* o índice guarda o volume separado; sem atualizar, a lista e o cartão do
+     topo continuam mostrando o número velho */
+  try{
+    const pessoal=!!(t._pessoal||(S.tridx||[]).find(x=>x.id===t.id)?._pessoal);
+    const chaveIdx=pessoal?kPTrIdx(S.u.id):kTrIdx(S.u.equipe);
+    const idx=(await DB.get(chaveIdx))||[];
+    const i=idx.findIndex(x=>x.id===t.id);
+    if(i>=0){ idx[i]={...idx[i],vol:volTreino(t)}; await gravarComEspera(chaveIdx,idx); S.tridx=null; await carregarDados(); S.treino=t; }
+  }catch(_){}
+  toast(`Metragem corrigida: ${(d.antes/1000).toFixed(1)}k → ${(d.depois/1000).toFixed(1)}k`);
+  render();
+}
 async function salvarTreino(){
   const data=val('ntData')||hoje(),titulo=val('ntTitulo')||'Treino',
     nivel=document.getElementById('ntNivel').value,texto=document.getElementById('ntTexto').value;
@@ -3293,6 +3357,9 @@ async function salvarTreino(){
   const id=editando?S.treino.id:uid();
   const blocos=interpretar(texto);
   aplicarParciais(blocos,piscina,parcial25);
+  /* ⚠️ sem isto, editar um treino troca o id de cada item e os tempos já
+     lançados ficam órfãos dentro do documento — somem da tela sem aviso */
+  if(editando&&S.treino)casarItens(itensDe(S.treino),blocos.flatMap(x=>x.itens||[]));
   /* PDF do treino vai para o Storage: em base64 ele ocupava até 600 KB do
      documento do treino, que também guarda os registros de TODOS os atletas. */
   let pdfRef=pdf;
@@ -3347,6 +3414,12 @@ function telaTreinoDetalhe(){
     <div class="grow"></div>
     <div class="kpi" style="text-align:right"><div class="v">${(volTreino(t)/1000).toFixed(1)}k</div><div class="l">metros</div></div>
   </div>
+  ${(()=>{const dv=metragemDivergente(t); if(!dv)return'';
+    const podeMexer=tec||t.criadoPor===S.u.id;
+    return`<div class="note warn" style="margin:10px 0"><b>A metragem deste treino foi lida antes da correção da v188.</b>
+      Guardado: <b>${(dv.antes/1000).toFixed(1)}k</b> · relendo o texto hoje: <b>${(dv.depois/1000).toFixed(1)}k</b>.
+      ${podeMexer?'Os tempos já lançados são preservados.<button class="sm primary full" style="margin-top:8px" onclick="recalcularMetragem()">Recalcular a metragem</button>'
+                 :'Quem criou o treino pode recalcular.'}</div>`;})()}
   ${(()=>{const u=urlSegura(t.pdf); return u?`<a class="btnlink" href="${u}" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`
     :(t.pdf?`<div class="note warn" style="margin:8px 0">Anexo ignorado: o formato do arquivo deste treino não é aceito (só PDF ou imagem).</div>`:'');})()}
   ${at?(function(){const fz=treinoFeito(t,at.id),s=(t.sessao&&t.sessao[at.id])||{};return`<div class="card tight" style="margin-top:8px">
@@ -5103,6 +5176,49 @@ teste('marcas','dá para ver o melhor da faixa de hoje ou o da vida inteira',a=>
     a.ok(/não entra/.test(vida),'e o texto diz que esse NÃO entra nas contas');
     a.ok(vida.indexOf('2019')<0&&vida.indexOf('02/11')>=0,'com a data em que foi feito');
   } finally { S.pro=bk[0]; S.pbVida=bk[1]; }});
+/* ── O ID DO ITEM TEM DE SOBREVIVER À RELEITURA (v189) ─────────────────────
+   Os tempos lançados moram em registros[atleta][itemId]. `interpretar` gera
+   id novo a cada leitura: editar um treino trocava todos os ids e os tempos
+   ficavam órfãos dentro do documento — sumiam da tela sem aviso. */
+teste('metragem','editar o treino não troca o id das séries que não mudaram',a=>{
+  const txt='Aquecimento\n400 livre solto\n\nPrincipal\n8x50 peito forte\n4x100 livre';
+  const antigo={blocos:interpretar(txt)};
+  const ids=itensDe(antigo).map(i=>i.id);
+  const novos=interpretar(txt);
+  casarItens(itensDe(antigo),novos.flatMap(b=>b.itens));
+  a.eq(novos.flatMap(b=>b.itens).map(i=>i.id).join(),ids.join(),'texto igual, id igual');});
+teste('metragem','série que mudou de verdade ganha id novo',a=>{
+  const antigo={blocos:interpretar('Principal\n8x50 peito\n4x100 livre')};
+  const ids=itensDe(antigo).map(i=>i.id);
+  const novos=interpretar('Principal\n8x50 peito\n6x100 livre');
+  casarItens(itensDe(antigo),novos.flatMap(b=>b.itens));
+  const n=novos.flatMap(b=>b.itens);
+  a.eq(n[0].id,ids[0],'a série intacta mantém o id e os tempos');
+  a.ok(n[1].id!==ids[1],'a que virou 6x100 é outra série — tempo antigo não a descreve');});
+teste('metragem','recalcular a metragem antiga preserva o tempo lançado',a=>{
+  /* o defeito da v188: "2x (4x50 + 200)" virava UM item de 200 m, e foi nele
+     que os tempos foram lançados. Relendo, ele vira dois itens — o id tem de
+     seguir no pedaço que de fato foi nadado. */
+  const velho={id:'tv',data:hoje(),piscina:'SC25',parcial25:true,
+    textoBruto:'Principal\n2x (4x50 forte + 200 solto)',
+    blocos:[{id:'b1',titulo:'PRINCIPAL',itens:[{id:'i-velho',rodadas:1,reps:4,dist:50,estilo:'livre',tags:[],texto:'2x (4x50 forte + 200 solto)',vol:200}]}],
+    registros:{A1:{'i-velho':{tempos:[31000,31500],parciais:[]}}}};
+  const dv=metragemDivergente(velho);
+  a.ok(dv,'o app percebe que a metragem guardada não bate com o texto');
+  a.eq(dv.antes,200,'guardado: 200 m');
+  a.eq(dv.depois,800,'relido hoje: 800 m');
+  const novos=dv.relida.blocos.flatMap(b=>b.itens);
+  casarItens(itensDe(velho),novos);
+  a.eq(novos.length,2,'a linha vira duas séries');
+  a.eq(novos[0].id,'i-velho','o id fica no 4x50, que é onde os tempos foram lançados');
+  a.ok(!!velho.registros.A1[novos[0].id],'e os tempos continuam achando o item');
+  a.ok(novos[1].id!=='i-velho','o 200 solto é um item novo');});
+teste('metragem','treino já certo não pede recálculo',a=>{
+  const bom={id:'tb',piscina:'SC25',parcial25:true,textoBruto:'Principal\n8x50 peito',
+    blocos:interpretar('Principal\n8x50 peito')};
+  try{ aplicarParciais(bom.blocos,'SC25',true); }catch(_){}
+  a.eq(metragemDivergente(bom),null,'nada a corrigir');
+  a.eq(metragemRelida({id:'x'}),null,'treino sem o texto original não dá para reler');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
