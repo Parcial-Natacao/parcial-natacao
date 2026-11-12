@@ -77,6 +77,8 @@ provar que ainda vale.
 | Nada é prometido sem confirmação | "salvo neste aparelho — sincroniza quando a internet voltar" | `gravarComEspera` |
 | Ausência de alarme é dita, não omitida | cartão que some vira "não existe" na cabeça de quem procura | `cardConferirGarmin`, `cardCaixaPreta` |
 | Procedência viaja com o dado | VFC da noite ≠ média semanal; parcial oficial ≠ digitada | `hrvF`, `origemParc`, `serieHRV` |
+| O id do item de treino **sobrevive à releitura** | os tempos lançados moram em `registros[atleta][itemId]`; reler o texto gerava ids novos e os tempos ficavam órfãos dentro do documento — sumiam da tela sem aviso | `casarItens`, teste `metragem` |
+| Metragem é dado, não enfeite | volume errado vira carga, ACWR, extrato e relatório errados; o parser tem teste com treinos reais, como vieram do WhatsApp | `interpretar`, teste `metragem` |
 | Parcial de prova se lê por trecho **ou** acumulada, e o app diz qual entendeu | o 200 livre de Buenos Aires foi anotado por trecho e não salvava; exigir um formato só faz o atleta digitar errado | `lerParciaisProva`, teste `tempo` |
 | A aspa de segundo é separador decimal | `30"68` virava 3068 segundos — 51 minutos — porque a aspa era apagada | `parseTempo`, teste `tempo` |
 | Balizamento com sorteio tem série e raia, e elas não podem se perder | o Meet Program de Buenos Aires foi lido pelo parser do psych sheet: achou a prova e perdeu série, raia e a série inteira — funcionou o bastante para parecer certo | `parseHytekPrograma`, teste `balizamento` |
@@ -217,6 +219,15 @@ Reencenar, no navegador, com banco simulado:
 
 Cada uma custou tempo de verdade.
 
+- **Correção de parser NÃO é retroativa.** O texto do treino é interpretado
+  uma vez, ao salvar: o documento guarda os blocos já calculados e o índice
+  guarda o volume. Consertar o parser não conserta o passado. Quem corrigir
+  um parser precisa entregar junto o caminho de recálculo — e ele mostra o
+  que vai mudar antes de gravar, nunca grava em massa sozinho.
+- **O treino chega colado do WhatsApp, com enfeite.** "🔹Aquecimento" não
+  casava com `CABECA`, que começa com `^`: o treino virava um bloco só. Antes
+  de mexer no parser, teste com texto REAL do usuário, não com exemplo limpo
+  — 51 dos 91 treinos do Bruno vinham assim e ninguém tinha percebido.
 - **O pdf.js não entrega o PDF como o olho lê.** No Meet Program do HY-TEK,
   cada inscrito sai em DUAS linhas — equipe e tempo de inscrição acima,
   raia e nome abaixo — porque estão em alturas diferentes na página. Antes
