@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v190"></script>
-<script src="./inicio-e-grupos.js?v=v190"></script>
+<script src="./persistencia-segura.js?v=v191"></script>
+<script src="./inicio-e-grupos.js?v=v191"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v190';
+const VER='v191';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2864,14 +2864,33 @@ function expandirLinha(l){
    com ^ e o emoji vem antes. O treino inteiro virava UM bloco, as seções se
    perdiam — e junto com elas `aplicarParciais`, que procura "principal" no
    título do bloco para decidir onde marcar parcial de 25 m. */
-const semEnfeite=l=>String(l||'').replace(/^[^\p{L}\p{N}]+/u,'').trim();
+/* o parêntese NÃO é enfeite: a linha "(1 sem material / 1 palmar / 1
+   equipado)" começa com ele, e tirar o "(" aqui fazia `multNoTexto` perder
+   a lista inteira — o treino de 9/11 continuava 700 m. */
+const semEnfeite=l=>String(l||'').replace(/^[^\p{L}\p{N}(]+/u,'').trim();
 /* "Série Principal (2x - sem material / com pp)" repete o BLOCO duas vezes.
    O "2x" sozinho numa linha já era entendido; dentro do título, não — e era
    assim que o treino de 11/11 saiu 400 m menor. O "x" seguido de número é
    série ("8x50"), não multiplicador de bloco. */
 function multNoTexto(l){
-  const m=String(l||'').match(/(?:^|[(\s\u2013\u2014-])(\d{1,2})\s*[x\u00d7](?!\s*\d)/i);
-  return m?(Math.min(+m[1],12)||1):1;
+  const t=semEnfeite(l);
+  const m=t.match(/(?:^|[(\s\u2013\u2014-])(\d{1,2})\s*[x\u00d7](?!\s*\d)/i);
+  if(m)return Math.min(+m[1],12)||1;
+  /* ⚠️ "(1 sem material / 1 palmar / 1 equipado)" é a mesma coisa que "3x":
+     três rodadas, uma de cada jeito, e não há nenhum "x" escrito. Foi assim
+     que o treino de 9/11 saiu 700 m onde eram 1000.
+
+     Só vale quando a linha É a lista inteira. Dentro de uma série —
+     "4x50m (1 drill / 1 progressivo)" — a lista descreve a alternância entre
+     as repetições que já existem, e multiplicar ali dobraria o treino. Como
+     `multNoTexto` só é chamado em cabeçalho e em linha solta, a série nunca
+     passa por aqui. */
+  const g=t.match(/^\(\s*([^)]+?)\s*\)$/);
+  if(g){
+    const p=g[1].split('/').map(x=>x.trim()).filter(Boolean);
+    if(p.length>=2&&p.every(x=>/^1\s*x?\s*\D/i.test(x)))return Math.min(p.length,12);
+  }
+  return 1;
 }
 function interpretar(txt){
   const blocos=[]; let atual={id:uid(),titulo:'TREINO',itens:[]}; let mult=1;
@@ -3333,10 +3352,20 @@ function metragemRelida(t){
   try{ aplicarParciais(b,t.piscina,t.parcial25!==false); }catch(_){}
   return {blocos:b,vol:b.reduce((a,x)=>a+(x.itens||[]).reduce((y,i)=>y+(i.vol||0),0),0)};
 }
+/* As seções do treino não são enfeite: `aplicarParciais` procura "principal"
+   no título do bloco para decidir onde marcar parcial de 25 m, e o relatório
+   lê por bloco. O treino com emoji virava UM bloco só — e quando o volume
+   total por acaso não mudava, o recálculo da v190 pulava ele e a estrutura
+   velha ficava. Comparar só metragem era pouco. */
+const assinaturaBlocos=b=>(b||[]).map(x=>(x.titulo||'')+':'+((x.itens||[]).filter(i=>i&&!i.nota).length)).join('|');
 function metragemDivergente(t){
   const r=metragemRelida(t); if(!r)return null;
   const antes=volTreino(t);
-  return Math.abs(r.vol-antes)>=1?{antes,depois:r.vol,relida:r}:null;
+  const vol=Math.abs(r.vol-antes)>=1;
+  const est=assinaturaBlocos(t&&t.blocos)!==assinaturaBlocos(r.blocos);
+  if(!vol&&!est)return null;
+  return {antes,depois:r.vol,relida:r,motivo:vol?'metragem':'seções',
+    secAntes:((t&&t.blocos)||[]).length,secDepois:(r.blocos||[]).length};
 }
 async function recalcularMetragem(){
   const t=S.treino; if(!t)return;
@@ -3374,7 +3403,8 @@ async function conferirMetragemTodos(){
     if(!t||!t.textoBruto)continue;
     if(!(ehGestor()||t.criadoPor===S.u.id||t._pessoal))continue;
     const dv=metragemDivergente(t);
-    if(dv)achados.push({id:m.id,data:m.data,titulo:m.titulo||'Treino',antes:dv.antes,depois:dv.depois});
+    if(dv)achados.push({id:m.id,data:m.data,titulo:m.titulo||'Treino',antes:dv.antes,depois:dv.depois,
+      motivo:dv.motivo,secAntes:dv.secAntes,secDepois:dv.secDepois});
   }
   S._metraDiv=achados;
   if(!achados.length)return alerta('Metragem conferida',
@@ -3383,12 +3413,15 @@ async function conferirMetragemTodos(){
   const linhas=achados.slice(0,40).map(x=>`<div class="row xs" style="padding:5px 0;border-top:1px solid var(--line)">
       <span class="muted" style="width:46px">${brCurta(x.data)}</span>
       <span class="grow">${esc(x.titulo)}</span>
-      <span><b>${(x.antes/1000).toFixed(1)}k</b> → <b style="color:var(--ok)">${(x.depois/1000).toFixed(1)}k</b></span></div>`).join('');
+      <span>${x.motivo==='metragem'
+        ?`<b>${(x.antes/1000).toFixed(1)}k</b> → <b style="color:var(--ok)">${(x.depois/1000).toFixed(1)}k</b>`
+        :`<span class="xs muted">${x.secAntes} → ${x.secDepois} seções</span>`}</span></div>`).join('');
   sheet(`<h2>Metragem desatualizada</h2>
     <div class="small muted" style="margin:4px 0 8px">${achados.length} de ${metas.length} treino(s) foram lidos antes das correções do parser. Os tempos lançados são preservados: a série que não mudou mantém o registro dela.</div>
     ${linhas}
     ${achados.length>40?`<div class="xs muted" style="margin-top:6px">…e mais ${achados.length-40}.</div>`:''}
-    <div class="note" style="margin-top:10px">No total, <b>${soma>=0?'+':''}${(soma/1000).toFixed(1)}k</b> de diferença.</div>
+    <div class="note" style="margin-top:10px">No total, <b>${soma>=0?'+':''}${(soma/1000).toFixed(1)}k</b> de diferença em metragem.
+      ${achados.filter(x=>x.motivo!=='metragem').length?`Outros <b>${achados.filter(x=>x.motivo!=='metragem').length}</b> mudam só as seções — a metragem já estava certa, mas o treino estava num bloco só, o que atrapalha a parcial de 25 m e o relatório por seção.`:''}</div>
     <button class="primary full" style="margin-top:12px" onclick="corrigirMetragemTodos()">Corrigir os ${achados.length} treino(s)</button>
     <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Agora não</button>`);
 }
@@ -3505,8 +3538,10 @@ function telaTreinoDetalhe(){
   </div>
   ${(()=>{const dv=metragemDivergente(t); if(!dv)return'';
     const podeMexer=tec||t.criadoPor===S.u.id;
-    return`<div class="note warn" style="margin:10px 0"><b>A metragem deste treino foi lida antes da correção da v188.</b>
-      Guardado: <b>${(dv.antes/1000).toFixed(1)}k</b> · relendo o texto hoje: <b>${(dv.depois/1000).toFixed(1)}k</b>.
+    return`<div class="note warn" style="margin:10px 0"><b>Este treino foi lido antes das correções mais novas do app.</b>
+      ${dv.motivo==='metragem'
+        ?`Metragem guardada: <b>${(dv.antes/1000).toFixed(1)}k</b> · relendo o texto hoje: <b>${(dv.depois/1000).toFixed(1)}k</b>.`
+        :`A metragem está certa, mas o treino ficou num bloco só (${dv.secAntes} → ${dv.secDepois} seções) — isso atrapalha a parcial de 25 m e o relatório por seção.`}
       ${podeMexer?'Os tempos já lançados são preservados.<button class="sm primary full" style="margin-top:8px" onclick="recalcularMetragem()">Recalcular a metragem</button>'
                  :'Quem criou o treino pode recalcular.'}</div>`;})()}
   ${(()=>{const u=urlSegura(t.pdf); return u?`<a class="btnlink" href="${u}" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`
@@ -5338,6 +5373,48 @@ teste('metragem','o treino de 11/11 inteiro, como veio',a=>{
   a.eq(b.length,4,'quatro seções');
   a.eq(b[2].itens.reduce((y,i)=>y+(i.vol||0),0),400,'a principal conta em dobro: 2×(50+25+25+100)');
   a.eq(_vol(txt),1100,'300 + 200 + 400 + 200 — antes saía 900');});
+/* ── A LISTA DE RODADAS SEM "x" (v191) ─────────────────────────────────────
+   Treino de 9/11: "(1 sem material / 1 palmar / 1 equipado)" é 3 rodadas, uma
+   de cada jeito, e não há nenhum "x" escrito. Saía 700 m onde eram 1000. */
+teste('metragem','lista de rodadas sem "x" conta como multiplicador',a=>{
+  a.eq(multNoTexto('(1 sem material / 1 palmar / 1 equipado)'),3,'três rodadas');
+  a.eq(multNoTexto('(1 sem material / 1 palmar)'),2,'duas');
+  a.eq(multNoTexto('(crawl / peito)'),1,'lista sem o "1" na frente não é rodada');
+  a.eq(multNoTexto('4x50m (1 drill / 1 progressivo)'),1,
+    'dentro de uma série a lista é alternância entre as repetições, não rodada');
+  a.eq(multNoTexto('(1 sem material)'),1,'um item só não é repetição');});
+teste('metragem','o treino de 9/11 inteiro, como veio',a=>{
+  const txt='🔹Aquecimento\n\n100m solto\n\n'
+    +'🔹Ativação \n\n4x50m (1 drill / 1 progressivo) c/30’’\n2x25m livre c/1’\n\n'
+    +'🔹Série Principal \n(1 sem material / 1 palmar / 1 equipado)\n\n'
+    +'1x75m livre A2 c/1’\n1x50m livre A3 c/1’\n1x25m livre velocidade c/3’\n\n'
+    +'🔹Soltura\n\n200m livre';
+  const b=interpretar(txt);
+  a.eq(b.length,4,'quatro seções');
+  a.eq(b[1].itens.reduce((y,i)=>y+(i.vol||0),0),250,'a ativação NÃO é multiplicada pela lista da série dela');
+  a.eq(b[2].itens.reduce((y,i)=>y+(i.vol||0),0),450,'a principal conta três vezes: 3×(75+50+25)');
+  a.eq(_vol(txt),1000,'100 + 250 + 450 + 200 — antes saía 700');});
+teste('metragem','o parêntese não é enfeite e não pode ser comido',a=>{
+  a.eq(semEnfeite('🔹Aquecimento'),'Aquecimento','o emoji sai');
+  a.eq(semEnfeite('(1 sem material / 1 palmar)'),'(1 sem material / 1 palmar)',
+    'mas o parêntese fica — sem ele a lista de rodadas some');});
+teste('metragem','o recálculo também pega treino que mudou só de seções',a=>{
+  /* o treino com emoji virava UM bloco só; quando o volume por acaso não
+     mudava, o recálculo pulava ele e a estrutura velha ficava — e seção é o
+     que decide onde vai a parcial de 25 m e como o relatório lê o treino. */
+  const txt='🔹Aquecimento\n400 livre\n\n🔹Soltura\n200 costas';
+  const velho={id:'tx',piscina:'SC25',parcial25:true,textoBruto:txt,
+    blocos:[{id:'b1',titulo:'TREINO',itens:[
+      {id:'i1',nota:true,texto:'🔹Aquecimento',vol:0},
+      {id:'i2',rodadas:1,reps:1,dist:400,estilo:'livre',tags:[],texto:'400 livre',vol:400},
+      {id:'i3',nota:true,texto:'🔹Soltura',vol:0},
+      {id:'i4',rodadas:1,reps:1,dist:200,estilo:'costas',tags:[],texto:'200 costas',vol:200}]}]};
+  const dv=metragemDivergente(velho);
+  a.ok(dv,'o app percebe, mesmo com a metragem igual');
+  a.eq(dv.antes,dv.depois,'o volume não muda: 600 nos dois');
+  a.eq(dv.motivo,'seções','e diz que o motivo são as seções');
+  a.eq(dv.secAntes,1,'estava num bloco só');
+  a.eq(dv.secDepois,2,'e passa a ter dois');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
