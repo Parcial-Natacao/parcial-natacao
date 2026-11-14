@@ -220,6 +220,14 @@ Reencenar, no navegador, com banco simulado:
 
 Cada uma custou tempo de verdade.
 
+- **O modelo de e-mail do Firebase está BLOQUEADO neste projeto.** Salvar nome
+  do remetente, assunto ou corpo devolve "as atualizações de modelos de e-mail
+  não estão disponíveis para este projeto" e descarta tudo; o `<textarea>` do
+  corpo vem `disabled`. Não é falta de plano — o Blaze não muda isso. O que
+  resta é mudar o que as VARIÁVEIS valem: `%APP_NAME%` é o nome do projeto no
+  Google Cloud e `%DISPLAY_NAME%` é o `displayName` do Auth, que o app grava no
+  cadastro — antes de mandar o e-mail, ou não adianta. Domínio e idioma do
+  modelo são outros endpoints e esses gravam normalmente.
 - **Metade do fluxo de cadastro acontece no app de OUTRA pessoa.** O técnico
   aprova o atleta, o administrador aprova o técnico — e nenhum dos dois lados
   via nada. Quem mexer nisso lembre que aviso dentro do app só alcança quem

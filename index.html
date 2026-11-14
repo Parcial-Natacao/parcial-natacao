@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v193"></script>
-<script src="./inicio-e-grupos.js?v=v193"></script>
+<script src="./persistencia-segura.js?v=v194"></script>
+<script src="./inicio-e-grupos.js?v=v194"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v193';
+const VER='v194';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1670,6 +1670,17 @@ async function cadastrarFB(dados){
   if(!await DB.set(kUser(u.email),u))return abortar('Não consegui salvar seu perfil. Tente novamente.');
   if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
+  /* ⚠️ O NOME PRECISA ESTAR NO AUTH ANTES DO E-MAIL SAIR.
+     O modelo de confirmação do Firebase começa com "Olá, %DISPLAY_NAME%", e
+     %DISPLAY_NAME% é o displayName do Auth — que o app nunca gravava. Todo
+     mundo recebia "Olá, ," na primeira mensagem que o app manda na vida.
+     O corpo do modelo está bloqueado para este projeto pelo Google ("as
+     atualizações de modelos de e-mail não estão disponíveis"), então
+     consertar o lado do app é o único caminho.
+     Também faz a lista de usuários do Console deixar de ser uma coluna de
+     e-mails sem nome. Não aborta o cadastro se falhar: é cosmético. */
+  try{ await cred.user.updateProfile({displayName:u.nome}); }
+  catch(e){ console.warn('displayName',e&&e.message); }
   const envio=await enviarConfirmacaoFirebase(cred.user);   /* confirma o e-mail por link */
   S.emailPendente=em; S.vista='verificar'; S.u=null; render();
   toast(envio.ok?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Veja o aviso e tente novamente.');

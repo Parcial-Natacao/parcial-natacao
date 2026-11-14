@@ -6,7 +6,7 @@ Três buracos no cadastro, e o que cobre cada um:
 |---|---|
 | Quem aprova não sabe que tem gente esperando | `bannerPendentes()` no app (v193) **e** e-mail (este script) |
 | Quem foi aprovado não é avisado | `conferirLiberacao()` no app (v193) **e** e-mail (este script) |
-| O e-mail de confirmação vem de `noreply@parcial-cdb0e.firebaseapp.com` | Console do Firebase — [parte 2](#2-o-e-mail-de-confirmação-do-firebase) |
+| O e-mail de confirmação não parecia do Meros360 | Console + Google Cloud + código — [parte 2](#2-o-e-mail-de-confirmação-do-firebase) |
 
 O aviso dentro do app só alcança quem abre o app. O e-mail alcança quem não
 abre. Os dois juntos, não um ou outro.
@@ -102,94 +102,111 @@ Google Workspace (1.500/dia) ou um serviço de envio.
 
 ## 2. O e-mail de confirmação do Firebase
 
-### 2.1 Como está hoje (conferido no Console em 13/11/2026)
+### 2.1 Como estava, e o que de fato deu para mudar
+
+Em 13/11/2026 o e-mail que o usuário recebia era este:
 
 ```
 De:       noreply@parcial-cdb0e.firebaseapp.com
 Nome:     (não fornecido)
 Assunto:  Verify your email for %APP_NAME%
-Mensagem: Hello %DISPLAY_NAME%,
-          Follow this link to verify your email address.
-          https://parcial-cdb0e.firebaseapp.com/__/auth/action?mode=...
-          If you didn't ask to verify this address, you can ignore this email.
-          Thanks,
-          Your %APP_NAME% team
-Idioma do modelo: inglês
+Mensagem: Hello %DISPLAY_NAME%, / Follow this link to verify… (inglês)
+Idioma:   inglês
 ```
 
-São **quatro** problemas, não um:
+Quatro problemas, e eles **não se resolvem no mesmo lugar**:
 
-1. o endereço é `parcial-cdb0e.firebaseapp.com`;
-2. `%APP_NAME%` é o nome do projeto no Firebase, que é **"Parcial"** — ou seja,
-   a pessoa se cadastra no Meros360 e recebe um e-mail do "Parcial";
-3. `%DISPLAY_NAME%` vem **vazio**: o app nunca chama `updateProfile`, então a
-   mensagem começa com "Hello ,";
-4. o modelo está em inglês.
+| | causa | resolvido em |
+|---|---|---|
+| domínio `parcial-cdb0e.firebaseapp.com` | domínio padrão do projeto | **Console** — domínio personalizado ✅ |
+| tudo em inglês | idioma do modelo = inglês | **Console** — idioma do modelo ✅ |
+| `%APP_NAME%` = "Parcial" | nome do projeto no Google Cloud | **Google Cloud** — renomeado ✅ |
+| `%DISPLAY_NAME%` vazio → "Olá, ," | o app nunca chamava `updateProfile` | **código do app** (v194) ✅ |
 
-### 2.2 O que o plano Grátis deixa mudar
+> ⚠️ **Editar o modelo está BLOQUEADO neste projeto.** Ao salvar nome do
+> remetente, assunto ou corpo, o Console responde *"As atualizações de modelos
+> de e-mail não estão disponíveis para este projeto"* e descarta tudo. O
+> `<textarea>` do corpo vem `disabled` no HTML. É uma trava do Google, não
+> falta de plano — o Blaze não muda isso.
+>
+> **Consequência prática:** o texto do e-mail é o padrão do Firebase, e o único
+> jeito de mudar o que ele diz é mudar o que as variáveis valem. Foi por isso
+> que o projeto foi renomeado e que o `displayName` passou a ser gravado: são
+> as duas alavancas que sobraram.
 
-Tudo, menos o **domínio** do remetente:
-
-| Campo | Grátis? |
-|---|---|
-| Nome do remetente | ✅ |
-| `De` — parte antes do `@` | ✅ |
-| `De` — domínio `@parcial-cdb0e.firebaseapp.com` | ⛔ fixo, a não ser pelo "Personalizar domínio" (DNS) |
-| Responder para | ✅ |
-| Assunto | ✅ |
-| Mensagem | ✅ |
-| Idioma do modelo | ✅ |
-
-Na prática o que a pessoa vê na caixa de entrada é o **nome do remetente**, não
-o endereço. "Meros360" na lista resolve a confusão quase toda; o domínio só
-aparece se ela abrir os detalhes.
-
-### 2.3 Para colar — Authentication › Modelos › Verificação de endereço de e-mail › ✏️
-
-Primeiro, no mesmo rodapé da tela: **Idioma do modelo → português (Brasil)**.
+### 2.2 Como está agora
 
 ```
-Nome do remetente:  Meros360
-De:                 contato        (fica contato@parcial-cdb0e.firebaseapp.com)
-Responder para:     barbato.bruno@gmail.com
-Assunto:            Confirme seu e-mail no Meros360
+De:       noreply@meros360.com
+Assunto:  Verifique seu e-mail do app Meros360
+Mensagem: Olá, <Nome do usuário>
+          Clique neste link para verificar seu endereço de e-mail.
+          https://parcial-cdb0e.firebaseapp.com/__/auth/action?...
+          Se você não solicitou a verificação deste endereço, ignore este e-mail.
+          Obrigado,
+          Equipe do app Meros360
 ```
 
-Mensagem (o `%LINK%` é obrigatório; não use `%APP_NAME%` nem `%DISPLAY_NAME%`):
+O que **continua** no `firebaseapp.com` é só o endereço do link
+(`URL acionável`). Ele só aparece se a pessoa passar o mouse em cima — mudá-lo
+exige o domínio no Firebase Hosting, e o app está no GitHub Pages.
 
-```html
-<p>Olá!</p>
-<p>Você criou uma conta no <b>Meros360</b>. Confirme seu e-mail para ativar o acesso:</p>
-<p><a href='%LINK%'>Confirmar meu e-mail</a></p>
-<p>Depois de confirmar, seu cadastro passa pela liberação do seu técnico (ou do
-administrador, se você for técnico). Você recebe outro e-mail quando o acesso
-estiver liberado.</p>
-<p>Se não foi você quem criou esta conta, pode ignorar esta mensagem.</p>
-<p>— Meros360 · <a href='https://meros360.com'>meros360.com</a></p>
+### 2.3 O domínio personalizado — o que foi feito
+
+Authentication › Modelos › ✏️ › **Personalizar domínio** → `meros360.com`.
+O Firebase pediu quatro registros, cadastrados no Cloudflare:
+
+| Nome | Tipo | Valor |
+|---|---|---|
+| `@` | TXT | `v=spf1 include:_spf.firebasemail.com ~all` |
+| `@` | TXT | `firebase=parcial-cdb0e` |
+| `firebase1._domainkey` | CNAME | `mail-meros360-com.dkim1._domainkey.firebasemail.com` |
+| `firebase2._domainkey` | CNAME | `mail-meros360-com.dkim2._domainkey.firebasemail.com` |
+
+Três coisas para quem for mexer nisso depois:
+
+- **Nenhum MX e nenhum CNAME no apex.** Os quatro registros A do GitHub Pages
+  (`185.199.108–111.153`) e o `www` continuam intactos. Isto aqui não derruba
+  o site.
+- **Os dois CNAME têm que ficar "DNS only", nunca proxiados.** O Cloudflare já
+  escolhe assim sozinho por causa do `_` no nome; se alguém ligar o laranja, o
+  Cloudflare devolve o IP dele no lugar da chave DKIM e a assinatura quebra.
+- **Existe UM registro SPF, e tem que continuar sendo um.** Se um dia entrar
+  outro serviço de envio (ou o Cloudflare Email Routing), ele vai no *mesmo*
+  `v=spf1`, como mais um `include:`. Dois registros `v=spf1` separados
+  invalidam os dois, e aí o e-mail começa a cair em spam sem nada ter mudado
+  do lado do app.
+
+### 2.4 `contato@meros360.com` que recebe de verdade
+
+Hoje o remetente é `noreply@meros360.com` e não existe caixa postal nesse
+domínio: quem responder cai no `Responder para`. O Console recusou gravar esse
+campo junto com o resto do modelo, então **a resposta hoje não tem para onde
+ir**.
+
+O conserto é o **Cloudflare Email Routing** (grátis, mesmo painel): cria
+`contato@meros360.com` encaminhando para o Gmail. Ele adiciona MX e quer um
+SPF — e é exatamente aí que vale a regra acima: o `include:_spf.mx.cloudflare.net`
+entra no registro que já existe, virando
+
+```
+v=spf1 include:_spf.firebasemail.com include:_spf.mx.cloudflare.net ~all
 ```
 
-O parágrafo sobre a liberação é o que fecha o buraco: a pessoa passa a saber,
-no primeiro e-mail, que falta uma etapa e que ela será avisada.
-
-Faça o mesmo em **Redefinição de senha** (nome do remetente e assunto, no
-mínimo) — é o outro e-mail que seus usuários recebem.
-
-### 2.4 Se quiser tirar o `firebaseapp.com` de vez
-
-Na mesma tela há **Personalizar domínio**, ao lado do campo `De`. Ele pede
-registros DNS no provedor do `meros360.com` e passa o remetente e o link de
-confirmação para o seu domínio. É parte do Authentication, não exige Blaze, mas
-mexe no DNS do domínio — vale fazer junto, com calma, e não no meio de um teste.
+e não um segundo TXT.
 
 ---
 
-## 3. O que ficou dentro do app (v193)
+## 3. O que ficou dentro do app (v193–v194)
 
 - `bannerPendentes()` — o número de cadastros esperando, no topo de **qualquer**
   aba, para o técnico e para o administrador. Some quando você já está na tela
   da lista.
 - `carregarPendentesAdmin()` — a consulta global por `aprovado == false`, só
   para o administrador, no máximo uma vez a cada 2 minutos.
+- `updateProfile({displayName})` no cadastro — sem isso o e-mail de
+  confirmação começa com "Olá, ," e a lista de usuários do Console fica sem
+  nome. Roda ANTES do envio, senão não adianta.
 - `conferirLiberacao()` — guarda no aparelho que a pessoa está esperando e
   mostra "Acesso liberado ✓" na troca ao vivo **ou** na primeira vez que ela
   reabre o app já aprovada.
