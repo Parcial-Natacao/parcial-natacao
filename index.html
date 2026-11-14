@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v192"></script>
-<script src="./inicio-e-grupos.js?v=v192"></script>
+<script src="./persistencia-segura.js?v=v193"></script>
+<script src="./inicio-e-grupos.js?v=v193"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v192';
+const VER='v193';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1754,8 +1754,9 @@ async function entrarSessao(u){
   S.eq=u.equipe?await DB.get(kEq(u.equipe)):null;
   S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
   S.modoAtleta=chapeuSalvo(u);
-  S.grupos=null;S.grDetalhe=null;S.grGrupoId=null;S.gruposErro=null;S._sauBase=null;
+  S.grupos=null;S.grDetalhe=null;S.grGrupoId=null;S.gruposErro=null;S._sauBase=null;S.pendAdmin=null;
   await carregarDados(); ligarSincronia();
+  conferirLiberacao();
   try{await carregarGrupos();}catch(e){S.grupos=[];S.gruposErro=e.message;}
   if(u.perfil==='tecnico'&&!u.equipe)S.aba='grupos';
   render();await receberConviteNoLogin();
@@ -1870,6 +1871,7 @@ async function carregarDados(){
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
     if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
+    if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
@@ -1916,6 +1918,7 @@ async function carregarDados(){
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
+  if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
 }
 /* ── A FOTOGRAFIA DO CACHE VALE MAIS QUE A DO SERVIDOR? ─────────────────────
    Compara o que o servidor acabou de entregar com a cópia que estava no cache
@@ -2012,6 +2015,7 @@ async function sincronizar(sil){
   const u=await DB.get(kUser(S.u.email));
   if(u)S.u=mesclaUsuarioSincronia(S.u,u,S.adminOrig);
   await carregarDados(); if(S.u.equipe&&S.u.aprovado!==false)ligarSincronia(); if(!sil)toast('Atualizado'); render();
+  conferirLiberacao();
 }
 setInterval(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},12000);
 
@@ -2682,7 +2686,7 @@ function renderInterno(){
   mapa.grupos=telaGrupos;
   /* cardCaixaPreta vem primeiro, e em todas as abas: perda de dado não espera
      o usuário passar na aba certa — e a cópia que a repõe é perecível. */
-  app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerPendentes()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
   marcarSincronia();
   _irAteHoje();
 }
@@ -2701,6 +2705,88 @@ function corEquipe(nome){
   return temaEscuro()
     ? {bg:`hsl(${hue},32%,15%)`,ac:`hsl(${hue},62%,72%)`}
     : {bg:`hsl(${hue},45%,95%)`,ac:`hsl(${hue},55%,40%)`};
+}
+/* ── QUEM LIBERA PRECISA SABER QUE TEM GENTE ESPERANDO ───────────────
+   O pedido de liberação existia dentro da tela Equipe (técnico) e da aba
+   Equipes (administrador) — duas telas em que ninguém entra sem motivo. Quem
+   se cadastrava ficava parado até avisar por fora do app que havia se
+   cadastrado. O número sobe para o topo de QUALQUER aba, do mesmo jeito que
+   `cardCaixaPreta`: aviso que depende do usuário passar na aba certa não é
+   aviso, é sorte. */
+function pendentesDoGestor(){
+  return (S.elenco||[]).filter(a=>a&&a.aprovado===false);
+}
+/* O administrador aprova TÉCNICO, e técnico pendente não está em nenhum
+   elenco: a consulta do gestor filtra por equipe e por perfil atleta/pro.
+   Então aqui a busca é global e pelo campo espelhado `aprovado`. Ela devolve
+   só documentos u_ (nos outros o campo é nulo, e nulo não casa com false),
+   e as regras liberam todo u_ para o administrador — por isso a consulta de
+   coleção não é negada por inteiro. */
+let _pendAdmEm = 0;
+async function carregarPendentesAdmin(forcar){
+  if(!FB||!ehDev())return;
+  const agora=Date.now();
+  if(!forcar&&S.pendAdmin&&agora-_pendAdmEm<120000)return;   /* a sincronia roda a cada 12s; isto não */
+  _pendAdmEm=agora;
+  try{
+    const snap=await fdb.collection('kv').where('aprovado','==',false).get(), out=[];
+    snap.forEach(d=>{ if(!d.id.startsWith('u_'))return;
+      try{ const u=JSON.parse(d.data().v);
+        /* atleta independente nasce com aprovado=false e nunca precisa de
+           liberação: só é pendente quem pediu equipe ou é técnico */
+        if(u&&u.email&&(u.equipe||u.perfil==='tecnico'))out.push(u);
+      }catch(_){}});
+    S.pendAdmin=out.sort((x,y)=>(y.criadoEm||0)-(x.criadoEm||0));
+  }catch(e){ console.warn('carregarPendentesAdmin',e.message); S.pendAdmin=S.pendAdmin||[]; }
+}
+function bannerPendentes(){
+  if(!S.u||S.adminOrig)return'';
+  const adm=ehDev()?(S.pendAdmin||[]):[];
+  const ges=ehGestor()?pendentesDoGestor():[];
+  /* o administrador também é gestor da equipe em que entra: sem de-duplicar,
+     o mesmo atleta era contado duas vezes */
+  const vis=new Set(), lst=[];
+  for(const u of [...ges,...adm]){ const e=(u.email||'').toLowerCase(); if(e&&!vis.has(e)){vis.add(e);lst.push(u);} }
+  if(!lst.length)return'';
+  const destino=ehGestor()&&ges.length?'elenco':'equipes';
+  if(S.aba===destino&&!S.atletaSel&&!S.laudoAtleta)return'';   /* a lista já está na tela */
+  const n=lst.length;
+  const quem=n===1?esc(lst[0].nome||lst[0].email):n+' pessoas';
+  return`<div class="note warn" style="margin:10px 0 2px"><div class="row">
+    <span class="grow"><b>${n===1?'1 cadastro aguardando liberação':n+' cadastros aguardando liberação'}</b>
+      <div class="xs muted" style="margin-top:2px">${quem} ${n===1?'está':'estão'} sem acesso até você aprovar.</div></span>
+    <button class="sm" onclick="irPara('${destino}')">Ver</button></div></div>`;
+}
+/* ── E QUEM ESPERA PRECISA SABER QUE FOI LIBERADO ─────────────────────
+   A aprovação acontece no app de OUTRA pessoa. Quem se cadastrou só
+   descobria reabrindo o app por conta própria e vendo que a tela mudou — e
+   nem reparava no que mudou. A marca fica no aparelho, então o aviso aparece
+   tanto na troca ao vivo (a sincronia roda a cada 12s) quanto na primeira vez
+   que a pessoa reabre o app depois de liberada. O e-mail (backend/notificacoes.gs)
+   cobre quem não reabre. */
+const K_ESPERA=PFX+'espera_liberacao';
+function conferirLiberacao(){
+  /* devolve se avisou: o teste precisa disso para não depender do temporizador
+     — e um teste que deixa uma folha abrir 500 ms depois suja a tela de quem
+     estiver rodando a suíte */
+  if(!S.u)return false;
+  const email=String(S.u.email||'').toLowerCase();
+  const pendente=S.u.aprovado===false&&(S.u.equipe||S.u.perfil==='tecnico');
+  try{
+    if(pendente){ localStorage.setItem(K_ESPERA,email); return false; }
+    if(S.u.aprovado!==true)return false;
+    if(localStorage.getItem(K_ESPERA)!==email)return false;
+    localStorage.removeItem(K_ESPERA);
+  }catch(_){ return false; }
+  const tec=S.u.perfil==='tecnico';
+  setTimeout(()=>sheet(`<h2>Acesso liberado ✓</h2>
+    <p class="small" style="line-height:1.55;margin:8px 0 14px">Seu cadastro
+    ${tec?`de técnico d${S.u.equipeNome?'a equipe <b>'+esc(S.u.equipeNome)+'</b>':'o app'} foi aprovado pelo administrador`
+          :`n${S.u.equipeNome?'a equipe <b>'+esc(S.u.equipeNome)+'</b>':'o app'} foi aprovado pelo técnico`}.
+    ${tec?'A partir de agora você lança treinos, aprova atletas e abre competições.'
+         :'Os treinos da equipe e as competições já estão aqui.'}</p>
+    <button class="primary full" onclick="fecharSheet()">Começar</button>`),500);
+  return true;
 }
 function bannerEquipe(){
   if(!S.u)return'';
@@ -4392,6 +4478,7 @@ async function aprovarAtleta(id){
   if(!await DB.set(kUser(a.email),atualizado))return toast('Não consegui aprovar agora. Tente novamente.');
   Object.assign(a,atualizado);
   await transacao(kEqUsers(a.equipe),us=>{us=us||[];if(!us.includes(a.email))us.push(a.email);return us});
+  if(ehDev())await carregarPendentesAdmin(true);
   await carregarDados(); toast(prim(a.nome)+' liberado'); render();
 }
 
@@ -5450,6 +5537,55 @@ teste('exclusão','se o cadastro não sai, o login NÃO é apagado',async a=>{
     a.eq(r.cadastroApagado,false,'o app sabe que o cadastro ficou');
     a.ok(r.falhas.some(x=>/^u_/.test(x.rot)),'e registra qual passo falhou');
   } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+/* ── NINGUÉM AVISAVA NINGUÉM (v193) ────────────────────────────────────────
+   O pedido de liberação só existia dentro da tela Equipe e da aba Equipes.
+   Quem se cadastrava ficava parado, e quem aprova não sabia que havia fila. */
+teste('liberação','o número de pendentes aparece fora da tela Equipe',a=>{
+  _naoAdmin('tecnico'); S.aba='treinos'; S.pendAdmin=null;
+  S.elenco=[{id:'x',nome:'Ana Paula',email:'a@x.com',aprovado:false},
+            {id:'y',nome:'Bia',email:'b@x.com',aprovado:true}];
+  const h=bannerPendentes();
+  a.ok(/1 cadastro aguardando/.test(h),'conta só quem está pendente');
+  a.ok(/Ana Paula/.test(h),'e diz quem é, quando é uma pessoa só');
+  a.ok(/irPara\('elenco'\)/.test(h),'o botão leva para a tela da lista');});
+teste('liberação','na própria tela da lista o aviso some',a=>{
+  _naoAdmin('tecnico'); S.aba='elenco'; S.atletaSel=null; S.laudoAtleta=null; S.pendAdmin=null;
+  S.elenco=[{id:'x',nome:'Ana',email:'a@x.com',aprovado:false}];
+  a.eq(bannerPendentes(),'','a lista já está na frente dos olhos');});
+teste('liberação','sem pendente não há faixa',a=>{
+  _naoAdmin('tecnico'); S.aba='treinos'; S.pendAdmin=null;
+  S.elenco=[{id:'y',nome:'Bia',email:'b@x.com',aprovado:true}];
+  a.eq(bannerPendentes(),'','');});
+teste('liberação','o mesmo atleta não é contado duas vezes',a=>{
+  /* o administrador que entra numa equipe é gestor E administrador: as duas
+     listas trazem a mesma pessoa, e o aviso dizia "2 cadastros" */
+  _atleta(); S.u.perfil='tecnico'; S.modoAtleta=false; S.gestao=true; S.adminOrig=null; S.aba='treinos';
+  S.elenco=[{id:'x',nome:'Ana',email:'A@x.com',aprovado:false}];
+  S.pendAdmin=[{id:'x',nome:'Ana',email:'a@x.com',aprovado:false,equipe:'t'}];
+  a.ok(/1 cadastro aguardando/.test(bannerPendentes()),'e-mail é a identidade, sem olhar maiúscula');});
+teste('liberação','quem espera é avisado quando o acesso sai',a=>{
+  _atleta(); S.u.aprovado=false; S.u.equipe='t'; S.u.email='novo@x.com';
+  /* o aviso é adiado 500 ms para não disputar a tela com o render; aqui o
+     temporizador é desligado para o teste não abrir uma folha de verdade */
+  const _st=window.setTimeout; window.setTimeout=()=>0;
+  try{
+    localStorage.removeItem(K_ESPERA);
+    a.eq(conferirLiberacao(),false,'pendente não avisa nada');
+    a.eq(localStorage.getItem(K_ESPERA),'novo@x.com','primeiro o app marca a espera no aparelho');
+    S.u.aprovado=true;
+    a.eq(conferirLiberacao(),true,'na virada para aprovado, avisa');
+    a.eq(localStorage.getItem(K_ESPERA),null,'a marca é consumida');
+    a.eq(conferirLiberacao(),false,'e não volta a disparar na segunda passada');
+  } finally { window.setTimeout=_st; localStorage.removeItem(K_ESPERA); }});
+teste('liberação','atleta independente não vira pendente',a=>{
+  /* todo cadastro nasce com aprovado=false — a regra do Firestore exige isso.
+     Quem escolhe "ainda não tenho equipe" fica assim para sempre e não precisa
+     de liberação nenhuma: sem este filtro o administrador receberia um e-mail
+     por PRO que se cadastra sozinho. */
+  const pendente=u=>!!(u.equipe||u.perfil==='tecnico');
+  a.ok(!pendente({perfil:'pro',equipe:null}),'PRO sozinho não entra na fila');
+  a.ok(pendente({perfil:'pro',equipe:'t'}),'PRO que pediu equipe entra');
+  a.ok(pendente({perfil:'tecnico',equipe:null}),'técnico entra mesmo sem equipe ainda');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -7689,7 +7825,7 @@ async function salvarAdminUsuario(email){
   const novaAf=val('auAfiliacao');
   u.afiliacao=novaAf?(novaAf===nomeAfiliacao(antes)&&antes.afiliacao?antes.afiliacao:'admin:'+slug(novaAf)):null;u.afiliacaoNome=novaAf||null;
   if(u.equipe!==novoEq){if(u.equipe)await transacao(kEqUsers(u.equipe),xs=>(xs||[]).filter(x=>x!==email));u.equipe=novoEq;const eq=(S.equipesDevList||[]).find(e=>e.slug===novoEq);u.equipeNome=eq?eq.nome:'';if(novoEq)await transacao(kEqUsers(novoEq),xs=>{xs=xs||[];if(!xs.includes(email))xs.push(email);return xs})}
-  if(!await DB.set(kUser(email),u))return;await registrarAuditoria('editar_usuario',email,antes,u);fecharSheet();S.adminUsuarios=null;await carregarAdminUsuarios();toast('Usuário atualizado');render();
+  if(!await DB.set(kUser(email),u))return;await registrarAuditoria('editar_usuario',email,antes,u);fecharSheet();S.adminUsuarios=null;await carregarAdminUsuarios();await carregarPendentesAdmin(true);toast('Usuário atualizado');render();
 }
 function telaEquipes(){
   if(!ehDev())return`<div class="empty"><div class="big">Sem acesso</div></div>`;

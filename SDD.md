@@ -79,6 +79,7 @@ provar que ainda vale.
 | Procedência viaja com o dado | VFC da noite ≠ média semanal; parcial oficial ≠ digitada | `hrvF`, `origemParc`, `serieHRV` |
 | O id do item de treino **sobrevive à releitura** | os tempos lançados moram em `registros[atleta][itemId]`; reler o texto gerava ids novos e os tempos ficavam órfãos dentro do documento — sumiam da tela sem aviso | `casarItens`, teste `metragem` |
 | Metragem é dado, não enfeite | volume errado vira carga, ACWR, extrato e relatório errados; o parser tem teste com treinos reais, como vieram do WhatsApp | `interpretar`, teste `metragem` |
+| Aviso que depende da aba certa não é aviso | a fila de liberação vivia dentro da tela Equipe: quem se cadastrava ficava parado e quem aprova não sabia que havia fila | `bannerPendentes`, `conferirLiberacao` |
 | Parcial de prova se lê por trecho **ou** acumulada, e o app diz qual entendeu | o 200 livre de Buenos Aires foi anotado por trecho e não salvava; exigir um formato só faz o atleta digitar errado | `lerParciaisProva`, teste `tempo` |
 | A aspa de segundo é separador decimal | `30"68` virava 3068 segundos — 51 minutos — porque a aspa era apagada | `parseTempo`, teste `tempo` |
 | Balizamento com sorteio tem série e raia, e elas não podem se perder | o Meet Program de Buenos Aires foi lido pelo parser do psych sheet: achou a prova e perdeu série, raia e a série inteira — funcionou o bastante para parecer certo | `parseHytekPrograma`, teste `balizamento` |
@@ -219,6 +220,19 @@ Reencenar, no navegador, com banco simulado:
 
 Cada uma custou tempo de verdade.
 
+- **Metade do fluxo de cadastro acontece no app de OUTRA pessoa.** O técnico
+  aprova o atleta, o administrador aprova o técnico — e nenhum dos dois lados
+  via nada. Quem mexer nisso lembre que aviso dentro do app só alcança quem
+  abre o app: por isso existe `backend/notificacoes.gs`, uma ponte em Apps
+  Script que manda e-mail. Cloud Functions exigiriam o plano Blaze.
+- **`aprovado=false` não quer dizer "esperando".** Toda conta nasce assim — a
+  regra do Firestore exige. O atleta independente fica assim para sempre.
+  Pendente de verdade é quem tem `equipe` ou é `perfil==='tecnico'`; sem esse
+  filtro, cada PRO que se cadastra sozinho virava um e-mail para o administrador.
+- **O cadastro não guarda o e-mail em campo.** `camposSeguranca` espelha
+  `dono`, `equipe`, `perfil` e `aprovado`, mas o e-mail é o próprio id do
+  documento (`u_<email>`). Quem for ler o Firestore de fora do app vai
+  procurar `donoEmail` e não achar.
 - **Correção de parser NÃO é retroativa.** O texto do treino é interpretado
   uma vez, ao salvar: o documento guarda os blocos já calculados e o índice
   guarda o volume. Consertar o parser não conserta o passado. Quem corrigir
