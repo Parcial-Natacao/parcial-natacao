@@ -220,6 +220,14 @@ Reencenar, no navegador, com banco simulado:
 
 Cada uma custou tempo de verdade.
 
+- **O domínio meros360.com tem UM registro SPF, e tem que continuar tendo um.**
+  Ele serve o Firebase (envio da confirmação) e o Cloudflare Email Routing
+  (`contato@` e `noreply@` encaminhando para o Gmail) no mesmo
+  `v=spf1 include:_spf.firebasemail.com include:_spf.mx.cloudflare.net ~all`.
+  Todo assistente de serviço de e-mail propõe um TXT `v=spf1` NOVO; aceitar
+  isso cria dois registros, o que invalida os dois, e o e-mail do app começa a
+  cair em spam sem nada ter mudado no código. Serviço novo entra como mais um
+  `include:` no registro que já existe.
 - **O modelo de e-mail do Firebase está BLOQUEADO neste projeto.** Salvar nome
   do remetente, assunto ou corpo devolve "as atualizações de modelos de e-mail
   não estão disponíveis para este projeto" e descarta tudo; o `<textarea>` do

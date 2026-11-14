@@ -177,23 +177,60 @@ Três coisas para quem for mexer nisso depois:
   invalidam os dois, e aí o e-mail começa a cair em spam sem nada ter mudado
   do lado do app.
 
-### 2.4 `contato@meros360.com` que recebe de verdade
+### 2.4 Email Routing — a volta do e-mail
 
-Hoje o remetente é `noreply@meros360.com` e não existe caixa postal nesse
-domínio: quem responder cai no `Responder para`. O Console recusou gravar esse
-campo junto com o resto do modelo, então **a resposta hoje não tem para onde
-ir**.
+O Console recusou gravar o `Responder para` junto com o resto do modelo, então
+a resposta de quem recebe a confirmação cai no próprio remetente,
+`noreply@meros360.com`. Sem caixa postal nesse domínio ela sumiria.
 
-O conserto é o **Cloudflare Email Routing** (grátis, mesmo painel): cria
-`contato@meros360.com` encaminhando para o Gmail. Ele adiciona MX e quer um
-SPF — e é exatamente aí que vale a regra acima: o `include:_spf.mx.cloudflare.net`
-entra no registro que já existe, virando
+Resolvido com **Cloudflare Email Routing** (grátis, mesmo painel):
+
+| Regra | Ação | Status |
+|---|---|---|
+| `contato@meros360.com` | → `barbato.bruno@gmail.com` | ativa |
+| `noreply@meros360.com` | → `barbato.bruno@gmail.com` | ativa |
+| Catch-all | Drop | **desativada** |
+
+A `noreply@` encaminha de propósito: enquanto o modelo estiver travado, é por
+ali que chega quem aperta "Responder" na confirmação. O catch-all fica
+desligado para que endereços inventados (`vendas@`, `admin@`) simplesmente
+não existam, em vez de virarem balde de spam.
+
+#### ⚠️ O SPF quase quebrou aqui
+
+O assistente do Email Routing propõe quatro registros, e o último é
+
+```
+TXT  meros360.com  "v=spf1 include:_spf.mx.cloudflare.net ~all"
+```
+
+— um **segundo** `v=spf1`. Dois registros SPF no mesmo nome invalidam os dois,
+e o e-mail do Firebase começaria a cair em spam sem nada ter mudado no app.
+
+O Cloudflare detectou o conflito e **não** gravou esse TXT (por isso o painel
+ficou com "Email DNS records misconfigured"). A correção foi fundir os dois
+à mão, num registro só:
 
 ```
 v=spf1 include:_spf.firebasemail.com include:_spf.mx.cloudflare.net ~all
 ```
 
-e não um segundo TXT.
+Depois disso o painel passou a "DNS records: Locked". **Qualquer serviço de
+e-mail que entrar depois vai propor o mesmo TXT: ele entra como mais um
+`include:` no registro que já existe, nunca como um registro novo.**
+
+#### Estado final do DNS (conferido em 8.8.8.8)
+
+```
+meros360.com          A      185.199.108–111.153      (GitHub Pages, intacto)
+www.meros360.com      CNAME  parcial-natacao.github.io (intacto)
+meros360.com          TXT    v=spf1 …firebasemail… …mx.cloudflare… ~all
+meros360.com          TXT    firebase=parcial-cdb0e
+firebase1._domainkey  CNAME  mail-meros360-com.dkim1._domainkey.firebasemail.com
+firebase2._domainkey  CNAME  mail-meros360-com.dkim2._domainkey.firebasemail.com
+cf2024-1._domainkey   TXT    v=DKIM1; … (Cloudflare)
+meros360.com          MX     route1/2/3.mx.cloudflare.net
+```
 
 ---
 
