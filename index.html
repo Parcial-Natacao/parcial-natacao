@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v191"></script>
-<script src="./inicio-e-grupos.js?v=v191"></script>
+<script src="./persistencia-segura.js?v=v192"></script>
+<script src="./inicio-e-grupos.js?v=v192"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v191';
+const VER='v192';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5415,6 +5415,41 @@ teste('metragem','o recálculo também pega treino que mudou só de seções',a=
   a.eq(dv.motivo,'seções','e diz que o motivo são as seções');
   a.eq(dv.secAntes,1,'estava num bloco só');
   a.eq(dv.secDepois,2,'e passa a ter dois');});
+/* ── A EXCLUSÃO ERA TUDO-OU-NADA, E MENTIA (v192) ──────────────────────────
+   O atleta que entrou por CPF tem uma liberação em eq_<id>_libs, documento da
+   EQUIPE: as regras só deixam o técnico escrever nele. A gravação era
+   recusada, o catch engolia o erro, e tudo que vinha depois — pro_, Saúde,
+   versões diárias, treinos pessoais, cadastro — nunca era apagado. A tela
+   ainda dizia "Conta apagada". */
+teste('exclusão','recusa num documento da equipe não impede apagar os meus dados',async a=>{
+  _atleta();
+  const apagadas=[]; const _ap=window.apagarChave, _an=window.apagarAnexo, _set=DB.set, _get=DB.get;
+  window.apagarChave=async k=>{apagadas.push(k);};
+  window.apagarAnexo=async()=>{};
+  DB.set=async k=>{ if(/^eq_.*_libs$/.test(k))throw Error('Missing or insufficient permissions.'); };
+  DB.get=async k=>(k==='eq_t_libs'?[{cpf:'111',usado:true,email:'x@y.com'}]:null);
+  try{
+    const u={id:'A1',email:'x@y.com',nome:'T',equipe:'t',perfil:'pro',cpf:'111'};
+    const r=await apagarDadosDaConta(u,{seco:[]});
+    a.eq(r.cadastroApagado,true,'o cadastro é apagado mesmo assim');
+    a.ok(apagadas.includes('pro_A1'),'e o pro_ também');
+    a.ok(apagadas.includes('pro_A1_sau'),'e a Saúde');
+    a.ok(apagadas.includes('u_x@y.com'),'e o próprio cadastro');
+    a.eq(r.falhas.length,1,'uma falha registrada');
+    a.ok(/equipe:/.test(r.falhas[0].rot),'e ela é identificada como da equipe');
+  } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+teste('exclusão','se o cadastro não sai, o login NÃO é apagado',async a=>{
+  /* sem login ninguém entra para tentar de novo, e o dado fica no banco para
+     sempre: prometer exclusão e não cumprir é pior do que falhar na cara */
+  _atleta();
+  const _ap=window.apagarChave, _an=window.apagarAnexo, _set=DB.set, _get=DB.get;
+  window.apagarChave=async k=>{ if(/^u_/.test(k))throw Error('offline'); };
+  window.apagarAnexo=async()=>{}; DB.set=async()=>{}; DB.get=async()=>null;
+  try{
+    const r=await apagarDadosDaConta({id:'A1',email:'x@y.com',equipe:null,perfil:'pro'},{seco:[]});
+    a.eq(r.cadastroApagado,false,'o app sabe que o cadastro ficou');
+    a.ok(r.falhas.some(x=>/^u_/.test(x.rot)),'e registra qual passo falhou');
+  } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -5965,7 +6000,7 @@ teste('exclusão','apaga pro_, perf_ e cadastro — em QUALQUER perfil',async a=
   for(const perfil of ['pro','tecnico','atleta']){
     _atleta();
     const u={...S.u,perfil,equipe:'t',id:'A1',email:'x@y.com'};
-    const f=await apagarDadosDaConta(u,{pbs:{},seco:[]});
+    const f=(await apagarDadosDaConta(u,{pbs:{},seco:[]})).feitas;
     a.ok(f.includes('pro_A1'),'pro_ apagado ('+perfil+')');
     a.ok(f.includes('eq_t_perf_A1'),'snapshot do técnico apagado ('+perfil+')');
     a.ok(f.includes('u_x@y.com'),'cadastro apagado ('+perfil+')');
@@ -5974,14 +6009,14 @@ teste('exclusão','anexos saem ANTES do documento que guarda as URLs',async a=>{
   _atleta();
   const u={...S.u,perfil:'pro',equipe:'t',id:'A1',email:'x@y.com'};
   const pro={pbs:{},seco:[{id:'s1',img:'https://fake/img.jpg',arquivo:'https://fake/doc.pdf'}]};
-  const f=await apagarDadosDaConta(u,pro);
+  const f=(await apagarDadosDaConta(u,pro)).feitas;
   const anexos=f.filter(x=>x.indexOf('anexo:')===0);
   a.eq(anexos.length,2,'os dois — foto e PDF');
   a.ok(f.indexOf(anexos[0])<f.indexOf('pro_A1'),
        'antes do pro_, senão as URLs ficariam órfãs no Storage');});
 teste('exclusão','sem equipe não tenta apagar snapshot que não existe',async a=>{
   _atleta();
-  const f=await apagarDadosDaConta({perfil:'atleta',equipe:null,id:'A1',email:'x@y.com'},{});
+  const f=(await apagarDadosDaConta({perfil:'atleta',equipe:null,id:'A1',email:'x@y.com'},{})).feitas;
   a.ok(f.includes('pro_A1'),'pro_ apagado');
   a.ok(!f.some(k=>k.indexOf('_perf_')>=0),'nenhum snapshot');});
 
@@ -8165,63 +8200,85 @@ async function confirmarApagarMinhaConta(){
   }
   toast('Apagando…');
   try{await apagarDadosGruposDaConta();}catch(e){return alerta('Exclusão não iniciada',esc(e.message));}
-  await apagarDadosDaConta(u,S.pro);
+  const r=await apagarDadosDaConta(u,S.pro);
+  /* ⚠️ NÃO apagar o login se o cadastro sobreviveu: sem login ninguém entra
+     para tentar de novo, e o dado fica no banco para sempre. */
+  if(!r.cadastroApagado){
+    fecharSheet();
+    return alerta('Conta NÃO apagada',
+      `Não consegui remover o seu cadastro, então parei antes de apagar o login — sem ele você não conseguiria nem tentar de novo.`
+      +`<br><br>O que falhou: <b>${esc((r.falhas[0]&&r.falhas[0].erro)||'desconhecido')}</b>.`
+      +`<br><br>Tente de novo com internet. Se repetir, me avise com esta mensagem.`);
+  }
   if(FB){ try{ await fauth.currentUser.delete(); }catch(e){ console.warn('apagar login',e.message); } }
   try{ localStorage.removeItem(PFX+'sessao'); }catch(e){}
   desligarSincronia(); S.u=null; S.vista='entrada'; S.perfilEscolhido=null; S.treino=null; S.comp=null; S.pilha=[];
-  fecharSheet(); toast('Conta apagada'); render();
+  fecharSheet();
+  /* o que ficou para trás é sempre documento da EQUIPE, que as regras reservam
+     ao técnico. Dizer isso é melhor do que um "pronto" que não é verdade. */
+  const eqFalhou=r.falhas.filter(x=>x.rot.indexOf('equipe:')===0);
+  if(eqFalhou.length)alerta('Conta apagada',
+    `Os seus dados foram removidos, inclusive Saúde, treinos pessoais e as cópias diárias.`
+    +`<br><br>O que não deu para remover, porque pertence à equipe e só o técnico escreve: `
+    +`<b>${eqFalhou.map(x=>esc(x.rot.replace('equipe: ',''))).join(', ')}</b>. Peça ao técnico para limpar.`);
+  else toast('Conta apagada');
+  render();
 }
 /* A remoção propriamente dita, separada da tela: é o que dá para testar sem
    depender de Firebase, de senha e de sheet aberta. Devolve as chaves que
    apagou, na ordem — a ordem importa (ver os anexos abaixo). */
+/* ⚠️ A EXCLUSÃO ERA TUDO-OU-NADA, E MENTIA (v192)
+   Todos os passos moravam num único try. O atleta que entrou por CPF tem uma
+   liberação em `eq_<id>_libs`, e esse documento é da EQUIPE: as regras só
+   deixam o técnico escrever nele. A gravação era recusada, o catch engolia o
+   erro — e tudo que vinha DEPOIS (pro_, pro_sau, versões diárias, treinos
+   pessoais e o próprio cadastro) nunca era apagado. Pior: a tela seguia em
+   frente, apagava o login e dizia "Conta apagada" com os dados de saúde ainda
+   no banco. Promessa de exclusão quebrada em silêncio.
+
+   Agora cada passo é isolado e o que falha é DITO. A ordem também mudou: o
+   que é do usuário sai primeiro, e a limpeza do lado da equipe — que ele pode
+   não ter permissão para fazer — fica por último, como melhor esforço. */
 async function apagarDadosDaConta(u,pro){
-  const feitas=[];
+  const feitas=[], falhas=[];
+  const passo=async(rot,fn)=>{ try{ await fn(); feitas.push(rot); }catch(e){ falhas.push({rot,erro:(e&&e.message)||String(e)}); } };
   try{
-    if(u.perfil==='tecnico'){
-      const eq=await DB.get(kEq(u.equipe));
-      if(eq&&eq.tecnicoEmail===u.email){ eq.tecnicoEmail=null; await DB.set(kEq(u.equipe),eq); }
-    }
-    if(u.equipe){
-      const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==u.email);
-      await DB.set(kEqUsers(u.equipe),us);
-    }
-    if(u.equipe&&u.perfil!=='tecnico'&&u.cpf){                        /* libera o CPF de volta */
-      const libs=await DB.get(kLib(u.equipe))||[];
-      const l=libs.find(x=>x.cpf===u.cpf); if(l){ l.usado=false; delete l.email; await DB.set(kLib(u.equipe),libs); }
-    }
-    /* ANEXOS primeiro: depois de apagar o pro_ não há mais como achar as URLs,
-       e o arquivo ficaria órfão no Storage para sempre. */
+    /* ANEXOS primeiro: depois de apagar o pro_ não há mais como achar as URLs. */
     const p=pro||await DB.get(kPro(u.id))||{};
-    /* a Saúde mudou de documento (v160): os anexos de fora d'água podem estar
-       no pro_ antigo, no pro_<uid>_sau, ou nos dois durante a migração */
     let sau=null; try{ sau=await DB.get(kSau(u.id)); }catch(_){}
     const secos=[...(p.seco||[]),...((sau&&sau.seco)||[])];
     const vistos=new Set();
-    for(const s of secos)
-      for(const campo of ['img','arquivo'])
-        if(s[campo]&&!vistos.has(s[campo])){ vistos.add(s[campo]);
-          await apagarAnexo(s[campo]); feitas.push('anexo:'+s[campo]); }
-    /* pro_ SEM condicionar ao perfil: desde que o técnico ganhou área de
-       atleta, e desde que existe atleta com Marcas liberadas, dado de saúde
-       pode morar aqui em qualquer perfil. Apagar é idempotente — se o
-       documento não existe, não acontece nada. */
-    await apagarChave(kPro(u.id)); feitas.push(kPro(u.id));
+    for(const sx of secos)for(const campo of ['img','arquivo'])
+      if(sx[campo]&&!vistos.has(sx[campo])){ vistos.add(sx[campo]);
+        await passo('anexo:'+sx[campo],()=>apagarAnexo(sx[campo])); }
+    await passo(kPro(u.id),()=>apagarChave(kPro(u.id)));
     const pessoais=await DB.get(kPTrIdx(u.id))||[];
-    for(const t of pessoais)if(t&&t.id){await apagarChave(kPTr(u.id,t.id));feitas.push(kPTr(u.id,t.id));}
-    await apagarChave(kPTrIdx(u.id)); feitas.push(kPTrIdx(u.id));
-    /* ⚠️ Apagar a conta tem de levar TUDO. A Saúde agora é um documento à
-       parte e as versões diárias são mais sete — deixá-los para trás seria
-       prometer exclusão e guardar dado de saúde assim mesmo. */
-    await apagarChave(kSau(u.id)); feitas.push(kSau(u.id));
-    for(const s of [0,1,2,3,4,5,6,'undo']){
-      await apagarChave(kProBk(u.id,s)); feitas.push(kProBk(u.id,s));
+    for(const t of pessoais)if(t&&t.id)await passo(kPTr(u.id,t.id),()=>apagarChave(kPTr(u.id,t.id)));
+    await passo(kPTrIdx(u.id),()=>apagarChave(kPTrIdx(u.id)));
+    await passo(kSau(u.id),()=>apagarChave(kSau(u.id)));
+    for(const sl of [0,1,2,3,4,5,6,'undo'])
+      await passo(kProBk(u.id,sl),()=>apagarChave(kProBk(u.id,sl)));
+    if(u.equipe)await passo(kPerf(u.equipe,u.id),()=>apagarChave(kPerf(u.equipe,u.id)));
+    /* ── daqui para baixo é documento da EQUIPE: pode ser recusado, e a
+       recusa não pode mais impedir o resto ── */
+    if(u.perfil==='tecnico'){
+      await passo('equipe: técnico',async()=>{
+        const eq=await DB.get(kEq(u.equipe));
+        if(eq&&eq.tecnicoEmail===u.email){ eq.tecnicoEmail=null; await DB.set(kEq(u.equipe),eq); }
+      });
     }
-    /* o resumo que o TÉCNICO enxerga é um documento à parte e sobrevivia
-       à exclusão: o atleta saía e o painel dele continuava no elenco. */
-    if(u.equipe){ await apagarChave(kPerf(u.equipe,u.id)); feitas.push(kPerf(u.equipe,u.id)); }
-    await apagarChave(kUser(u.email)); feitas.push(kUser(u.email));
-  }catch(e){ console.warn('apagar dados',e.message); }
-  return feitas;
+    if(u.equipe)await passo('equipe: lista de membros',async()=>{
+      const us=(await DB.get(kEqUsers(u.equipe))||[]).filter(e=>e!==u.email);
+      await DB.set(kEqUsers(u.equipe),us);
+    });
+    if(u.equipe&&u.perfil!=='tecnico'&&u.cpf)await passo('equipe: liberação do CPF',async()=>{
+      const libs=await DB.get(kLib(u.equipe))||[];
+      const l=libs.find(x=>x.cpf===u.cpf); if(l){ l.usado=false; delete l.email; await DB.set(kLib(u.equipe),libs); }
+    });
+    /* O CADASTRO por último: enquanto ele existe, dá para tentar de novo. */
+    await passo(kUser(u.email),()=>apagarChave(kUser(u.email)));
+  }catch(e){ falhas.push({rot:'geral',erro:(e&&e.message)||String(e)}); }
+  return {feitas,falhas,cadastroApagado:feitas.includes(kUser(u.email))};
 }
 
 /* Técnico apaga os DADOS de um atleta (o login dele só o Console remove). */
