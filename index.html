@@ -595,14 +595,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v200"></script>
-<script src="./inicio-e-grupos.js?v=v200"></script>
+<script src="./persistencia-segura.js?v=v201"></script>
+<script src="./inicio-e-grupos.js?v=v201"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v200';
+const VER='v201';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -628,6 +628,14 @@ const APP_NOME='Meros360';
    desapareceria no tema escuro, então existe uma variante com a palavra
    clara. A troca é por CSS (`.marca-clara`), não por JS, para não piscar a
    imagem errada entre a primeira pintura e o render. */
+/* ⚠️ O REMETENTE MORA AQUI, E SÓ AQUI.
+   Ele estava escrito à mão em três lugares da interface. Quando o domínio
+   personalizado entrou (v194) e o envio passou a sair de meros360.com, os
+   três continuaram mandando o usuário procurar por
+   "noreply@parcial-cdb0e.firebaseapp.com" — um endereço que não existe mais,
+   logo na tela de quem acabou de se cadastrar e está esperando o e-mail.
+   Quem trocar o remetente no Console troca esta linha, e acabou. */
+const REMETENTE_CONFIRMACAO='noreply@meros360.com';
 const APP_MARCA=`<img class="marca-img marca-escura" src="./logo-m360.png" alt="${APP_NOME}" width="447" height="96">`
   +`<img class="marca-img marca-clara" src="./logo-m360-claro.png" alt="" aria-hidden="true" width="447" height="96">`;
 /* a marca do cabeçalho é HTML estático (fora de qualquer template), então vem
@@ -696,11 +704,11 @@ async function reenviarConfirmacao(){
   if(!fauth.currentUser)
     return alerta('Sessão expirada','Para reenviar o link eu preciso da sua sessão, e ela expirou. Entre de novo com o <b>mesmo e-mail e senha</b> do cadastro: o app volta direto para esta tela e o botão funciona.');
   const falta=60-Math.floor((Date.now()-ULTIMO_ENVIO_CONFIRMACAO)/1000);
-  if(falta>0)return alerta('Aguarde um pouco',`O último link acabou de ser pedido. Espere <b>${falta} segundos</b> antes de tentar novamente — vários pedidos seguidos fazem o Firebase bloquear a conta temporariamente.`);
+  if(falta>0)return alerta('Aguarde um pouco',`O último link acabou de ser pedido. Espere <b>${falta} segundos</b> antes de tentar novamente — vários pedidos seguidos bloqueiam novos envios temporariamente.`);
   const r=await enviarConfirmacaoFirebase(fauth.currentUser);
-  if(r.ok)alerta('Link enviado',`O Firebase aceitou o envio para <b>${esc(fauth.currentUser.email||'')}</b>. Aguarde alguns minutos e procure também no <b>spam</b> e em <b>Promoções</b>. O remetente é <b>noreply@parcial-cdb0e.firebaseapp.com</b>.`);
+  if(r.ok)alerta('Link enviado',`Enviamos o link para <b>${esc(fauth.currentUser.email||'')}</b>. Aguarde alguns minutos e procure também no <b>spam</b> e em <b>Promoções</b>. O remetente é <b>${REMETENTE_CONFIRMACAO}</b>.`);
   else if(/too-many-requests/.test(r.code))
-    return alerta('Muitas tentativas','O Firebase bloqueou novos envios para esta conta por excesso de pedidos. <b>Espere cerca de uma hora</b> e tente de novo — enviar várias vezes seguidas atrasa, não acelera.');
+    return alerta('Muitas tentativas','Novos envios para esta conta foram bloqueados por excesso de pedidos. <b>Espere cerca de uma hora</b> e tente de novo — enviar várias vezes seguidas atrasa, não acelera.');
   else alerta('Não consegui enviar',`${esc(traduzErroFB(r.code))}<br><br>O erro ficou registrado no perfil para o administrador diagnosticar. Confira o endereço e fale com ele se continuar.`);
   render();
 }
@@ -2425,17 +2433,28 @@ function telaCadastro(){
     </div></div>`;
   const equipe=`${p==='pro'?`<div class="note ok" style="margin:0 0 12px"><b>Perfil competitivo.</b> Você terá acompanhamento diário, registro completo dos tempos, Garmin, histórico e relatório de análise. Equipe e técnico continuam opcionais.</div>`:''}${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Equipe e técnico são opcionais. Depois de confirmar o e-mail, você já poderá registrar seus próprios treinos e escolher qualquer um dos dois quando quiser.</div>`:`<div class="field"><label for="cdEquipe">${atleta?'Equipe ou clube <span class="muted">(opcional)</span>':'Equipe'}</label>${campoEquipe}</div>`}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
-    <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off"></div>
-    ${/* o `max` já barra no seletor do aparelho: a pessoa não escolhe uma data
-         que o app vai recusar depois. O aviso embaixo explica o porquê. */''}
-    <div class="grid2"><div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${dataMaxNascimento()}"></div><div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999"></div></div>
-    <div class="xs muted" style="margin:-4px 0 8px">O cadastro é para <b>maiores de ${IDADE_MINIMA} anos</b>. Menor de idade só com o responsável — fale com o administrador.</div>
-    <div class="xs muted" style="margin:-4px 0 8px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div>
+    <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" placeholder="voce@email.com"></div>
+    ${/* ⚠️ A NOTA DE UM CAMPO MORA DENTRO DO CAMPO.
+         As duas notas eram irmãs DEPOIS do .grid2. Em tela larga, onde as duas
+         colunas ficam lado a lado, elas caíam cada uma sob a sua — por acaso.
+         No celular o grid vira uma coluna só e a regra de idade aparecia dois
+         campos abaixo do campo de nascimento, colada no WhatsApp. Dentro do
+         .field, funciona nos dois layouts e nunca mais se separa.
+         O `max` já barra no seletor do aparelho; a nota explica o porquê. */''}
+    <div class="grid2">
+      <div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${dataMaxNascimento()}">
+        <div class="xs muted" style="margin-top:5px">O cadastro é para <b>maiores de ${IDADE_MINIMA} anos</b>. Menor de idade só com o responsável — fale com o administrador.</div></div>
+      <div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999">
+        <div class="xs muted" style="margin-top:5px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div></div>
+    </div>
     ${atleta?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
     ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
   const confirmar=`<div class="cad-resumo"><b>${esc(CAD.nome||'Novo usuário')}</b><span>${esc(CAD.email||'')}</span><span>${CAD.semEquipe?'Sem equipe por enquanto':esc(CAD.equipe||'')} · ${titulo}</span></div>
-    <div class="grid2"><div class="field"><label for="cdSenha">Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="10+ caracteres"></div><div class="field"><label for="cdSenha2">Repita a senha</label><input id="cdSenha2" type="password" autocomplete="new-password"></div></div>
-    <div class="xs muted" style="margin:-4px 0 12px">Use de 10 a 72 caracteres, com letras e números. Uma frase longa é uma boa opção.</div>
+    <div class="grid2">
+      <div class="field"><label for="cdSenha">Senha</label><input id="cdSenha" type="password" autocomplete="new-password" placeholder="10+ caracteres">
+        <div class="xs muted" style="margin-top:5px">De 10 a 72 caracteres, com letras e números. Uma frase longa é uma boa opção.</div></div>
+      <div class="field"><label for="cdSenha2">Repita a senha</label><input id="cdSenha2" type="password" autocomplete="new-password" placeholder="a mesma de novo"></div>
+    </div>
     <label class="small" style="display:flex;gap:9px;align-items:flex-start"><input id="cdAceite" type="checkbox" style="width:auto;margin-top:3px">Confirmo que os dados são meus e entendo que o acesso depende da confirmação do e-mail${p==='tecnico'?' e da aprovação do administrador':''}.</label>`;
   return`
   <div class="row" style="margin:18px 0 4px"><button class="sm ghost" onclick="voltar()">‹ Voltar</button></div>
@@ -2460,9 +2479,12 @@ async function enviarCadastro(){
 function telaVerificarEmail(){
   const em=S.emailPendente||fauth?.currentUser?.email||'seu e-mail';
   return`<div style="height:34px"></div><div class="card center"><div class="big">Confirme seu e-mail</div>
-  <p class="muted">${S.envioFalhou?'A conta foi criada, mas o Firebase não confirmou o envio para':'O Firebase aceitou o envio para'} <b>${esc(em)}</b>.</p>
+  ${/* "O Firebase aceitou o envio" — quem se cadastra não sabe o que é
+       Firebase, e nem tem por que saber. O nome do fornecedor não é assunto
+       de quem está esperando um e-mail. */''}
+  <p class="muted">${S.envioFalhou?'A conta foi criada, mas o envio do link não foi confirmado para':'Enviamos o link de confirmação para'} <b>${esc(em)}</b>.</p>
   ${S.envioFalhou?`<div class="note warn" style="text-align:left"><b>O envio falhou.</b> A sua conta foi criada, mas o e-mail não saiu${/too-many/.test(S.envioFalhou)?' porque houve pedidos demais seguidos — espere cerca de uma hora':''}. Use <b>Reenviar link</b>.</div>`:''}
-  ${!S.envioFalhou?`<div class="note" style="text-align:left"><b>A entrega pode levar alguns minutos.</b> Não crie outra conta. Procure por <b>Meros360</b> ou por <b>noreply@parcial-cdb0e.firebaseapp.com</b> em Todas as mensagens, spam e Promoções.</div>`:''}
+  ${!S.envioFalhou?`<div class="note" style="text-align:left"><b>A entrega pode levar alguns minutos.</b> Não crie outra conta. Procure por <b>${APP_NOME}</b> ou por <b>${REMETENTE_CONFIRMACAO}</b> em Todas as mensagens, spam e Promoções.</div>`:''}
   <button class="primary full" onclick="confirmarEmailAgora()">Já confirmei</button>
   <button class="ghost full" style="margin-top:9px" onclick="reenviarConfirmacao()">Reenviar link</button>
   <button class="ghost full" style="margin-top:9px" onclick="sairVerificacao()">Usar outra conta</button>
@@ -2473,7 +2495,7 @@ function telaVerificarEmail(){
     <ol style="margin:8px 0 0;padding-left:18px;line-height:1.6">
       <li><b>Confira o endereço acima.</b> Se tiver um erro de digitação, o link foi para uma caixa que não é sua. Toque em <b>Usar outra conta</b> e cadastre-se de novo com o endereço certo.</li>
       <li><b>Aguarde até 10 minutos</b> e pesquise em Todas as mensagens pelo remetente acima. Pedir várias vezes seguidas pode bloquear novos envios por uma hora.</li>
-      <li><b>Se ainda não chegar, fale com o administrador.</b> O app registra se o Firebase aceitou ou recusou o envio, sem expor sua senha nem o link.</li>
+      <li><b>Se ainda não chegar, fale com o administrador.</b> O app registra se o envio foi aceito ou recusado, sem expor sua senha nem o link.</li>
     </ol></details>
   </div>`}
 async function confirmarEmailAgora(){
@@ -7162,7 +7184,9 @@ teste('confirmação','excesso de pedidos é explicado como espera, não como er
 teste('confirmação','a tela ensina as três saídas reais',a=>{
   const h=_telaVerif('amigo@provedor.com',null);
   a.ok(/Confira o endereço/.test(h),'1: erro de digitação no endereço');
-  a.ok(h.includes('noreply@parcial-cdb0e.firebaseapp.com'),'2: o remetente, para liberar no provedor');
+  a.ok(h.includes(REMETENTE_CONFIRMACAO),'2: o remetente, para liberar no provedor');
+  a.ok(!/firebaseapp\.com/.test(h),'e ele é o remetente de HOJE, não o de antes do domínio próprio');
+  a.ok(!/Firebase/.test(h),'quem se cadastra não precisa saber o nome do fornecedor');
   a.ok(/Aguarde até 10 minutos/.test(h),'3: dá um prazo realista sem induzir vários reenvios');
   a.ok(/fale com o administrador/.test(h),'4: indica a saída quando a entrega não acontece');});
 teste('confirmação','sem endereço guardado a tela não mente',a=>{
