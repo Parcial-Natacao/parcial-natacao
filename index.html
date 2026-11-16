@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v196"></script>
-<script src="./inicio-e-grupos.js?v=v196"></script>
+<script src="./persistencia-segura.js?v=v197"></script>
+<script src="./inicio-e-grupos.js?v=v197"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v196';
+const VER='v197';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -9975,8 +9975,9 @@ function cardAlvos(pro){
     return`<span class="chip best" style="font-weight:800">${p[0]}m ${p.slice(1).join(' ')} <b onclick="removerAlvo('${k}')" style="cursor:pointer;color:var(--clock);margin-left:3px">✕</b></span>`;}).join(' ')
     :'<span class="small muted">Nenhuma escolhida — usando 50 e 100 do seu estilo principal.</span>';
   const opts=PROVAS_CAT.filter(p=>!cur.includes(p.d+' '+p.e)).map(p=>`<option value="${p.d} ${p.e}">${p.d}m ${p.e}</option>`).join('');
-  return`<div class="card"><div class="eyebrow">provas-alvo</div>
-    <div class="small muted" style="margin:4px 0 8px">Suas provas principais — a <b>Projeção de Tempo</b> e a <b>Assinatura de Sprint</b> focam nelas. Adicione quantas quiser (um medista pode ter 6+).</div>
+  return`<div class="card"><div class="eyebrow">provas-alvo${info('Provas-alvo',
+      `Suas provas principais. A <b>Projeção de Tempo</b> e a <b>Assinatura de Sprint</b> focam nelas.`
+      +`<br><br>Adicione quantas quiser — um medista pode ter 6 ou mais.`)}</div>
     <div class="chips" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>
     <div class="row" style="gap:6px">
       <select id="alvoSel" style="flex:1">${opts||'<option value="">(todas já adicionadas)</option>'}</select>
@@ -10018,9 +10019,11 @@ function destaquesMarcas(pro){
       <div class="t-num">${fmt(t,true)}</div>
       <div class="xs muted">${r?brData(r.data):'melhor tempo'}${fx}${alvo?' · <b style="color:var(--rope)">alvo</b>':''}${hist?' <span style="opacity:.6">›</span>':''}</div>
     </div>`;}).join('');
-  return`<div class="card"><div class="eyebrow">melhores tempos</div>
+  return`<div class="card"><div class="eyebrow">melhores tempos${info('Melhores tempos',
+      `Toque num tempo para ver a <b>evolução</b> daquela prova.`
+      +`<br><br>Borda destacada = prova-alvo. <b>SC25m</b> = piscina curta · <b>LC50m</b> = piscina longa.`)}</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${tiles}</div>
-    <div class="xs muted" style="margin-top:8px">Toque num tempo para ver a <b>evolução</b> da prova. Borda destacada = prova-alvo. <b>SC25m</b> = piscina curta · <b>LC50m</b> = piscina longa.</div></div>`;
+    </div>`;
 }
 function telaMarcas(){
   const pro=S.pro||{pbs:{},resultados:[]};
@@ -10046,8 +10049,9 @@ function telaMarcas(){
         ${tr.length>1?`<div class="chips">${tr.map((t,i)=>`<span class="chip">${i+1}º trecho · ${fmt(t,true)}</span>`).join('')}</div>`:''}
       </div>`;}).join('');
     const pts=[...arr].sort((a,b)=>a.data.localeCompare(b.data)).map(r=>({rot:r.data.slice(8,10)+'/'+r.data.slice(5,7)+'/'+r.data.slice(2,4),v:r.tempo}));
-    const grafico=pts.length>=2?`<div class="eyebrow" style="margin-top:14px">evolução</div>${graficoLinha(pts)}
-      <div class="xs muted" style="margin-top:6px">Cada ponto é uma competição em ordem cronológica. Linha para baixo = tempo menor = melhorando.</div>`:'';
+    const grafico=pts.length>=2?`<div class="eyebrow" style="margin-top:14px">evolução${info('Evolução da prova',
+      `Cada ponto é uma competição, em ordem cronológica. <b>Linha para baixo = tempo menor = melhorando.</b>`)}</div>${graficoLinha(pts)}
+      `:'';
     return acc('mk_h_'+k.replace(/\W+/g,'_'),`${dist}m ${estilo}`,`${poolL} · ${arr.length} resultado(s) · melhor ${fmt(melhor,true)}`,linhas+grafico);
   }).join('');
   /* modo espelho: o técnico vendo as marcas do atleta (só leitura) */
@@ -10056,10 +10060,13 @@ function telaMarcas(){
   ${espelho?`<div class="row noprint" style="margin:16px 0 4px"><button class="sm ghost" onclick="voltarLaudo()">‹ Equipe</button></div>`:''}
   <div class="row" style="margin:${espelho?'2px':'16px'} 0 10px"><h2>${espelho?'Marcas · '+esc(prim(S.laudoNome||'')):'Marcas'}</h2><div class="grow"></div>
     ${espelho?'<span class="tag o">como o atleta vê</span>':'<button class="sm primary" onclick="abrirNovaMarca()">+ Tempo</button>'}</div>
-  ${espelho?'<div class="xs muted" style="margin:-4px 0 10px">Esta é a tela do atleta. Você não edita as marcas dele daqui — para enviar o currículo da ABMN, use o card na ficha dele.</div>':''}
+  ${espelho?`<div class="xs muted" style="margin:-4px 0 10px">Somente leitura${info('Marcas do atleta',
+    `Esta é a tela do atleta, como ele a vê. Você não edita as marcas dele daqui.`
+    +`<br><br>Para enviar o currículo da ABMN, use o card na ficha dele, na Equipe.`)}</div>`:''}
   ${destaquesMarcas(pro)}
   ${espelho?'':acc('mk_abmn','Importar da ABMN','currículo On-Line em PDF',`
-    <p class="small muted" style="margin:2px 0 8px">Importe seus melhores tempos e o histórico de competições de uma vez — cada resultado entra no quadro de evolução.</p>
+    <p class="small muted" style="margin:2px 0 8px">Melhores tempos e histórico, de uma vez${info('Importar da ABMN',
+      `Cada resultado do currículo entra no quadro de evolução da prova correspondente — não é só uma lista de recordes, é o histórico inteiro.`)}</p>
     <input type="file" id="abmnFile" accept="application/pdf,.pdf" style="display:none" onchange="importarABMN(this)">
     <button class="primary full" onclick="document.getElementById('abmnFile').click()">Importar currículo ABMN (PDF)</button>`)}
   ${acc('mk_sc','Piscina curta · 25m',nSC?`${nSC} prova(s)`:'sem marcas',nSC?pbsTabela(pro.pbs,'SC25'):'<div class="small muted">Nenhuma marca de piscina curta. Toque em + Tempo.</div>')}
@@ -10680,13 +10687,14 @@ function telaGarmin(){
         <td class="n">${x.hrv??'—'}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
   const cImportar=`
-    <p class="small muted" style="margin-top:2px">Entregue o <b>export do Garmin Connect inteiro</b> — o app procura sozinho os arquivos que interessam (VFC, FC de repouso, sono e nados) e ignora o resto.</p>
+    <p class="small muted" style="margin-top:2px">Entregue o <b>export do Garmin Connect inteiro</b>${info('Importar do Garmin',
+      `O app procura sozinho os arquivos que interessam — VFC, FC de repouso, sono e nados — e ignora o resto. Não é preciso separar nada antes.`
+      +`<br><br>O <b>ZIP</b> é o caminho de um toque. Se ele for muito grande e o navegador travar, descompacte no computador e use a <b>pasta</b> — ela não carrega tudo na memória. No celular, prefira o ZIP.`)}</p>
     <input type="file" id="fGarZip" accept=".zip,application/zip" style="display:none" onchange="zipGarmin(this)">
     <input type="file" id="fGarDir" webkitdirectory directory style="display:none" onchange="arquivoGarmin(this)">
     <input type="file" id="fGar" accept=".json,application/json" multiple style="display:none" onchange="arquivoGarmin(this)">
     <button class="primary full" style="margin-top:8px" onclick="document.getElementById('fGarZip').click()">Enviar o ZIP do export</button>
     <button class="full" style="margin-top:6px" onclick="document.getElementById('fGarDir').click()">Escolher a pasta já descompactada</button>
-    <div class="xs muted" style="margin-top:5px">O ZIP é o caminho de um toque. Se ele for muito grande e o navegador travar, descompacte no computador e use a <b>pasta</b> — ela não carrega tudo na memória. No celular, prefira o ZIP.</div>
     <div id="garSt" class="xs muted" style="margin-top:8px"></div>
     ${cardConferirGarmin()}
     <button class="sm ghost full" style="margin-top:8px" onclick="document.getElementById('fGar').click()">Escolher arquivos avulsos</button>
@@ -10710,7 +10718,8 @@ function telaGarmin(){
     </div>`:''}
     <button class="primary full" style="margin-top:10px" onclick="lancarDia()">Gravar dia</button>`;
   const cExames=`
-    <p class="small muted" style="margin-top:2px">Ferritina, hemoglobina, vitamina D, CK e outros. Entram no relatório junto com o relógio e os treinos.</p>
+    <p class="small muted" style="margin-top:2px">Ferritina, hemoglobina, vitamina D, CK e outros${info('Exames de sangue',
+      `Entram no relatório junto com o relógio e os treinos, na mesma linha do tempo — é assim que uma ferritina baixa aparece ao lado de uma queda de VFC, em vez de ficar num PDF solto.`)}</p>
     <input type="file" id="impExame" accept="application/pdf,.pdf" style="display:none" onchange="importarExamePDF(this)">
     ${temIA()?`<input type="file" id="iaExame" accept="application/pdf,.pdf,image/*" style="display:none" onchange="lerExamePorIA(this)">`:''}
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
@@ -10725,7 +10734,8 @@ function telaGarmin(){
         <button class="sm ghost" onclick="apagarExame('${e.id}')">✕</button></div>`).join(''):''}
     ${cardHistoricoSaude(S.pro||{})}`;
   const cBio=`
-    <p class="small muted" style="margin-top:2px">Peso, % gordura, massa muscular, água, visceral. Entra no relatório e na assinatura de sprint.</p>
+    <p class="small muted" style="margin-top:2px">Peso, % gordura, massa muscular, água, visceral${info('Bioimpedância',
+      `Entra no relatório e na assinatura de sprint — composição corporal é um dos eixos que o app cruza com os seus tempos.`)}</p>
     <input type="file" id="impBio" accept="application/pdf,.pdf" style="display:none" onchange="importarBioPDF(this)">
     ${temIA()?`<input type="file" id="iaBio" accept="application/pdf,.pdf,image/*" style="display:none" onchange="lerBioPorIA(this)">`:''}
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
@@ -11139,7 +11149,9 @@ function cardCheckin(){
     <div class="opt">${[1,2,3,4,5].map(v=>`<button class="${d[campo]===v?'on':''}" onclick="setCheckin('${campo}',${v},true)">${v}</button>`).join('')}</div>
     <div class="xs muted" style="margin-top:2px">1 ${lo} · 5 ${hi}</div></div>`;
   return`
-    <p class="xs muted" style="margin:2px 0 10px">Sem relógio? Responda como você se sente hoje — vira a sua prontidão no relatório.</p>
+    <p class="xs muted" style="margin:2px 0 10px">Como você se sente hoje${info('Check-in do dia',
+      `Para quem não usa relógio: estas respostas viram a sua <b>prontidão</b> no relatório, no lugar da VFC.`
+      +`<br><br>Quem tem relógio também ganha com o check-in — dor e humor o relógio não mede.`)}</p>
     ${CK_PERG.map(grp).join('')}
     <div class="field" style="margin-top:4px"><label>Quanto dormiu</label>
       <div class="opt">${FAIXAS_SONO.map(f=>`<button class="${sonoNaFaixa(d.sono,f)?'on':''}" onclick="setCheckin('sono',${f.v},true)">${f.r}</button>`).join('')}</div>
@@ -14145,23 +14157,23 @@ function cardProntidaoComp(pro,motor,comPct){
   const seletor=ops.length>1?`<div class="field" style="margin:10px 0 0"><label>Prova em foco</label>
     <div class="opt">${ops.slice(0,6).map(o=>`<button class="${chaveProva(o)===chaveProva(ref)?'on':''}" onclick="escolherProvaPC('${chaveProva(o)}')">
       ${o.d}m ${esc(o.e)} <span class="xs">${o.pis}</span></button>`).join('')}</div>
-    <div class="xs muted" style="margin-top:4px">Ordem: <b>suas provas-alvo</b> de Marcas primeiro, depois as da <b>piscina da próxima competição</b>, depois as mais próximas na agenda.${prox.length?` Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b>${o.alvo?'':' <span style="opacity:.7">(fora das suas provas-alvo)</span>'} — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}.`:''} Para mudar a prioridade, edite as provas-alvo em <b>Marcas</b>.</div></div>`:'';
-  return`<div class="card sup-brilho" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}</div>
-    <div class="small muted" style="margin-top:3px">Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".</div>
+    ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b>${o.alvo?'':' <span style="opacity:.7">(fora das provas-alvo)</span>'} — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`:''}${info('Ordem das provas',
+      `<b>Suas provas-alvo</b> de Marcas primeiro, depois as da <b>piscina da próxima competição</b>, depois as mais próximas na agenda.`
+      +`<br><br>Para mudar a prioridade, edite as provas-alvo em <b>Marcas</b>.`)}</div>`:'';
+  return`<div class="card sup-brilho" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}${info('Prontidão competitiva',
+      `Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".`
+      +`<br><br>É a média dos componentes disponíveis, ponderada pelo peso de cada um. Componente <b>sem dado sai da conta</b> em vez de valer zero — zero afirmaria que você está mal naquilo, quando o que há é ausência de medida. Os pesos são renormalizados sobre o que sobrou, por isso cada linha mostra <i>nominal → efetivo</i>.`
+      +`<br><br><b>Regra de dado ausente:</b> abaixo de 3 componentes, ou sem a forma específica, o app não publica score.`
+      +`<br><br><b>Sobreposição conhecida.</b> <i>Forma específica</i> e <i>especificidade</i> leem os mesmos tiros em janelas que se cruzam (42 e 28 dias) e juntas somam 50% do peso. A correlação entre os dois, medida em 60 perfis sintéticos, é <b>r ≈ 0,56</b> — correlacionados, não redundantes. Eles separam onde importa: um tiro ótimo hoje dá forma 100 e especificidade 44; dez tiros a 93% dão forma 65 e especificidade 98. Excluir da especificidade o tiro que define a forma <b>não</b> derruba a correlação (0,58) e faz o componente desaparecer para quem tem um tiro só — por isso os pesos não foram alterados. Mas metade do score se apoia em evidência correlacionada, e isso precisa estar dito.`
+      +`<br><br><b>O que este número não é:</b> não é probabilidade de vencer, de bater recorde nem de atingir um tempo. É um indicador composto de prontidão, na escala 0–100 do próprio app.`)}</div>
     ${seletor}
     ${topo}
     <table style="margin-top:10px"><tbody>${linhas}</tbody></table>
     ${r.direcao?`<div class="note ${r.direcao==='REDUZIR'?'warn':r.direcao==='AUMENTAR'?'ok':''}" style="margin-top:10px"><b>Direção da carga: ${r.direcao}.</b></div>`:''}
-    ${conta?`<details class="xs" style="margin-top:8px"><summary class="muted">como este número é calculado</summary>
-      <div style="margin-top:6px">
-        <p style="margin:0 0 6px">Média dos componentes disponíveis, ponderada pelo peso de cada um:</p>
-        <p class="t" style="margin:0 0 8px;word-break:break-word">${conta}</p>
-        ${renorm?`<p style="margin:0 0 8px"><b>Um componente saiu da conta.</b> Peso disponível: ${pesoOk} de 100. Os pesos são <b>renormalizados</b> sobre o que sobrou — por isso cada linha mostra <i>nominal → efetivo</i>. Componente sem dado <b>não vira zero</b>: zero afirmaria que o atleta está mal naquilo, quando o que há é ausência de medida.</p>`:''}
-        <p style="margin:0 0 8px"><b>Regra de dado ausente:</b> abaixo de 3 componentes, ou sem a forma específica, o app não publica score. ${r.confiabilidade}% do peso total estava disponível aqui.</p>
-        <p style="margin:0 0 8px"><b>Sobreposição conhecida.</b> <i>Forma específica</i> e <i>especificidade</i> leem os mesmos tiros em janelas que se cruzam (42 e 28 dias) e juntas somam 50% do peso. Medi a correlação entre os dois em 60 perfis sintéticos: <b>r ≈ 0,56</b> — correlacionados, não redundantes. Eles separam onde importa: um tiro ótimo hoje dá forma 100 e especificidade 44; dez tiros a 93% dão forma 65 e especificidade 98. Testei a alternativa de excluir da especificidade o tiro que define a forma: a correlação <b>não cai</b> (0,58), e o componente desaparece para quem tem um tiro só. Por isso os pesos <b>não</b> foram alterados — mas metade do score se apoia em evidência correlacionada, e isso precisa estar dito.</p>
-        <p style="margin:0"><b>O que este número não é:</b> não é probabilidade de vencer, de bater recorde nem de atingir um tempo. É um indicador composto de prontidão, na escala 0–100 do próprio app.</p>
-      </div></details>`
-    :`<div class="xs muted" style="margin-top:6px">Componente <b>sem dado sai da conta</b> em vez de valer zero. Não é probabilidade de nadar bem: é o quanto, no que o app mede, você está posicionado para esta prova.</div>`}
+    ${conta?`<div class="xs muted t" style="margin-top:8px;word-break:break-word">${conta}${info('A conta deste score',
+      `Média dos componentes disponíveis, ponderada pelo peso de cada um — escrita assim para você poder conferir à mão.`
+      +(renorm?`<br><br><b>Um componente saiu da conta.</b> Peso disponível: ${pesoOk} de 100, renormalizado sobre o que sobrou.`:``)
+      +`<br><br>${r.confiabilidade}% do peso total estava disponível aqui.`)}</div>`:''}
   </div>`;
 }
 /* ── TREINO → PROVA ────────────────────────────────────────────────────────
@@ -14173,10 +14185,12 @@ function cardTransferencia(pro,motor,comPct,brk){
   const ref=motor.provaRef; if(!ref)return'';
   const t=motor.transf;
   const nome=`${ref.d}m ${ref.e} ${ref.pis}`;
-  if(!t||!t.n)return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
+  if(!t||!t.n)return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}${info('Conversão treino → prova',
+      `A conversão compara o que você nadou na prova com o que vinha nadando no treino. Para existir, ela precisa dos DOIS lados na mesma prova: um resultado de competição <b>e</b> tiros registrados antes dele.`
+      +`<br><br>Sem o lado do treino não há o que comparar, e estimar por cima disso seria inventar a metade que falta. Registre as competições em <b>Marcas</b>; com os tiros que você já vem lançando, o número aparece sozinho a partir das próximas.`)}</div>
     <p class="small muted" style="margin-top:6px">${(t&&t.semBase&&t.semBase.length)
-      ? `Você tem <b>${t.semBase.length} prova(s)</b> de ${esc(nome)} registrada(s), mas <b>nenhum tiro lançado antes delas</b> — a mais recente é de ${brData(t.semBase[t.semBase.length-1])}. A conversão compara o que você nadou na prova com o que vinha nadando no treino; sem o lado do treino não há o que comparar, e estimar por cima disso seria inventar a metade que falta. A partir das próximas competições, com os tiros que você já vem registrando, o número aparece sozinho.`
-      : `Ainda não dá para medir a sua conversão: é preciso ter, na mesma prova, um resultado de competição <b>e</b> tiros registrados antes dele. Registre as competições em <b>Marcas</b>.`}</p></div>`;
+      ? `<b>${t.semBase.length} prova(s)</b> de ${esc(nome)} sem tiro lançado antes — a mais recente em ${brData(t.semBase[t.semBase.length-1])}.`
+      : `Ainda sem conversão medida.`}</p></div>`;
   const sinal=v=>(v>0?'+':'')+v.toFixed(1)+'%';
   const est=t.estagio;
   const leitura=t.soOutraPiscina
@@ -14210,14 +14224,26 @@ function cardTransferencia(pro,motor,comPct,brk){
         </div>
         <div class="xs muted" style="margin-top:6px">${Math.abs(dp-dt)<150?'A queda da segunda metade se comporta na prova como no treino.'
           :(dp>dt?`Na prova a segunda metade custa <b>${fmt(dp-dt,true)} a mais</b> que no treino — a manutenção de velocidade cede mais em competição.`
-                 :`Na prova a segunda metade custa <b>${fmt(dt-dp,true)} a menos</b> que no treino.`)} <i>Leitura para o técnico.</i></div>
-        <div class="xs muted" style="margin-top:4px"><b>Comparabilidade:</b> os dois lados são ${ref.d}m ${esc(ref.e)} em piscina ${ref.pis==='LC50'?'longa':'curta'}. Parciais de prova: <b>${ORIGEM_PARC[usa]}</b>${ord.length>1?` (${pp.n-st.n} de outra origem ficaram fora desta média)`:''}. <b>A saída não é equivalente</b> — borda no treino, bloco na prova —, por isso os dois números são descritos lado a lado e <b>não</b> convertidos um no outro.</div>`;
+                 :`Na prova a segunda metade custa <b>${fmt(dt-dp,true)} a menos</b> que no treino.`)}</div>
+        <div class="xs muted" style="margin-top:4px">${ref.d}m ${esc(ref.e)} · piscina ${ref.pis==='LC50'?'longa':'curta'} · parciais: <b>${ORIGEM_PARC[usa]}</b>${ord.length>1?` (${pp.n-st.n} de outra origem fora desta média)`:''}${info('Custo da segunda metade',
+          `Compara a queda da segunda metade no treino com a da competição — é onde a diferença costuma aparecer.`
+          +`<br><br><b>A saída não é equivalente</b>: borda no treino, bloco na prova. Por isso os dois números são descritos lado a lado e <b>não</b> convertidos um no outro.`)}</div>`;
     }else if(pp.suportada&&pp.n&&!tre){
       cmp=`<div class="sep"></div><div class="eyebrow">custo da segunda metade — ${meio}m + ${meio}m</div>
-        <div class="small muted" style="margin-top:6px">Você tem <b>${pp.n} prova(s)</b> de ${ref.d}m ${esc(ref.e)} ${ref.pis} com parcial registrada, mas <b>nenhum tiro de treino desta mesma prova e piscina com parcial</b> nos últimos 120 dias. Sem os dois lados comparáveis, o app não calcula a diferença — lançar a parcial de 25m num tiro de ${ref.d} já resolve.</div>`;
+        <div class="small muted" style="margin-top:6px"><b>${pp.n} prova(s)</b> com parcial, nenhum tiro de treino com parcial nos últimos 120 dias.${info('Falta o lado do treino',
+          `Para comparar a segunda metade, o app precisa de parcial dos dois lados: na prova e no treino, mesma distância, estilo e piscina.`
+          +`<br><br>Lançar a parcial de 25 m num tiro de ${ref.d} m já resolve.`)}</div>`;
     }
   }
-  return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}</div>
+  return`<div class="card" data-dom="prova" id="c-transf"><div class="eyebrow">treino → prova — ${esc(nome)}${info('Conversão treino → prova (desta prova)',
+      `Conversão <b>positiva</b> = a prova saiu mais lenta que o melhor tiro; negativa = mais rápida. Associação observada no seu histórico — <b>não é previsão</b>, e não atribui causa: o que mudou entre o tiro e a prova não é só o treino.`
+      +`<br><br><b>O que é casado, e o que não é</b>`
+      +`<br><b>Distância</b> e <b>estilo</b>: iguais dos dois lados, obrigatório.`
+      +`<br><b>Piscina</b>: tiro de piscina diferente da prova fica marcado e fora da mediana — curta tem uma virada que a longa não tem.`
+      +`<br><b>Janela</b>: 6 semanas antes da prova. Sem tiro nela, o app amplia para 90 dias e rotula a linha; conversão de janela ampliada vale menos.`
+      +`<br><b>Saída</b>: <b>não equivalente</b>. Treino sai da borda, prova sai do bloco. É a razão de a conversão ser negativa na maioria dos atletas, e o motivo de ela ser medida em vez de estimada.`
+      +`<br><b>Tipo de esforço</b>: pernada, braçada, técnica e filipina saem antes de chegar aqui. Tiro com equipamento só é separável quando foi anotado na série.`
+      +`<br><b>Natureza do registro</b>: tiro de treino é cronometragem de treino; resultado de prova é o tempo registrado em Marcas. São naturezas diferentes — por isso isto é conversão observada, não equivalência.`)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${sinal(t.mediana)}</div><div class="l">conversão (mediana)</div></div>
       <div class="kpi"><div class="v" style="opacity:.75">${sinal(t.p25)} / ${sinal(t.p75)}</div><div class="l">quartis</div></div>
@@ -14227,20 +14253,10 @@ function cardTransferencia(pro,motor,comPct,brk){
     <table style="margin-top:10px"><thead><tr><th>prova</th><th class="n">melhor tiro</th><th class="n">competição</th><th class="n">conversão</th></tr></thead>
       <tbody>${linhas}</tbody></table>
     ${cmp}
-    ${t.nOutraPiscina&&!t.soOutraPiscina?`<div class="note" style="margin-top:8px"><b>${t.nOutraPiscina} prova(s) fora da mediana.</b> O único tiro de referência delas é de piscina diferente da prova, e piscina curta tem uma virada que a longa não tem. Elas continuam listadas acima, marcadas, mas não entram no número — misturar as duas piscinas numa só conversão esconde justamente o que diferencia as provas.</div>`:''}
-    ${/* P2-C — CRITÉRIOS DE COMPARABILIDADE, à vista. O número só vale se o
-         leitor souber o que foi casado e o que não foi. */''}
-    <details class="xs" style="margin-top:8px"><summary class="muted">critérios de comparabilidade desta conversão</summary>
-      <table style="margin-top:6px"><tbody>
-        <tr><td style="width:42%"><b>Distância</b></td><td class="muted">igual dos dois lados (${ref.d} m) — obrigatório.</td></tr>
-        <tr><td><b>Estilo</b></td><td class="muted">igual dos dois lados (${esc(ref.e)}) — obrigatório.</td></tr>
-        <tr><td><b>Piscina</b></td><td class="muted">${t.nComparavel?`${t.nComparavel} prova(s) com tiro na mesma piscina (${ref.pis}).`:'nenhuma prova com tiro na mesma piscina.'}${t.nOutraPiscina?` ${t.nOutraPiscina} com tiro de piscina diferente, marcada(s) e fora da mediana.`:''}</td></tr>
-        <tr><td><b>Janela</b></td><td class="muted">6 semanas antes da prova. Sem tiro nela, o app amplia para 90 dias e rotula a linha — a conversão de janela ampliada vale menos.</td></tr>
-        <tr><td><b>Saída</b></td><td class="muted"><b>Não equivalente.</b> Treino sai da borda, prova sai do bloco. Esta é a razão de a conversão ser <b>negativa</b> na maioria dos atletas, e o motivo de ela ser medida em vez de estimada.</td></tr>
-        <tr><td><b>Tipo de esforço</b></td><td class="muted">pernada, braçada, técnica e filipina já saem antes de chegar aqui. Tiro com equipamento só é separável quando foi anotado na série.</td></tr>
-        <tr><td><b>Natureza do registro</b></td><td class="muted">tiro de treino é cronometragem de treino; resultado de prova é o tempo registrado em Marcas. São registros de naturezas diferentes e é por isso que isto é conversão observada, não equivalência.</td></tr>
-      </tbody></table></details>
-    <div class="xs muted" style="margin-top:6px">Conversão <b>positiva</b> = a prova saiu mais lenta que o melhor tiro; negativa = mais rápida. Associação observada no seu histórico — <b>não é previsão</b>, e não atribui causa: o que mudou entre o tiro e a prova não é só o treino.</div>
+    ${t.nOutraPiscina&&!t.soOutraPiscina?`<div class="note" style="margin-top:8px"><b>${t.nOutraPiscina} prova(s) fora da mediana</b> — tiro de referência de outra piscina. Continuam listadas acima, marcadas.${info('Provas fora da mediana',
+      `O único tiro de referência delas é de piscina diferente da prova, e piscina curta tem uma virada que a longa não tem.`
+      +`<br><br>Misturar as duas piscinas numa conversão só esconderia justamente o que diferencia as provas.`)}</div>`:''}
+    ${t.nComparavel?`<div class="xs muted" style="margin-top:6px">${t.nComparavel} prova(s) com tiro na mesma piscina (${ref.pis})${t.nOutraPiscina?` · ${t.nOutraPiscina} de outra piscina`:''}</div>`:''}
   </div>`;
 }
 /* P2-B — cartão das parciais de prova, por prova e por origem do registro */
@@ -14250,9 +14266,11 @@ function cardParciais(pro,motor,comPct){
   const nome=`${ref.d}m ${ref.e} ${ref.pis}`;
   if(!pp.suportada)return'';
   const meio=ref.d/2;
-  if(!pp.n)return`<div class="card" data-dom="prova"><div class="eyebrow">parciais de prova — ${esc(nome)}</div>
+  if(!pp.n)return`<div class="card" data-dom="prova"><div class="eyebrow">parciais de prova — ${esc(nome)}${info('Parciais de prova',
+      `A passagem dos ${meio} m é o que separa "abri rápido demais" de "não sustentei" — sem ela as duas leituras ficam iguais.`
+      +`<br><br>Registre a parcial junto com o tempo final, em <b>Marcas</b>.`)}</div>
     <p class="small muted" style="margin-top:6px">${pp.nProvas
-      ? `Você tem <b>${pp.nProvas} prova(s)</b> de ${esc(nome)} em Marcas, mas <b>nenhuma com parcial de ${meio}m registrada</b> — só o tempo final. A passagem dos ${meio}m é o que separa "abri rápido demais" de "não sustentei", e sem ela as duas leituras ficam iguais.`
+      ? `<b>${pp.nProvas} prova(s)</b> de ${esc(nome)}, nenhuma com parcial de ${meio}m.`
       : `Nenhuma prova de ${esc(nome)} registrada ainda.`}</p></div>`;
   const ord=['oficial','manual','nd'].filter(o=>pp.porOrigem[o]);
   const linhas=pp.itens.slice().reverse().slice(0,10).map(x=>`<tr>
