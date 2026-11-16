@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v195"></script>
-<script src="./inicio-e-grupos.js?v=v195"></script>
+<script src="./persistencia-segura.js?v=v196"></script>
+<script src="./inicio-e-grupos.js?v=v196"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v195';
+const VER='v196';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -10598,7 +10598,11 @@ function graficoLinha(pts){
 }
 function cardEvolucao(pro,eyebrow){
   const ev=evolucaoProvas(pro); if(!ev.length)return'';
-  return`<div class="card"><div class="eyebrow">${eyebrow}</div>
+  return`<div class="card"><div class="eyebrow">${eyebrow}${info('Evolução em competição',
+      `Cada ponto é uma competição, na ordem cronológica (dia/mês/ano). Linha para baixo = tempo menor = melhorando.`
+      +`<br><br><b>Cada prova e piscina tem a sua própria série</b> — 50 e 100, curta e longa não se somam numa tendência só.`
+      +`<br><br>Melhora na prova e mudança no treino andarem na mesma direção <b>não estabelece que uma causou a outra</b>: o que mudou no período não foi só o treino.`
+      +`<br><br>O <b>n</b> de cada série diz o que ela permite afirmar: com duas provas você tem a diferença entre dois pontos, não uma tendência.`)}</div>
     ${/* P2-D — cada série traz o seu n e o que ele permite afirmar. "Melhorou
          1,69s" entre duas provas separadas por dois anos não é tendência; é a
          diferença entre dois pontos, e o cartão passa a dizer qual é qual. */''}
@@ -10611,7 +10615,6 @@ function cardEvolucao(pro,eyebrow){
         <span class="small" style="font-weight:700;color:${e.melhora?'var(--ok)':'var(--clock)'}">${e.melhora?'▼ melhorou':'▲ piorou'} ${fmt(Math.abs(e.delta),true)}</span></div>
       <div class="xs muted" style="margin-top:2px">n = ${n} competição(ões)${limite?` · <b>${limite}</b>`:' · amostra suficiente para falar em tendência'}</div>
       ${graficoLinha(e.pts)}</div>`}).join('')}
-    <div class="xs muted" style="margin-top:8px">Cada ponto é uma competição, na ordem cronológica (dia/mês/ano). Linha para baixo = tempo menor = melhorando. <b>Cada prova e piscina tem a sua própria série</b> — 50 e 100, curta e longa não se somam numa tendência só. Melhora na prova e mudança no treino andarem na mesma direção <b>não estabelece que uma causou a outra</b>: o que mudou no período não foi só o treino.</div>
   </div>`;
 }
 
@@ -12277,7 +12280,11 @@ function cardCargaTotal(){
   const natShow=c.natacao+(usaEstim?c.natExtrap:0);
   const totShow=usaEstim?c.totalAjust:c.total;
   const pN=totShow?Math.round(natShow/totShow*100):0;
-  return`<div class="card" data-dom="carga"><div class="eyebrow">carga total — 28 dias${usaEstim?' <span class="xs muted">(inclui estimativa)</span>':''}</div>
+  return`<div class="card" data-dom="carga"><div class="eyebrow">carga total — 28 dias${usaEstim?' <span class="xs muted">(inclui estimativa)</span>':''}${info('Carga total',
+      `Carga da sessão = <b>duração × RPE</b> (UA). Põe natação e treinos fora d'água (musculação, bike, corrida…) na mesma escala.`
+      +`<br><br>São coisas diferentes: <b>RPE</b> é o quanto <b>você sentiu</b>; a estimativa por FC é intensidade fisiológica deduzida do batimento. Dado informado sempre vence o estimado.`
+      +`<br><br>Só conta treino marcado como <b>feito</b> — o que ficou na agenda e não aconteceu não entra.`
+      +`<br><br><b>Tonelagem de força</b> é o volume real de musculação (séries × reps × carga), quando a ficha traz as cargas.`)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${totShow.toLocaleString('pt-BR')}</div><div class="l">total (UA)</div></div>
       <div class="kpi"><div class="v">${natShow.toLocaleString('pt-BR')}</div><div class="l">natação ${pN}%</div></div>
@@ -12287,7 +12294,6 @@ function cardCargaTotal(){
     ${(c.secoSuspeito&&c.secoSuspeito.length)?`<div class="note warn" style="margin-top:8px"><b>Confira a duração de ${c.secoSuspeito.length} sessão(ões) fora d'água.</b> ${c.secoSuspeito.slice(0,3).map(s=>`${brCurta(s.data)} · ${esc(s.tipo)} · <b>${Math.floor(s.dur/60)}h${String(s.dur%60).padStart(2,'0')}</b>`).join(' · ')}${c.secoSuspeito.length>3?' …':''}. Duração acima de 4h é rara numa sessão — se foi engano de digitação (ex.: "330" virando 330 minutos), ela está dominando a sua carga e distorcendo o ACWR e a recomendação de intensidade. Corrija em Saúde › fora d'água.</div>`:''}
     ${(()=>{const n=pendenciasSeco().length+((pendenciasNatacao()||[]).length);
       return n?`<button class="sm ghost full" style="margin-top:8px" onclick="abrirPendencias()">Ver os ${n} dia(s) com dado faltando</button>`:''})()}
-    <div class="xs muted" style="margin-top:8px">Carga da sessão = <b>duração × RPE</b> (UA). Põe natação e treinos fora d'água (musculação, bike, corrida…) na mesma escala.</div>
     <div class="eyebrow" style="margin-top:12px">de onde vem cada unidade de carga</div>
     <table style="margin-top:6px"><tbody>
       <tr><td><b>RPE informado</b> <span class="xs muted">você registrou esforço e duração</span></td>
@@ -12302,9 +12308,8 @@ function cardCargaTotal(){
       <tr><td><b>Sem carga quantificável</b> <span class="xs muted">${(!c.nNatCom&&c.nSemRPE)?c.nSemRPE+' treino(s): sem nenhuma sessão com RPE, não dá nem para estimar':'nenhum'}</span></td>
         <td class="n">—</td><td class="n">—</td></tr>
     </tbody></table>
-    <div class="xs muted" style="margin-top:6px">São coisas diferentes: <b>RPE</b> é o quanto <b>você sentiu</b>; a estimativa por FC é intensidade fisiológica deduzida do batimento. Dado informado sempre vence o estimado.</div>
-    <div class="xs muted" style="margin-top:6px"><b>Cobertura:</b> ${c.nNatCom} de ${c.nNat||c.nNatCom} treino(s) de natação <b>feitos</b> têm RPE e duração (${Math.round(c.cobertura*100)}%), e ${c.nSeco} sessão(ões) fora d'água. Só conta treino marcado como feito — o que ficou na agenda e não aconteceu não entra.</div>
-    ${(()=>{const t=tonelagem(28);return t?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>Tonelagem de força (28d):</b> ~${t.total.toLocaleString('pt-BR')} kg em ${t.sessoes} sessão(ões) — volume real de musculação (séries×reps×carga), quando a ficha traz as cargas.</div>`:'';})()}
+    <div class="xs muted" style="margin-top:6px"><b>Cobertura:</b> ${c.nNatCom} de ${c.nNat||c.nNatCom} treino(s) com RPE e duração (${Math.round(c.cobertura*100)}%) · ${c.nSeco} fora d'água</div>
+    ${(()=>{const t=tonelagem(28);return t?`<div class="xs" style="margin-top:6px;color:var(--ink-2)"><b>Tonelagem de força (28d):</b> ~${t.total.toLocaleString('pt-BR')} kg em ${t.sessoes} sessão(ões)</div>`:'';})()}
   </div>`;
 }
 /* carga diária (session-RPE) somando natação + treinos fora d'água → índice por dias-atrás */
@@ -12642,17 +12647,18 @@ function cardEvolucaoForca(pro){
   const ton=(typeof tonelagem==='function')?tonelagem(p.dias):null;
   const subindo=p.exercicios.filter(e=>e.tendencia==='↑').length;
   const caindo=p.exercicios.filter(e=>e.tendencia==='↓').length;
-  return`<div class="card" data-dom="corpo" id="c-forca"><div class="eyebrow">evolução de força</div>
+  return`<div class="card" data-dom="corpo" id="c-forca"><div class="eyebrow">evolução de força${info('Evolução de força',
+      `Progresso por exercício. <b>e-1RM</b> = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.`
+      +`<br><br><b>Tendência</b> = mediana da 1ª metade contra a 2ª metade das sessões (precisa de ≥3). Registre a ficha com as cargas em <b>kg</b> para acompanhar.`
+      +`<br><br><b>Tonelagem</b> é volume, não força: ela sobe só por você fazer mais séries, com a mesma carga.`)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${nSes}</div><div class="l">sessões (${p.dias}d)</div></div>
       <div class="kpi"><div class="v">${p.exercicios.length}</div><div class="l">exercícios</div></div>
       <div class="kpi"><div class="v" style="${subindo>caindo?'color:var(--ok)':caindo>subindo?'color:var(--clock)':''}">${subindo}↑ ${caindo}↓</div><div class="l">tendência</div></div>
     </div>
-    <div class="small muted" style="margin:8px 0 4px">Progresso por exercício. e-1RM = 1RM <b>estimado</b> (Epley+Brzycki), não medido. Sem ranking entre exercícios diferentes.</div>
     ${linhas}
-    ${ton&&ton.total?`<div class="xs muted" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><b>Tonelagem no período:</b> ${(ton.total/1000).toFixed(1)} t em ${ton.sessoes} sessão(ões) <span style="opacity:.8">— dado secundário. Tonelagem é volume, não força: ela sobe só por você fazer mais séries, com a mesma carga.</span></div>`:''}
+    ${ton&&ton.total?`<div class="xs muted" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><b>Tonelagem no período:</b> ${(ton.total/1000).toFixed(1)} t em ${ton.sessoes} sessão(ões)</div>`:''}
     ${cardForcaPerformance(pro,p)}
-    <div class="xs muted" style="margin-top:8px">Tendência = mediana da 1ª metade vs 2ª metade das sessões (precisa de ≥3). Registre a ficha com as cargas em <b>kg</b> para acompanhar.</div>
   </div>`;
 }
 /* ── FORÇA × PERFORMANCE ───────────────────────────────────────────────────
@@ -12681,9 +12687,12 @@ function cardForcaPerformance(pro,p){
   const dirP=dPct>0.8?'subiu':dPct<-0.8?'caiu':'ficou estável';
   const junto=(dirF===dirP&&dirF!=='ficou estável');
   return`<div class="note" style="margin-top:10px">
-    <b>Força × performance (${dias}d):</b> a força ${dirF} (${subindo}↑ / ${caindo}↓ entre ${comF.length} exercícios) e o seu %PB nos tiros ${dirP} (${dPct>0?'+':''}${dPct} pontos entre a 1ª e a 2ª metade do período).
+    <b>Força × performance (${dias}d):</b>${info('Força × performance',
+      `A co-ocorrência entre a direção da sua força e a do seu %PB nos tiros, na mesma janela.`
+      +`<br><br>Isto é <b>co-ocorrência observada, não causa</b>: taper, volume na água, sono e idade entram na mesma conta e o app não consegue separá-los.`)}
+    a força ${dirF} (${subindo}↑ / ${caindo}↓ entre ${comF.length} exercícios) e o seu %PB nos tiros ${dirP} (${dPct>0?'+':''}${dPct} pontos entre a 1ª e a 2ª metade do período).
     ${junto?' As duas coisas andaram <b>no mesmo sentido</b>.':' As duas <b>não</b> andaram no mesmo sentido.'}
-    <span class="xs muted" style="display:block;margin-top:4px">Isto é co-ocorrência observada, não causa: taper, volume na água, sono e idade entram na mesma conta e o app não consegue separá-los. ${pts.length} tiro(s) e ${comF.length} exercício(s) na janela.</span></div>`;
+    <span class="xs muted" style="display:block;margin-top:4px">${pts.length} tiro(s) e ${comF.length} exercício(s) na janela.</span></div>`;
 }
 /* ---------- exames laboratoriais ---------- */
 /* ─────────────────────────────────────────────────────────────
@@ -13294,7 +13303,11 @@ function cardEstado(pro,comPct,sem){
   if(!e.pr&&!e.cap&&!e.tend)return'';
   const kpi=(v,l,cor)=>`<div class="kpi"><div class="v"${cor?` style="color:${cor}"`:''}>${v}</div><div class="l">${l}</div></div>`;
   const corPr=e.pr?(e.pr.score>=75?'var(--ok)':e.pr.score<55?'var(--clock)':''):'';
-  return`<div class="card"><div class="eyebrow">estado de performance</div>
+  return`<div class="card"><div class="eyebrow">estado de performance${info('Estado de performance',
+      `<b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga).`
+      +`<br><br><b>Velocidade média</b>: média de %PB dos seus <b>últimos 15 tiros</b>, de todas as provas. É diferente do eixo <b>Velocidade</b> da assinatura de sprint, que usa só os <b>melhores 20%</b> dos tiros <b>das provas-alvo</b> — dois recortes do mesmo cálculo, por isso os números não batem.`
+      +`<br><br><b>Tendência</b>: se vem melhorando ou caindo — é a única leitura que olha o <b>histórico inteiro</b> de competições, não a janela de análise.`
+      +`<br><br>Estimativa de apoio; a confiança sobe conforme você acumula dados.`)}</div>
     <div class="grid3" style="margin-top:8px">
       ${kpi(e.pr?e.pr.score:'—','prontidão',corPr)}
       ${kpi(e.cap?e.cap.score+'%':'—','capacidade')}
@@ -13307,7 +13320,7 @@ function cardEstado(pro,comPct,sem){
       if(e.cap){const c=cf(e.cap.n,12,6);ps.push(`Capacidade <b style="color:${c.c}">${c.t}</b> <span class="xs muted">(${e.cap.n} tiros)</span>`);}
       if(e.tend){const base=Math.max(e.tend.nEv,e.tend.nPct>=8?2:e.tend.nPct>=4?1:0);const c=cf(base,3,1);ps.push(`Tendência <b style="color:${c.c}">${c.t}</b>`);}
       return ps.length?`<div class="small" style="margin-top:8px"><b>Confiança</b> — ${ps.join(' · ')}</div>`:'';})()}
-    <div class="xs muted" style="margin-top:8px"><b>Prontidão</b>: quão pronto seu corpo está hoje (VFC, FC de repouso, sono, carga). <b>Velocidade média</b>: média de %PB dos seus <b>últimos 15 tiros</b>, de todas as provas. É diferente do eixo <b>Velocidade</b> da assinatura de sprint, que usa só os <b>melhores 20%</b> dos tiros <b>das provas-alvo</b> — dois recortes do mesmo cálculo, por isso os números não batem. <b>Tendência</b>: se vem melhorando ou caindo — é a única leitura que olha o <b>histórico inteiro</b> de competições, não a janela de análise.${e.tend?' '+e.tend.txt+'.':''} <span class="muted">Estimativa de apoio; a confiança sobe conforme você acumula dados.</span></div>
+    ${e.tend&&e.tend.txt?`<div class="xs muted" style="margin-top:8px">${e.tend.txt}.</div>`:''}
   </div>`;
 }
 /* Carga aguda × crônica (ACWR): volume dos últimos 7 dias / média semanal em 28 dias.
@@ -13374,7 +13387,9 @@ function cardComposicaoRelativa(pro){
   const c=composicaoEstim(pro); if(!c)return'';
   const prefer=Object.entries(pro.pbs||{}).find(([k])=>/^50 /.test(k));
   const ref=prefer?{prova:prefer[0].replace(/ (SC25|LC50)$/,''),tempo:prefer[1]}:null;
-  return`<div class="card"><div class="eyebrow">composição × desempenho</div>
+  return`<div class="card"><div class="eyebrow">composição × desempenho${info('Composição × desempenho',
+      `Massa magra = peso × (1 − %gordura).`
+      +`<br><br><b>O app não recomenda perda de peso</b>: não há, no seu histórico, medição que ligue variação de peso a variação de tempo. Composição aqui é descrição, não meta — mudanças de peso em atleta master são assunto do técnico e de nutricionista.`)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${c.peso}<span class="xs muted"> kg</span></div><div class="l">peso · ${brCurta(c.data)}</div></div>
       <div class="kpi"><div class="v">${c.massaMagra}<span class="xs muted"> kg</span></div><div class="l">massa magra</div></div>
@@ -13389,10 +13404,8 @@ function cardComposicaoRelativa(pro){
         ?'Fórmula: massa magra ≈ água corporal ÷ 0,732 (hidratação média do tecido magro); a gordura sai por diferença. É método aceito, mas pressupõe hidratação normal no dia da medição.'
         :'Fórmula: tabela por idade e sexo — não é uma medição sua.'}
       <span class="xs muted" style="display:block;margin-top:4px">Valor original do aparelho preservado no registro, para auditoria. Estimativa <b>não alimenta score, radar nem projeção</b>. Com uma medição confiável (dobras ou DEXA) registrada, o app passa a usá-la.</span></div>`:''}
-    ${/* Sem evidência individual, recomendar perda de peso é extrapolar. O app
-         mede tempo e composição; não mediu, NESTE atleta, que um kg a menos
-         virou décimo. A relação peso/potência é literatura, não achado dele. */''}
-    <div class="xs muted" style="margin-top:6px">Massa magra = peso × (1 − %gordura). <b>O app não recomenda perda de peso</b>: não há, no seu histórico, medição que ligue variação de peso a variação de tempo. Composição aqui é descrição, não meta — mudanças de peso em atleta master são assunto do técnico e de nutricionista.</div>
+    ${/* Sem evidência individual, recomendar perda de peso é extrapolar — a
+         ressalva continua no app, no "i" do cabeçalho deste card. */''}
   </div>`;
 }
 function cardCarga(){
@@ -13403,14 +13416,15 @@ function cardCarga(){
      Aqui a conta é sobre METROS NADADOS (t.vol do índice de treinos); lá é
      sobre carga de sessão (duração × RPE). São grandezas diferentes com a
      mesma forma de cálculo, e carregavam o mesmo rótulo. */
-  return`<div class="card" data-dom="carga" id="c-volume"><div class="eyebrow">volume agudo / volume habitual</div>
+  return`<div class="card" data-dom="carga" id="c-volume"><div class="eyebrow">volume agudo / volume habitual${info('Volume agudo / habitual',
+      `<b>Metros nadados</b> dos últimos 7 dias contra a média semanal das últimas 4.`
+      +`<br><br>Não confundir com a relação <b>fadiga/fitness</b>, que usa duração × RPE. É um descritor de volume, não uma medida de risco de lesão.`)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${r.toFixed(2)}</div><div class="l">razão</div></div>
       <div class="kpi"><div class="v">${(c.ag/1000).toFixed(1)}k</div><div class="l">agudo (7 dias)</div></div>
       <div class="kpi"><div class="v">${(c.cr/1000).toFixed(1)}k</div><div class="l">habitual (méd/sem)</div></div>
     </div>
     <div class="note ${est.t}" style="margin-top:10px">${est.txt}</div>
-    <div class="xs muted" style="margin-top:6px"><b>Metros nadados</b> dos últimos 7 dias contra a média semanal das últimas 4. Não confundir com a relação <b>fadiga/fitness</b>, que usa duração × RPE. É um descritor de volume, não uma medida de risco de lesão.</div>
   </div>`;
 }
 /* ── CORRELAÇÕES: cruza o histórico do próprio atleta ──────────────────────── */
@@ -13451,7 +13465,10 @@ function correlacoes(pro,comPct){
 function cardCorrelacoes(pro,comPct){
   const c=correlacoes(pro,comPct);
   if(!c.rec&&!c.carga)return'';
-  let html=`<div class="card" data-dom="perf"><div class="eyebrow">correlações</div>`;
+  let html=`<div class="card" data-dom="perf"><div class="eyebrow">correlações${info('Correlações',
+      `Cruzamentos do seu próprio histórico. <b>n</b> é o número de tiros em cada faixa — compare as médias só quando os dois lados tiverem amostra parecida. Diferença de poucos pontos entre faixas com n pequeno é ruído, não efeito.`
+      +`<br><br><b>É associação, nunca causa</b>: o que separa as faixas não é só a carga.`
+      +`<br><br><b>Estratificação:</b> estes cruzamentos juntam tiros de <b>todas</b> as suas provas, normalizados em %PB. São leitura geral de treino — <b>não</b> são tendência de uma prova específica. Para ver prova a prova, use a projeção, as parciais e a evolução, que separam distância, estilo e piscina.`)}</div>`;
   if(c.rec){const r=c.rec, lin=(nome,o)=>o&&o.n>=2?`<tr><td>${nome}</td><td class="n">${o.n}</td><td class="n" style="font-weight:700">${o.pct.toFixed(0)}%</td></tr>`:'';
     html+=`<h3 style="margin:8px 0 4px">Recuperação × desempenho</h3>
       <table><thead><tr><th>recuperação</th><th class="n">tiros</th><th class="n">%PB méd</th></tr></thead><tbody>${lin('boa',r.bom)}${lin('neutra',r.neutro)}${lin('ruim',r.ruim)}</tbody></table>
@@ -13465,8 +13482,7 @@ function cardCorrelacoes(pro,comPct){
      a mesma média e espalhamentos diferentes não dizem a mesma coisa, e sem
      isso a leitura vira "esta faixa é melhor" a partir de ruído. */
   const disp=(o)=>o&&o.dp!=null?` ±${o.dp.toFixed(1)}`:'';
-  html+=`<div class="xs muted" style="margin-top:8px">Cruzamentos do seu próprio histórico. <b>n</b> é o número de tiros em cada faixa — compare as médias só quando os dois lados tiverem amostra parecida. Diferença de poucos pontos entre faixas com n pequeno é ruído, não efeito. <b>É associação, nunca causa</b>: o que separa as faixas não é só a carga.
-    <br><b>Estratificação:</b> estes cruzamentos juntam tiros de <b>todas</b> as suas provas, normalizados em %PB. São leitura geral de treino — <b>não</b> são tendência de uma prova específica. Para ver prova a prova, use a projeção, as parciais e a evolução, que separam distância, estilo e piscina.</div></div>`;
+  html+=`</div>`;
   return html;
 }
 /* ── BASELINE INDIVIDUAL MÓVEL ──────────────────────────────────────────────
@@ -13548,10 +13564,11 @@ function cardFrescor(pro,comPct){
     <td class="n">${r.dias==null?'—':(r.dias===0?'hoje':r.dias===1?'ontem':r.dias+'d')}</td>
     <td class="xs" style="text-align:right;color:${cor(r.uso)};font-weight:700">${r.uso}<div class="xs muted" style="font-weight:400">até ${r.atual}d</div></td></tr>`).join('');
   const velhos=rs.filter(r=>r.uso==='só histórico').length;
-  return`<div class="card" data-dom="perf" id="c-frescor"><div class="eyebrow">idade dos dados</div>
-    <div class="small muted" style="margin:4px 0 6px">Há quanto tempo cada fonte foi atualizada, e se ela ainda descreve o seu <b>estado de hoje</b>.</div>
+  return`<div class="card" data-dom="perf" id="c-frescor"><div class="eyebrow">idade dos dados${info('Idade dos dados',
+      `Há quanto tempo cada fonte foi atualizada, e se ela ainda descreve o seu <b>estado de hoje</b>.`
+      +`<br><br>Cada fonte tem o seu prazo porque mudam em ritmos diferentes: VFC muda todo dia, bioimpedância não muda numa semana, exame menos ainda. <b>Dado antigo não é dado ruim</b> — ele continua valendo para o histórico e para as tendências; o que ele não pode é pesar como se fosse de hoje.`)}</div>
     <table><thead><tr><th>fonte</th><th class="n">última</th><th style="text-align:right">uso</th></tr></thead><tbody>${linhas}</tbody></table>
-    <div class="xs muted" style="margin-top:8px">Cada fonte tem o seu prazo porque mudam em ritmos diferentes: VFC muda todo dia, bioimpedância não muda numa semana, exame menos ainda. <b>Dado antigo não é dado ruim</b> — ele continua valendo para o histórico e para as tendências; o que ele não pode é pesar como se fosse de hoje.${velhos?` <b>${velhos} fonte(s)</b> já só entram como histórico.`:''}</div>
+    ${velhos?`<div class="xs muted" style="margin-top:8px"><b>${velhos} fonte(s)</b> já só entram como histórico.</div>`:''}
   </div>`;
 }
 function baselinesResumo(pro,comPct){
@@ -13593,11 +13610,12 @@ function cardBaseline(pro,comPct){
         · variação <b class="t" style="color:${cor}">${d>=0?'+':''}${d.toFixed(0)}%</b>
         <span style="opacity:.75">(${r.n} medida(s))</span></div>
     </div>`;}).join('');
-  return`<div class="card" data-dom="corpo" id="c-baseline"><div class="eyebrow">seu estado atual</div>
-    <div class="small muted" style="margin:4px 0 2px">Cada indicador contra a <b>sua</b> linha de base de 28 dias — não contra tabela de referência.</div>
+  return`<div class="card" data-dom="corpo" id="c-baseline"><div class="eyebrow">seu estado atual${info('Seu estado atual',
+      `Cada indicador contra a <b>sua</b> linha de base de 28 dias — não contra tabela de referência.`
+      +`<br><br><b>Faixa habitual</b> = média ± 1 desvio dos seus últimos 28 dias; <b>NORMAL</b> é estar dentro dela. Sem isso, "−1%" não dizia nada: num indicador que oscila 8% ao dia é ruído, num que oscila 1% é muito.`
+      +`<br><br>A cor segue a direção de cada métrica — FC de repouso acima da faixa é desfavorável, VFC acima é favorável, peso é neutro.`
+      +`<br><br><b>Velocidade (%PB)</b> = melhor tempo ÷ tempo do tiro × 100, na mesma prova e piscina: <b>mais rápido dá percentual maior</b>. Não é a razão de tempos, que andaria ao contrário.`)}</div>
     ${blocos}
-    <div class="xs muted" style="margin-top:8px"><b>Faixa habitual</b> = média ± 1 desvio dos seus últimos 28 dias; <b>NORMAL</b> é estar dentro dela. Sem isso, "−1%" não dizia nada: num indicador que oscila 8% ao dia é ruído, num que oscila 1% é muito. A cor segue a direção de cada métrica — FC de repouso acima da faixa é desfavorável, VFC acima é favorável, peso é neutro.
-      <br><b>Velocidade (%PB)</b> = melhor tempo ÷ tempo do tiro × 100, na mesma prova e piscina: <b>mais rápido dá percentual maior</b>. Não é a razão de tempos, que andaria ao contrário.</div>
   </div>`;
 }
 /* média dos tiros MAIS RÁPIDOS (topo 20%) numa prova, nos últimos `dias` — melhor
