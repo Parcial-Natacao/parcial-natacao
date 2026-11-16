@@ -155,8 +155,24 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
   background:var(--info-fundo);color:var(--info-glifo);
   font-family:Georgia,'Times New Roman',serif;
   font-size:.78em;font-weight:700;font-style:normal;line-height:1;
-  vertical-align:-.05em;flex:0 0 auto;cursor:pointer;
-  transition:filter .12s}
+  flex:0 0 auto;cursor:pointer;transition:filter .12s;
+  /* ⚠️ O ALINHAMENTO NÃO É `middle`, E NÃO É CHUTE.
+     `vertical-align:middle` centra a bolinha na ALTURA-X (altura do "x"), mas
+     o olho alinha pelo centro do bloco de glifos que está ali. Em texto com
+     maiúsculas esse bloco vai até a altura-de-caixa-alta, bem mais alto — e a
+     bolinha parece afundada. Foi o que apareceu em "PRONTIDÃO COMPETITIVA".
+     Os valores abaixo saíram de medição: baseline real do texto (via strut de
+     altura zero) contra `actualBoundingBoxAscent` do canvas, em cada contexto
+     do app. O desvio era de +0,14 em no texto normal e +0,28 em no cabeçalho.
+     Quem mexer aqui, mede de novo — no olho, 2 px passam, e 2 px é o que
+     separa "caprichado" de "feito de qualquer jeito". */
+  vertical-align:.15em}
+/* texto em CAIXA ALTA: o bloco de glifos é mais alto, a bolinha sobe junto */
+.eyebrow .info-i,h1 .info-i,h2 .info-i,h3 .info-i,
+.acc-h .info-i,th .info-i{vertical-align:.29em}
+/* o rótulo de campo é caixa alta, mas numa fonte de caixa baixa: medido,
+   ele se comporta como texto normal e com .29em subia 1,4 px demais */
+.field label .info-i{vertical-align:.15em}
 .info-i:hover,.info-i:focus-visible{filter:brightness(1.08)}
 .info-i:active{filter:brightness(.94)}
 .card[data-dom]{position:relative;padding-left:19px}
@@ -579,14 +595,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v199"></script>
-<script src="./inicio-e-grupos.js?v=v199"></script>
+<script src="./persistencia-segura.js?v=v200"></script>
+<script src="./inicio-e-grupos.js?v=v200"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v199';
+const VER='v200';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -14196,12 +14212,16 @@ function cardProntidaoComp(pro,motor,comPct){
         <div><b>${r.rotulo}</b><div class="xs muted">${r.ok} de 5 componentes${r.ok<5?` (${5-r.ok} sem dado)`:''} · <b>${r.confiabilidade}%</b> do peso total disponível</div></div></div>`
     : `<div class="note warn" style="margin-top:8px"><b>Ainda não dá para calcular.</b> ${esc(r.motivo)}. Um score com metade das peças seria inventar um número.</div>`;
   const prox=ops.filter(o=>o.origem==='comp');
-  const seletor=ops.length>1?`<div class="field" style="margin:10px 0 0"><label>Prova em foco</label>
+  /* ⚠️ O "i" PRECISA DE UM TEXTO AO LADO, OU VIRA ÓRFÃO.
+     Ele estava depois do bloco das inscrições, que é condicional: quando não
+     havia inscrição, a bolinha caía sozinha numa linha própria embaixo dos
+     botões, sem nada a que se referir. Mora no RÓTULO, que sempre existe. */
+  const seletor=ops.length>1?`<div class="field" style="margin:10px 0 0"><label>Prova em foco${info('Ordem das provas',
+      `<b>Suas provas-alvo</b> de Marcas primeiro, depois as da <b>piscina da próxima competição</b>, depois as mais próximas na agenda.`
+      +`<br><br>Para mudar a prioridade, edite as provas-alvo em <b>Marcas</b>.`)}</label>
     <div class="opt">${ops.slice(0,6).map(o=>`<button class="${chaveProva(o)===chaveProva(ref)?'on':''}" onclick="escolherProvaPC('${chaveProva(o)}')">
       ${o.d}m ${esc(o.e)} <span class="xs">${o.pis}</span></button>`).join('')}</div>
-    ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b>${o.alvo?'':' <span style="opacity:.7">(fora das provas-alvo)</span>'} — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`:''}${info('Ordem das provas',
-      `<b>Suas provas-alvo</b> de Marcas primeiro, depois as da <b>piscina da próxima competição</b>, depois as mais próximas na agenda.`
-      +`<br><br>Para mudar a prioridade, edite as provas-alvo em <b>Marcas</b>.`)}</div>`:'';
+    ${prox.length?`<div class="xs muted" style="margin-top:4px">Das suas inscrições: ${prox.slice(0,3).map(o=>`<b>${o.d}m ${esc(o.e)}</b>${o.alvo?'':' <span style="opacity:.7">(fora das provas-alvo)</span>'} — ${esc(o.comp)} (${brCurta(o.data)})`).join(' · ')}</div>`:''}</div>`:'';
   return`<div class="card sup-brilho" data-dom="prova" id="c-prontcomp"><div class="eyebrow">prontidão competitiva — ${esc(nome)}${info('Prontidão competitiva',
       `Diferente da prontidão do dia: aquela responde "como estou hoje", esta responde "estou preparado para nadar <b>esta prova</b>".`
       +`<br><br>É a média dos componentes disponíveis, ponderada pelo peso de cada um. Componente <b>sem dado sai da conta</b> em vez de valer zero — zero afirmaria que você está mal naquilo, quando o que há é ausência de medida. Os pesos são renormalizados sobre o que sobrou, por isso cada linha mostra <i>nominal → efetivo</i>.`
