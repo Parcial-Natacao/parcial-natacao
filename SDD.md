@@ -236,6 +236,25 @@ Cada uma custou tempo de verdade.
   Google Cloud e `%DISPLAY_NAME%` é o `displayName` do Auth, que o app grava no
   cadastro — antes de mandar o e-mail, ou não adianta. Domínio e idioma do
   modelo são outros endpoints e esses gravam normalmente.
+- **Existe UMA rotina de exclusão de conta, e ela é `apagarDadosDaConta(u)`.**
+  Serve tanto ao "apagar minha conta" quanto ao administrador apagando a de
+  outra pessoa: não olha `S.u`, e já sabe a ordem (anexo antes do `pro_`,
+  porque depois não há mais como achar as URLs; cadastro por último, porque
+  enquanto ele existe dá para tentar de novo). Uma segunda rotina acabaria
+  esquecendo a Saúde ou as cópias diárias — foi exatamente o que a do técnico
+  (`confirmarApagarAtleta`) sempre fez.
+- **O administrador apaga tudo, mas NÃO escrevia em documento de equipe.**
+  As regras dão `delete` irrestrito a `ehAdmin()`, porém o `update` de `eq_*`
+  era só do técnico daquela equipe — e tirar alguém da lista de membros ou
+  liberar o CPF é update. Por isso a v195 acrescentou
+  `|| ( ehEq() && ehAdmin() && naoMexeEm('equipe') )`. Enquanto essa regra não
+  estiver PUBLICADA no console, a exclusão pelo painel deixa o e-mail na lista
+  da equipe — e a tela diz isso, em vez de anunciar sucesso.
+- **O login do Firebase Auth não sai pelo cliente.** Só o próprio dono
+  (`currentUser.delete()`) ou o Admin SDK. Apagar a conta de outra pessoa
+  tranca ela do lado de fora (sem `u_<email>` o login é recusado), mas também
+  impede que aquele e-mail seja cadastrado de novo até alguém remover o login
+  em Console › Authentication › Users.
 - **Metade do fluxo de cadastro acontece no app de OUTRA pessoa.** O técnico
   aprova o atleta, o administrador aprova o técnico — e nenhum dos dois lados
   via nada. Quem mexer nisso lembre que aviso dentro do app só alcança quem

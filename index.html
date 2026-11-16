@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v194"></script>
-<script src="./inicio-e-grupos.js?v=v194"></script>
+<script src="./persistencia-segura.js?v=v195"></script>
+<script src="./inicio-e-grupos.js?v=v195"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v194';
+const VER='v195';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5597,6 +5597,65 @@ teste('liberação','atleta independente não vira pendente',a=>{
   a.ok(!pendente({perfil:'pro',equipe:null}),'PRO sozinho não entra na fila');
   a.ok(pendente({perfil:'pro',equipe:'t'}),'PRO que pediu equipe entra');
   a.ok(pendente({perfil:'tecnico',equipe:null}),'técnico entra mesmo sem equipe ainda');});
+/* ── O ADMINISTRADOR APAGA A CONTA DE OUTRA PESSOA (v195) ──────────────────
+   Reaproveita `apagarDadosDaConta`, a mesma do "apagar minha conta". O risco
+   de uma segunda rotina era ela esquecer a Saúde ou as cópias diárias — por
+   isso o primeiro teste é justamente esse. */
+teste('exclusão admin','apaga tudo que é da pessoa, não só o cadastro',async a=>{
+  _atleta(); S.u.email='barbato.bruno@gmail.com';
+  const apagadas=[]; const _ap=window.apagarChave,_an=window.apagarAnexo,_set=DB.set,_get=DB.get;
+  window.apagarChave=async k=>{apagadas.push(k)};
+  window.apagarAnexo=async()=>{};
+  DB.set=async()=>{}; DB.get=async k=>(k==='pro_B9'?{seco:[]}:null);
+  try{
+    const alvo={id:'B9',email:'outro@x.com',nome:'Outro',equipe:null,perfil:'pro'};
+    const r=await apagarDadosDaConta(alvo,null);
+    a.ok(apagadas.includes('pro_B9'),'o pro_ sai');
+    a.ok(apagadas.includes('pro_B9_sau'),'a Saúde sai');
+    a.ok(apagadas.includes('pro_B9_bk3'),'as cópias diárias saem');
+    a.ok(apagadas.includes('pro_B9_bkundo'),'inclusive a de desfazer');
+    a.ok(apagadas.includes('u_outro@x.com'),'e o cadastro, por último');
+    a.eq(r.cadastroApagado,true,'');
+  } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+teste('exclusão admin','recusa na equipe não impede apagar os dados da pessoa',async a=>{
+  /* `eq_<id>_users` é update, e até a v195 o administrador não escrevia em
+     documento de equipe. O cadastro TEM que sair mesmo assim, e a sobra
+     precisa ser nomeada — não anunciada como sucesso. */
+  _atleta(); S.u.email='barbato.bruno@gmail.com';
+  const apagadas=[]; const _ap=window.apagarChave,_an=window.apagarAnexo,_set=DB.set,_get=DB.get;
+  window.apagarChave=async k=>{apagadas.push(k)};
+  window.apagarAnexo=async()=>{};
+  DB.set=async k=>{ if(/^eq_/.test(k))throw Error('Missing or insufficient permissions.') };
+  DB.get=async k=>(k==='eq_t_users'?['outro@x.com']:null);
+  try{
+    const alvo={id:'B9',email:'outro@x.com',nome:'Outro',equipe:'t',equipeNome:'T',perfil:'pro',cpf:'111'};
+    const r=await apagarDadosDaConta(alvo,{seco:[]});
+    a.eq(r.cadastroApagado,true,'o cadastro sai apesar da recusa');
+    a.ok(apagadas.includes('eq_t_perf_B9'),'o snapshot de performance é delete, e passa');
+    a.ok(r.falhas.some(x=>x.rot==='equipe: lista de membros'),'a sobra é identificada');
+  } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+teste('exclusão admin','o X não aparece na própria conta',a=>{
+  _atleta(); S.u.email='barbato.bruno@gmail.com';
+  const _sh=window.sheet; let html='';
+  window.sheet=h=>{html=h};
+  try{
+    S.equipesDevList=[];
+    S.adminUsuarios=[{email:'barbato.bruno@gmail.com',nome:'Bruno',perfil:'pro'},
+                     {email:'outro@x.com',nome:'Outro',perfil:'pro'}];
+    abrirAdminUsuario('barbato.bruno@gmail.com');
+    a.ok(!/apagarUsuarioAdmin/.test(html),'na minha própria conta não há X');
+    a.ok(/você/.test(html),'e a folha diz que sou eu');
+    abrirAdminUsuario('outro@x.com');
+    a.ok(/apagarUsuarioAdmin\('outro@x\.com'\)/.test(html),'na dos outros, há');
+  } finally { window.sheet=_sh; }});
+teste('exclusão admin','quem não é administrador não apaga ninguém',a=>{
+  _naoAdmin('tecnico');
+  const _sh=window.sheet; let chamou=false; window.sheet=()=>{chamou=true};
+  try{
+    S.adminUsuarios=[{email:'outro@x.com',nome:'Outro',perfil:'pro'}];
+    apagarUsuarioAdmin('outro@x.com');
+    a.ok(!chamou,'a folha de confirmação nem abre');
+  } finally { window.sheet=_sh; }});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -7819,7 +7878,18 @@ function abrirAdminUsuario(email){
   const u=(S.adminUsuarios||[]).find(x=>x.email===email);if(!u)return;
   const eqs=S.equipesDevList||[];
   const conf=u.confirmacaoEmail||null, confRot=conf?.status==='confirmado'?'Confirmado':conf?.status==='enviado'?'Envio aceito pelo Firebase':conf?.status==='falhou'?'Envio recusado pelo Firebase':'Sem diagnóstico (cadastro antigo)';
-  sheet(`<h2>Gerenciar usuário</h2><div class="small muted">${esc(u.email)}</div>
+  /* O ✕ fica no cabeçalho, já dois cliques dentro (lista → nome → ✕), e
+     nunca na linha da lista: um toque errado rolando 50 nomes apagaria a conta
+     de alguém.
+
+     ⚠️ E vem com a palavra "apagar" colada. Um ✕ vermelho sozinho no canto
+     superior direito de uma folha é lido como "fechar" por qualquer pessoa —
+     `title` não aparece no celular, e descobrir o engano pela folha de
+     confirmação de exclusão é tarde demais para o susto. */
+  sheet(`<div class="row"><h2 style="margin:0">Gerenciar usuário</h2><div class="grow"></div>
+      ${u.email===S.u.email?'<span class="xs muted">você</span>'
+        :`<button class="sm ghost" style="color:var(--clock)" title="Apagar este usuário" onclick="apagarUsuarioAdmin('${esc(u.email)}')">✕ apagar</button>`}</div>
+    <div class="small muted">${esc(u.email)}</div>
     <div class="note ${conf?.status==='falhou'?'warn':conf?.status==='confirmado'?'ok':''}" style="margin:10px 0"><b>E-mail: ${confRot}</b>${conf?.erro?`<div class="xs muted" style="margin-top:3px">Erro: ${esc(conf.erro)}</div>`:''}<div class="xs muted" style="margin-top:3px">Isto confirma o pedido de envio, não a entrega na caixa postal.</div></div>
     <div class="field"><label for="auNome">Nome</label><input id="auNome" value="${esc(u.nome||'')}"></div>
     <div class="field"><label for="auPerfil">Perfil</label><select id="auPerfil">${[['atleta','Atleta'],['pro','Atleta PRO'],['tecnico','Técnico']].map(([v,n])=>`<option value="${v}" ${u.perfil===v?'selected':''}>${n}</option>`).join('')}</select></div>
@@ -7828,6 +7898,69 @@ function abrirAdminUsuario(email){
     <label class="small" style="display:flex;gap:8px;margin:10px 0"><input id="auAprov" type="checkbox" style="width:auto" ${u.aprovado!==false?'checked':''}>Vínculo de acesso aprovado</label>
     <label class="small" style="display:flex;gap:8px;margin:10px 0 16px"><input id="auAtivo" type="checkbox" style="width:auto" ${u.ativo!==false?'checked':''}>Conta ativa</label>
     <button class="primary full" onclick="salvarAdminUsuario('${esc(u.email)}')">Salvar alterações</button>`);
+}
+/* ── O ADMINISTRADOR APAGA A CONTA DE OUTRA PESSOA ───────────────────
+   Reaproveita `apagarDadosDaConta`, a mesma rotina do "apagar minha conta"
+   (v192): ela é inteiramente parametrizada por `u`, não olha `S.u`, e já sabe
+   a ordem certa — anexo antes do pro_, cadastro por último. Escrever uma
+   segunda rotina de exclusão seria garantir que uma das duas esquecesse a
+   Saúde ou as cópias diárias.
+
+   ⚠️ DUAS COISAS NÃO SAEM DAQUI, e a tela diz as duas:
+
+   1. O LOGIN do Firebase Auth. Só o próprio usuário apaga o dele
+      (`currentUser.delete()`) ou o Admin SDK, que exige servidor. Na prática
+      a pessoa fica trancada do lado de fora — sem `u_<email>`, o
+      `autenticarFB` recusa a entrada — mas também não consegue se cadastrar
+      de novo com o mesmo e-mail. Quem quiser liberar o endereço remove o
+      login no Console › Authentication › Users.
+
+   2. Os documentos da EQUIPE (lista de membros, liberação de CPF, o vínculo
+      do técnico). As regras dão `delete` de tudo ao administrador, mas o
+      `update` de `eq_*` continua só para o técnico DAQUELA equipe — e esses
+      passos são update, não delete. Enquanto a regra não mudar, eles falham
+      e o relatório nomeia o que ficou. */
+function apagarUsuarioAdmin(email){
+  if(!ehAdmin())return;
+  const u=(S.adminUsuarios||[]).find(x=>x.email===email); if(!u)return;
+  if(u.email===S.u.email)return alerta('Não dá por aqui',
+    'Esta é a sua própria conta. Para apagá-la, use Ajustes › Apagar minha conta — lá o app também remove o seu login.');
+  sheet(`<h2>Apagar ${esc(u.nome||u.email)}?</h2>
+    <div class="small muted" style="margin-top:2px">${esc(u.email)}</div>
+    <div class="note" style="margin:12px 0;border-color:var(--clock)"><b>Isto não tem volta.</b>
+      <div class="xs" style="margin-top:6px">Sai tudo que é da pessoa: marcas, Saúde, exames e anexos,
+      bioimpedância, treinos pessoais, as cópias diárias dos últimos 7 dias e o cadastro.</div>
+      <div class="xs muted" style="margin-top:6px"><b>Fica:</b> o login no Firebase Auth — a pessoa não
+      entra mais, mas o e-mail dela também não pode ser reusado até você remover em
+      Console › Authentication › Users. Os treinos lançados pela equipe também ficam.</div></div>
+    <button class="full danger" onclick="confirmarApagarUsuarioAdmin('${esc(u.email)}')">Apagar definitivamente</button>
+    <button class="full ghost" style="margin-top:8px" onclick="abrirAdminUsuario('${esc(u.email)}')">Cancelar</button>`);
+}
+async function confirmarApagarUsuarioAdmin(email){
+  if(!ehAdmin())return;
+  const u=await DB.get(kUser(email));
+  if(!u)return toast('Usuário não encontrado');
+  if(u.email===S.u.email)return;
+  toast('Apagando…');
+  const r=await apagarDadosDaConta(u,null);
+  await registrarAuditoria('apagar_usuario',email,u,null);
+  fecharSheet();
+  S.adminUsuarios=null; S.pendAdmin=null;
+  await carregarAdminUsuarios(); await carregarPendentesAdmin(true);
+  render();
+  if(!r.cadastroApagado)return alerta('Conta NÃO apagada',
+    `O cadastro de <b>${esc(u.nome||email)}</b> continua no banco, então nada foi concluído.`
+    +`<br><br>O que falhou: <b>${esc((r.falhas[0]&&r.falhas[0].erro)||'desconhecido')}</b>.`);
+  const eqFalhou=r.falhas.filter(x=>x.rot.indexOf('equipe:')===0);
+  if(eqFalhou.length)return alerta('Conta apagada, com sobra',
+    `Os dados de <b>${esc(u.nome||email)}</b> foram removidos.`
+    +`<br><br>Ficou para trás, porque é documento da equipe e as regras reservam a escrita ao técnico dela: `
+    +`<b>${eqFalhou.map(x=>esc(x.rot.replace('equipe: ',''))).join(', ')}</b>.`
+    +`<br><br>Peça ao técnico de ${esc(u.equipeNome||u.equipe||'')} para remover, ou publique a regra que libera o administrador.`);
+  /* "Ana apagado" — o app não sabe o gênero de ninguém e não tem por que
+     adivinhar. Concordando com "conta", a frase fica certa para qualquer
+     pessoa. */
+  toast('Conta de '+prim(u.nome||email)+' apagada');
 }
 async function registrarAuditoria(acao,alvo,antes,depois){if(!ehAdmin())return;await DB.set(`admin_audit_${Date.now()}_${uid()}`,{acao,alvo,admin:S.u.email,em:Date.now(),antes,depois})}
 async function salvarAdminUsuario(email){
