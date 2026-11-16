@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v197"></script>
-<script src="./inicio-e-grupos.js?v=v197"></script>
+<script src="./persistencia-segura.js?v=v198"></script>
+<script src="./inicio-e-grupos.js?v=v198"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v197';
+const VER='v198';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3358,7 +3358,9 @@ function telaNovoTreino(){
           <option value="0" ${R.parcial25==='0'?'selected':''}>Não pegar</option>
         </select></div>
     </div>
-    <div class="xs muted" style="margin:-4px 0 8px">Na piscina de 50m, a parcial de 25m é pega só nos tiros da série principal. Em águas abertas, o atleta lança o ritmo médio por 100m.</div>
+    <div class="xs muted" style="margin:-4px 0 8px">Parcial de 25 m${info('Parcial de 25 m',
+      `Na piscina de 50 m, a parcial de 25 m é pega só nos tiros da <b>série principal</b> — pedir a cada tiro de aquecimento só geraria número que ninguém cronometra.`
+      +`<br><br>Em águas abertas não há parcial de 25: o atleta lança o <b>ritmo médio por 100 m</b>.`)}</div>
     <div class="field"><label>Título</label><input id="ntTitulo" autocapitalize="sentences" value="${esc(R.titulo||'')}" placeholder="ex.: Velocidade e filipina"></div>
     <div class="field"><label>Cole o treino <span class="xs muted">(ou anexe um PDF abaixo)</span></label>
       <textarea id="ntTexto" onfocus="S.escrevendo=true" onblur="S.escrevendo=false" oninput="if(S.rascunho)S.rascunho.texto=this.value" placeholder="Aquecimento&#10;400 livre solto&#10;&#10;Principal&#10;8x50 peito saída 1'20 forte&#10;16x25 tiro máximo pausa 45&quot;">${esc(R.texto||'')}</textarea></div>
@@ -3375,8 +3377,9 @@ function telaNovoTreino(){
         <span class="grow"><b>${esc(a.nome)}</b><span class="xs muted" style="display:block">${esc(a.nivel||'')} · ${a.tipo==='aguas'?'águas abertas':'piscina'}</span></span>
       </button>`).join(''):'<div class="small muted">Nenhum atleta cadastrado ainda. Libere CPFs na aba Elenco.</div>'}
     <div class="small muted" style="margin-top:10px">${S.selMulti.length} selecionado(s)</div>
-  </div>`:`<div class="card"><div class="eyebrow">treino pessoal</div>
-    <p class="small muted" style="margin-top:6px">Este treino é só seu. Ele entra no seu histórico, na sua carga e no seu relatório. Os treinos passados pelo técnico aparecem junto, mas continuam separados.</p></div>`}
+  </div>`:`<div class="card"><div class="eyebrow">treino pessoal${info('Treino pessoal',
+    `Este treino é só seu. Ele entra no seu histórico, na sua carga e no seu relatório.`
+    +`<br><br>Os treinos passados pelo técnico aparecem junto no calendário, mas continuam separados — nenhum dos dois contamina o outro.`)}</div></div>`}
   <button class="primary full" onclick="salvarTreino()">${ed?'Salvar alterações':(ehGestor()?'Publicar treino':'Salvar treino')}</button>
   <div style="height:14px"></div>`;
 }
@@ -3652,7 +3655,8 @@ function telaTreinoDetalhe(){
       <div class="field"><label>Duração <span class="xs muted">mm:ss ou hh:mm:ss</span></label>
         <input inputmode="text" value="${s.dur!=null?s.dur:''}" onchange="setSessao('${t.id}','${at.id}','dur',durMin(this.value))"></div>
     </div>
-    <div class="xs muted">RPE × duração vira a <b>carga da sessão</b> — compara natação e musculação no relatório.</div>
+    <div class="xs muted">carga da sessão${info('RPE × duração',
+      `RPE × duração vira a <b>carga da sessão</b>, em UA. É o que põe natação e musculação na mesma escala no relatório.`)}</div>
   </div>`})():''}
   ${alvo.length>1?`<div class="card tight" style="overflow-x:auto"><div class="row" style="min-width:max-content">
     ${alvo.map(a=>`<button class="sm ${at&&at.id===a.id?'primary':'ghost'}" onclick="S.atletaSel='${a.id}';render()">${esc(prim(a.nome))}</button>`).join('')}
@@ -3664,7 +3668,9 @@ function telaTreinoDetalhe(){
   <div class="row" style="margin:16px 0 30px">
     <button class="ghost full" onclick="compartilharTreino()">Compartilhar treino e tempos</button>
   </div>
-  ${t.origem?.tipo==='grupo'?'<div class="note"><p class="small">Este treino veio de um grupo. Seus tempos continuam privados até você escolher enviá-los.</p><button class="full" onclick="compartilharTreinoGrupo()">Enviar meu acompanhamento ao técnico do grupo</button><button class="ghost full" style="margin-top:8px" onclick="revogarCompartilhamentoGrupo()">Remover acompanhamento compartilhado</button></div>':''}`;
+  ${t.origem?.tipo==='grupo'?`<div class="note"><p class="small">Treino de grupo · seus tempos são privados${info('Treino vindo de um grupo',
+    `Este treino foi publicado num grupo do qual você participa. <b>Seus tempos continuam privados</b> até você escolher enviá-los.`
+    +`<br><br>Enviar o acompanhamento mostra os seus tempos ao técnico do grupo; remover desfaz isso a qualquer momento.`)}</p>`+'<button class="full" onclick="compartilharTreinoGrupo()">Enviar meu acompanhamento ao técnico do grupo</button><button class="ghost full" style="margin-top:8px" onclick="revogarCompartilhamentoGrupo()">Remover acompanhamento compartilhado</button></div>':''}`;
 }
 /* nº de rodadas EFETIVO: do interpretador (item.rodadas) OU adicionadas à mão
    pelo atleta/técnico (rec.nrd). Assim dá para lançar 2ª/3ª rodada em qualquer série. */
@@ -4416,8 +4422,10 @@ function telaTreinosAtleta(){
   </div>
   ${S.treinoView==='lista'?grupoTreinos(lista,cardFn):calendarioTreinos(lista,cardFn,'abrirTreinoExtra')}`:
     ''}
-  ${lista.length?`<button class="ghost full" style="margin-top:14px" onclick="conferirMetragemTodos()">Conferir a metragem dos treinos</button>
-  <div class="xs muted" style="margin-top:4px;text-align:center">Relê o texto de cada treino com as correções mais novas do app. Mostra o que mudaria antes de gravar.</div>`:''}`;
+  ${lista.length?`<button class="ghost full" style="margin-top:14px" onclick="conferirMetragemTodos()">Conferir a metragem dos treinos</button>${info('Conferir a metragem',
+    `Relê o texto de cada treino com as correções mais novas do app — o parser melhorou várias vezes, e treino antigo guardou a leitura antiga.`
+    +`<br><br>Mostra o que mudaria <b>antes</b> de gravar. Nada é alterado sem você confirmar.`)}
+  `:''}`;
 }
 
 /* =====================================================================
@@ -7989,31 +7997,36 @@ function telaEquipes(){
     ${visiveis.length?visiveis.slice(0,50).map(u=>{const pend=u.aprovado===false&&(u.equipe||u.perfil==='tecnico');return`<button class="lst full" style="text-align:left" onclick="abrirAdminUsuario('${esc(u.email)}')"><span class="av">${esc((u.nome||'?')[0])}</span><span class="grow"><b>${esc(u.nome||u.email)}</b><span class="xs muted" style="display:block">${esc(u.email)} · ${esc(u.perfil||'')} · ${esc(nomeAfiliacao(u)||'independente')}${u.equipeNome?' · técnico: '+esc(u.equipeNome):''}</span></span>${pend?'<span class="tag y">pendente</span>':''}${u.ativo===false?'<span class="tag w">inativo</span>':''}</button>`}).join(''):'<div class="small muted">Nenhum usuário encontrado.</div>'}
   </div>
   <div class="card">
-    <div class="eyebrow">nova equipe</div>
+    <div class="eyebrow">nova equipe${info('Criar uma equipe',
+      `A equipe fica <b>apta</b> para o técnico se cadastrar escolhendo-a na lista; depois você libera o técnico em <b>Técnicos</b>.`
+      +`<br><br>Não precisa do e-mail dele — é ele quem vem até a equipe, não o contrário.`)}</div>
     <div class="field" style="margin-top:8px"><label>Equipe do catálogo</label>
       <select id="deqCat" onchange="var w=document.getElementById('deqNomeWrap');if(w)w.style.display=this.value==='__custom__'?'':'none'"><option value="">— escolher da lista —</option>${opts}<option value="__custom__">Outra (digitar)…</option></select></div>
     <div class="field" id="deqNomeWrap" style="display:none"><label>Nome (fora da lista)</label><input id="deqNome" autocapitalize="words" placeholder="ex.: Time Águia"></div>
     <button class="primary full" onclick="criarEquipeDevTela()">Criar equipe</button>
-    <div class="xs muted" style="margin-top:6px">A equipe fica <b>apta</b> para o técnico se cadastrar escolhendo-a; depois você libera o técnico em <b>Técnicos</b>. Não precisa do e-mail dele.</div>
   </div>
   <div class="card">
-    <div class="eyebrow">todas as equipes do banco (${lst.length})</div>
-    <p class="small muted" style="margin:4px 0 8px">Toque em <b>assumir</b> para entrar numa equipe (recupera os treinos guardados nela). Você está em: <b>${esc(S.u.equipeNome||S.u.equipe||'—')}</b>.</p>
+    <div class="eyebrow">todas as equipes do banco (${lst.length})${info('Assumir uma equipe',
+      `<b>Assumir</b> coloca você dentro da equipe, com os treinos guardados nela — é por onde se recupera uma equipe órfã ou se confere o que o técnico vê.`
+      +`<br><br>O ✕ apaga a equipe do banco. Antes de apagar, funda com o destino certo, para não levar treino junto.`)}</div>
+    <p class="small muted" style="margin:4px 0 8px">Você está em: <b>${esc(S.u.equipeNome||S.u.equipe||'—')}</b></p>
     ${lst.length?lst.map(e=>`<div class="lst" style="${e.slug===S.u.equipe?'background:var(--deck)':''}"><span class="av">▤</span>
       <span class="grow"><b>${esc(e.nome)}</b><span class="xs muted" style="display:block">${e.treinos} treino(s) · ${e.membros} membro(s) · ${e.tecnicoEmail?('téc: '+esc(e.tecnicoEmail)):'sem técnico'}</span></span>
       ${e.slug===S.u.equipe?'<span class="tag">atual</span>':`<button class="sm primary" onclick="assumirEquipe('${e.slug}',${JSON.stringify(e.nome).replace(/"/g,'&quot;')})">assumir</button>`}
       <button class="sm ghost" style="color:var(--clock);margin-left:4px" onclick="apagarEquipeDevTela('${e.slug}')">✕</button></div>`).join(''):'<div class="small muted" style="margin-top:6px">Nenhuma equipe no banco.</div>'}
   </div>
   ${lst.length>1?`<div class="card">
-    <div class="eyebrow">fundir equipes</div>
-    <p class="small muted" style="margin:4px 0 8px">Move atletas, treinos, competições e liberações da <b>origem</b> (nome errado) para o <b>destino</b> (correto), sem perder dados. Depois confira e apague a origem no ✕.</p>
+    <div class="eyebrow">fundir equipes${info('Fundir equipes',
+      `Move atletas, treinos, competições e liberações da <b>origem</b> (nome errado) para o <b>destino</b> (correto), sem perder dados.`
+      +`<br><br>Depois da fusão, confira o destino e só então apague a origem no ✕.`)}</div>
     <div class="field"><label>Origem (nome errado)</label><select id="mgFrom">${lst.map(e=>`<option value="${e.slug}">${esc(e.nome)}</option>`).join('')}</select></div>
     <div class="field"><label>Destino (correto)</label><select id="mgTo">${lst.map(e=>`<option value="${e.slug}">${esc(e.nome)}</option>`).join('')}</select></div>
     <button class="primary full" onclick="mesclarEquipe((document.getElementById('mgFrom')||{}).value,(document.getElementById('mgTo')||{}).value)">Fundir origem → destino</button>
   </div>`:''}
   ${lst.length?`<div class="card">
-    <div class="eyebrow">vincular atleta existente</div>
-    <p class="small muted" style="margin:4px 0 8px">Coloque um atleta já cadastrado numa equipe (ou mude a equipe dele). Use o e-mail com que ele se cadastrou.</p>
+    <div class="eyebrow">vincular atleta existente${info('Vincular atleta existente',
+      `Coloca um atleta já cadastrado numa equipe, ou muda a equipe dele.`
+      +`<br><br>Use o <b>e-mail com que ele se cadastrou</b> — é a chave do cadastro, não o nome.`)}</div>
     <div class="field"><label>E-mail do atleta</label><input id="vaEmail" inputmode="email" autocapitalize="off" autocorrect="off" placeholder="atleta@email.com"></div>
     <div class="field"><label>Equipe</label><select id="vaTeam">${lst.map(e=>`<option value="${e.slug}">${esc(e.nome)}</option>`).join('')}</select></div>
     <button class="primary full" onclick="vincularAtletaEquipe()">Vincular atleta</button>
@@ -8698,8 +8711,8 @@ function blocoCompAtletas(){
   for(const a of (S.elenco||[]))for(const mc of (a.competicoes||[]))rows.push({a,mc});
   if(!rows.length)return'';
   rows.sort((x,y)=>(y.mc.data||'').localeCompare(x.mc.data||''));
-  return`<div class="card"><div class="eyebrow">competições dos atletas</div>
-    <p class="small muted" style="margin:4px 0 8px">Cadastradas pelos próprios atletas — com as provas e tempos que eles lançaram.</p>
+  return`<div class="card"><div class="eyebrow">competições dos atletas${info('Competições dos atletas',
+      `Cadastradas pelos próprios atletas, com as provas e os tempos que eles lançaram — não são as competições que você abriu para a equipe.`)}</div>
     ${rows.map(({a,mc})=>`<button class="lst" onclick="verCompAtleta('${a.id}','${mc.id}')">
       <span class="av">${iniciais(a.nome)}</span>
       <span class="grow"><b>${esc(mc.nome)}</b><span class="xs muted" style="display:block">por ${esc(prim(a.nome))} · ${brData(mc.data)} · ${mc.piscina} · ${(mc.provas||[]).length} prova(s)</span></span>
@@ -8735,7 +8748,9 @@ function rosterCard(c){
   const ats=Object.values(byAt).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   if(!ats.length)return'';
   return`<div class="card"><div class="eyebrow">elenco na competição — ${ats.length} atleta(s)</div>
-    <p class="small muted" style="margin:4px 0 8px">Atletas da sua equipe no balizamento e as provas de cada um (com o tempo de inscrição). Toque numa prova para lançar os tempos.</p>
+    <p class="small muted" style="margin:4px 0 8px">Toque numa prova para lançar os tempos${info('Elenco na competição',
+      `Os atletas da sua equipe encontrados no balizamento, e as provas de cada um com o tempo de inscrição.`
+      +`<br><br>Quem aparece sem a etiqueta <b>no app</b> está no PDF mas não tem cadastro — o nome foi lido do balizamento.`)}</p>
     ${ats.map(a=>`<div style="padding:8px 0;border-top:1px solid var(--line)">
       <div class="row" style="align-items:baseline;gap:6px"><b>${esc(a.nome)}</b>${a.faixa?`<span class="xs muted">${esc(a.faixa)}</span>`:''}${a.atletaId?'<span class="tag" style="border-color:var(--rope);color:var(--rope)">no app</span>':''}</div>
       <div class="chips" style="margin-top:4px">${a.provas.sort((x,y)=>x.ip-y.ip).map(({p,ip,i})=>{
@@ -8809,7 +8824,9 @@ function blocoBalizamento(){
   return`<div class="card noprint">
     <div class="eyebrow">balizamento</div>
     <h3 style="margin:4px 0 8px">Carregar a lista de largada</h3>
-    <p class="small muted">Suba o <b>PDF</b> do balizamento. O app acha os <b>seus atletas do Elenco</b> pelo nome e monta provas, séries, raias e tempos de inscrição. (Foto não dá para ler sem servidor — use PDF ou cole o texto.)</p>
+    <p class="small muted">Suba o <b>PDF</b> do balizamento${info('Carregar o balizamento',
+      `O app acha os <b>seus atletas do Elenco</b> pelo nome e monta provas, séries, raias e tempos de inscrição.`
+      +`<br><br>Foto não dá para ler sem servidor — use PDF ou cole o texto.`)}</p>
     <div class="field"><input type="file" id="fBal" accept="application/pdf,.pdf" onchange="lerBalizamento(this)"></div>
     <div id="balStatus" class="small muted"></div>
     <div class="sep"></div>
@@ -9144,7 +9161,9 @@ function blocoResultados(){
   return`<div class="card noprint">
     <div class="eyebrow">resultados oficiais</div>
     <h3 style="margin:4px 0 8px">Puxar os tempos oficiais</h3>
-    <p class="small muted">Suba o <b>PDF de resultados</b> da competição. O app acha os atletas da sua equipe e preenche o <b>tempo oficial e as parciais</b> de cada prova. Depois cada atleta consolida no seu <b>Marcas</b>.</p>
+    <p class="small muted">Suba o <b>PDF de resultados</b> da competição${info('Puxar os tempos oficiais',
+      `O app acha os atletas da sua equipe e preenche o <b>tempo oficial e as parciais</b> de cada prova.`
+      +`<br><br>Depois cada atleta consolida no <b>Marcas</b> dele — o tempo oficial não entra no histórico pessoal sem o aceite do próprio atleta.`)}</p>
     <input type="file" id="fRes" accept="application/pdf,.pdf" style="display:none" onchange="lerResultados(this)">
     <button class="primary full" onclick="document.getElementById('fRes').click()">Importar resultados (PDF)</button>
     <div id="resStatus" class="small muted" style="margin-top:6px"></div>
@@ -9444,7 +9463,10 @@ function telaMinhaComp(){
   <div class="row" style="margin:16px 0 4px"><button class="sm ghost" onclick="S.minhaComp=null;render()">‹ Competições</button></div>
   <div><div class="eyebrow">${periodoComp(mc)} · ${mc.piscina==='LC50'?'piscina 50m':'piscina 25m'}</div><h2>${esc(mc.nome)}</h2></div>
   <div class="card"><div class="eyebrow">balizamento em PDF</div>
-    <p class="small muted" style="margin:4px 0 6px">Suba o PDF e eu preencho as <b>suas</b> provas pelo seu nome — formato brasileiro (ABMN) ou internacional (HY-TEK). Do <b>Meet Program</b> (depois do sorteio) vem série, raia e a <b>série inteira</b>; do <b>psych sheet</b> (antes) vem só a prova e o tempo de inscrição, porque série e raia ainda não existem — subir o Meet Program depois completa a mesma prova, sem duplicar. Melhor esforço: confira na súmula.</p>
+    <p class="small muted" style="margin:4px 0 6px">Suba o PDF e eu preencho as <b>suas</b> provas pelo seu nome${info('Balizamento em PDF',
+      `Formato brasileiro (ABMN) ou internacional (HY-TEK).`
+      +`<br><br>Do <b>Meet Program</b> (depois do sorteio) vem série, raia e a <b>série inteira</b>. Do <b>psych sheet</b> (antes) vem só a prova e o tempo de inscrição, porque série e raia ainda não existem — subir o Meet Program depois completa a mesma prova, sem duplicar.`
+      +`<br><br>Melhor esforço: confira na súmula.`)}</p>
     <div class="field"><input type="file" accept="application/pdf,.pdf" onchange="importarBalizamento(this)"></div>
   </div>
   <div class="row" style="margin:8px 0"><div class="eyebrow">minhas provas</div><div class="grow"></div>
