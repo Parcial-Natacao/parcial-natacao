@@ -559,14 +559,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v192"></script>
-<script src="./inicio-e-grupos.js?v=v192"></script>
+<script src="./persistencia-segura.js?v=v195"></script>
+<script src="./inicio-e-grupos.js?v=v195"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v192';
+const VER='v195';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1670,6 +1670,17 @@ async function cadastrarFB(dados){
   if(!await DB.set(kUser(u.email),u))return abortar('Não consegui salvar seu perfil. Tente novamente.');
   if(u.aprovado||!FB)await transacao(kEqUsers(eqSlug),us=>{us=us||[]; if(!us.includes(u.email))us.push(u.email); return us;});
   if(perfil==='tecnico')await registrarTecnicoDev(u);
+  /* ⚠️ O NOME PRECISA ESTAR NO AUTH ANTES DO E-MAIL SAIR.
+     O modelo de confirmação do Firebase começa com "Olá, %DISPLAY_NAME%", e
+     %DISPLAY_NAME% é o displayName do Auth — que o app nunca gravava. Todo
+     mundo recebia "Olá, ," na primeira mensagem que o app manda na vida.
+     O corpo do modelo está bloqueado para este projeto pelo Google ("as
+     atualizações de modelos de e-mail não estão disponíveis"), então
+     consertar o lado do app é o único caminho.
+     Também faz a lista de usuários do Console deixar de ser uma coluna de
+     e-mails sem nome. Não aborta o cadastro se falhar: é cosmético. */
+  try{ await cred.user.updateProfile({displayName:u.nome}); }
+  catch(e){ console.warn('displayName',e&&e.message); }
   const envio=await enviarConfirmacaoFirebase(cred.user);   /* confirma o e-mail por link */
   S.emailPendente=em; S.vista='verificar'; S.u=null; render();
   toast(envio.ok?'Conta criada. Confirme o e-mail para continuar.':'Conta criada, mas o e-mail não saiu. Veja o aviso e tente novamente.');
@@ -1754,8 +1765,9 @@ async function entrarSessao(u){
   S.eq=u.equipe?await DB.get(kEq(u.equipe)):null;
   S.vista='app'; S.aba='treinos'; S.sub=null; S.pilha=[]; S.gestao=false;
   S.modoAtleta=chapeuSalvo(u);
-  S.grupos=null;S.grDetalhe=null;S.grGrupoId=null;S.gruposErro=null;S._sauBase=null;
+  S.grupos=null;S.grDetalhe=null;S.grGrupoId=null;S.gruposErro=null;S._sauBase=null;S.pendAdmin=null;
   await carregarDados(); ligarSincronia();
+  conferirLiberacao();
   try{await carregarGrupos();}catch(e){S.grupos=[];S.gruposErro=e.message;}
   if(u.perfil==='tecnico'&&!u.equipe)S.aba='grupos';
   render();await receberConviteNoLogin();
@@ -1870,6 +1882,7 @@ async function carregarDados(){
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCenso=censoPro(S.pro);   /* referência da trava anti-apagamento */
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
     if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
+    if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
@@ -1916,6 +1929,7 @@ async function carregarDados(){
   if(!S.laudoAtleta)try{ await receberABMNdoTecnico(); }catch(_){}
   if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
+  if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
 }
 /* ── A FOTOGRAFIA DO CACHE VALE MAIS QUE A DO SERVIDOR? ─────────────────────
    Compara o que o servidor acabou de entregar com a cópia que estava no cache
@@ -2012,6 +2026,7 @@ async function sincronizar(sil){
   const u=await DB.get(kUser(S.u.email));
   if(u)S.u=mesclaUsuarioSincronia(S.u,u,S.adminOrig);
   await carregarDados(); if(S.u.equipe&&S.u.aprovado!==false)ligarSincronia(); if(!sil)toast('Atualizado'); render();
+  conferirLiberacao();
 }
 setInterval(()=>{if(S.u&&!usuarioDigitando())sincronizar(true)},12000);
 
@@ -2682,7 +2697,7 @@ function renderInterno(){
   mapa.grupos=telaGrupos;
   /* cardCaixaPreta vem primeiro, e em todas as abas: perda de dado não espera
      o usuário passar na aba certa — e a cópia que a repõe é perecível. */
-  app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
+  app.innerHTML=cardCaixaPreta()+avisoIcone()+bannerPendentes()+bannerEquipe()+(mapa[S.aba]||Object.values(mapa)[0])();
   marcarSincronia();
   _irAteHoje();
 }
@@ -2701,6 +2716,88 @@ function corEquipe(nome){
   return temaEscuro()
     ? {bg:`hsl(${hue},32%,15%)`,ac:`hsl(${hue},62%,72%)`}
     : {bg:`hsl(${hue},45%,95%)`,ac:`hsl(${hue},55%,40%)`};
+}
+/* ── QUEM LIBERA PRECISA SABER QUE TEM GENTE ESPERANDO ───────────────
+   O pedido de liberação existia dentro da tela Equipe (técnico) e da aba
+   Equipes (administrador) — duas telas em que ninguém entra sem motivo. Quem
+   se cadastrava ficava parado até avisar por fora do app que havia se
+   cadastrado. O número sobe para o topo de QUALQUER aba, do mesmo jeito que
+   `cardCaixaPreta`: aviso que depende do usuário passar na aba certa não é
+   aviso, é sorte. */
+function pendentesDoGestor(){
+  return (S.elenco||[]).filter(a=>a&&a.aprovado===false);
+}
+/* O administrador aprova TÉCNICO, e técnico pendente não está em nenhum
+   elenco: a consulta do gestor filtra por equipe e por perfil atleta/pro.
+   Então aqui a busca é global e pelo campo espelhado `aprovado`. Ela devolve
+   só documentos u_ (nos outros o campo é nulo, e nulo não casa com false),
+   e as regras liberam todo u_ para o administrador — por isso a consulta de
+   coleção não é negada por inteiro. */
+let _pendAdmEm = 0;
+async function carregarPendentesAdmin(forcar){
+  if(!FB||!ehDev())return;
+  const agora=Date.now();
+  if(!forcar&&S.pendAdmin&&agora-_pendAdmEm<120000)return;   /* a sincronia roda a cada 12s; isto não */
+  _pendAdmEm=agora;
+  try{
+    const snap=await fdb.collection('kv').where('aprovado','==',false).get(), out=[];
+    snap.forEach(d=>{ if(!d.id.startsWith('u_'))return;
+      try{ const u=JSON.parse(d.data().v);
+        /* atleta independente nasce com aprovado=false e nunca precisa de
+           liberação: só é pendente quem pediu equipe ou é técnico */
+        if(u&&u.email&&(u.equipe||u.perfil==='tecnico'))out.push(u);
+      }catch(_){}});
+    S.pendAdmin=out.sort((x,y)=>(y.criadoEm||0)-(x.criadoEm||0));
+  }catch(e){ console.warn('carregarPendentesAdmin',e.message); S.pendAdmin=S.pendAdmin||[]; }
+}
+function bannerPendentes(){
+  if(!S.u||S.adminOrig)return'';
+  const adm=ehDev()?(S.pendAdmin||[]):[];
+  const ges=ehGestor()?pendentesDoGestor():[];
+  /* o administrador também é gestor da equipe em que entra: sem de-duplicar,
+     o mesmo atleta era contado duas vezes */
+  const vis=new Set(), lst=[];
+  for(const u of [...ges,...adm]){ const e=(u.email||'').toLowerCase(); if(e&&!vis.has(e)){vis.add(e);lst.push(u);} }
+  if(!lst.length)return'';
+  const destino=ehGestor()&&ges.length?'elenco':'equipes';
+  if(S.aba===destino&&!S.atletaSel&&!S.laudoAtleta)return'';   /* a lista já está na tela */
+  const n=lst.length;
+  const quem=n===1?esc(lst[0].nome||lst[0].email):n+' pessoas';
+  return`<div class="note warn" style="margin:10px 0 2px"><div class="row">
+    <span class="grow"><b>${n===1?'1 cadastro aguardando liberação':n+' cadastros aguardando liberação'}</b>
+      <div class="xs muted" style="margin-top:2px">${quem} ${n===1?'está':'estão'} sem acesso até você aprovar.</div></span>
+    <button class="sm" onclick="irPara('${destino}')">Ver</button></div></div>`;
+}
+/* ── E QUEM ESPERA PRECISA SABER QUE FOI LIBERADO ─────────────────────
+   A aprovação acontece no app de OUTRA pessoa. Quem se cadastrou só
+   descobria reabrindo o app por conta própria e vendo que a tela mudou — e
+   nem reparava no que mudou. A marca fica no aparelho, então o aviso aparece
+   tanto na troca ao vivo (a sincronia roda a cada 12s) quanto na primeira vez
+   que a pessoa reabre o app depois de liberada. O e-mail (backend/notificacoes.gs)
+   cobre quem não reabre. */
+const K_ESPERA=PFX+'espera_liberacao';
+function conferirLiberacao(){
+  /* devolve se avisou: o teste precisa disso para não depender do temporizador
+     — e um teste que deixa uma folha abrir 500 ms depois suja a tela de quem
+     estiver rodando a suíte */
+  if(!S.u)return false;
+  const email=String(S.u.email||'').toLowerCase();
+  const pendente=S.u.aprovado===false&&(S.u.equipe||S.u.perfil==='tecnico');
+  try{
+    if(pendente){ localStorage.setItem(K_ESPERA,email); return false; }
+    if(S.u.aprovado!==true)return false;
+    if(localStorage.getItem(K_ESPERA)!==email)return false;
+    localStorage.removeItem(K_ESPERA);
+  }catch(_){ return false; }
+  const tec=S.u.perfil==='tecnico';
+  setTimeout(()=>sheet(`<h2>Acesso liberado ✓</h2>
+    <p class="small" style="line-height:1.55;margin:8px 0 14px">Seu cadastro
+    ${tec?`de técnico d${S.u.equipeNome?'a equipe <b>'+esc(S.u.equipeNome)+'</b>':'o app'} foi aprovado pelo administrador`
+          :`n${S.u.equipeNome?'a equipe <b>'+esc(S.u.equipeNome)+'</b>':'o app'} foi aprovado pelo técnico`}.
+    ${tec?'A partir de agora você lança treinos, aprova atletas e abre competições.'
+         :'Os treinos da equipe e as competições já estão aqui.'}</p>
+    <button class="primary full" onclick="fecharSheet()">Começar</button>`),500);
+  return true;
 }
 function bannerEquipe(){
   if(!S.u)return'';
@@ -4392,6 +4489,7 @@ async function aprovarAtleta(id){
   if(!await DB.set(kUser(a.email),atualizado))return toast('Não consegui aprovar agora. Tente novamente.');
   Object.assign(a,atualizado);
   await transacao(kEqUsers(a.equipe),us=>{us=us||[];if(!us.includes(a.email))us.push(a.email);return us});
+  if(ehDev())await carregarPendentesAdmin(true);
   await carregarDados(); toast(prim(a.nome)+' liberado'); render();
 }
 
@@ -5450,6 +5548,114 @@ teste('exclusão','se o cadastro não sai, o login NÃO é apagado',async a=>{
     a.eq(r.cadastroApagado,false,'o app sabe que o cadastro ficou');
     a.ok(r.falhas.some(x=>/^u_/.test(x.rot)),'e registra qual passo falhou');
   } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+/* ── NINGUÉM AVISAVA NINGUÉM (v193) ────────────────────────────────────────
+   O pedido de liberação só existia dentro da tela Equipe e da aba Equipes.
+   Quem se cadastrava ficava parado, e quem aprova não sabia que havia fila. */
+teste('liberação','o número de pendentes aparece fora da tela Equipe',a=>{
+  _naoAdmin('tecnico'); S.aba='treinos'; S.pendAdmin=null;
+  S.elenco=[{id:'x',nome:'Ana Paula',email:'a@x.com',aprovado:false},
+            {id:'y',nome:'Bia',email:'b@x.com',aprovado:true}];
+  const h=bannerPendentes();
+  a.ok(/1 cadastro aguardando/.test(h),'conta só quem está pendente');
+  a.ok(/Ana Paula/.test(h),'e diz quem é, quando é uma pessoa só');
+  a.ok(/irPara\('elenco'\)/.test(h),'o botão leva para a tela da lista');});
+teste('liberação','na própria tela da lista o aviso some',a=>{
+  _naoAdmin('tecnico'); S.aba='elenco'; S.atletaSel=null; S.laudoAtleta=null; S.pendAdmin=null;
+  S.elenco=[{id:'x',nome:'Ana',email:'a@x.com',aprovado:false}];
+  a.eq(bannerPendentes(),'','a lista já está na frente dos olhos');});
+teste('liberação','sem pendente não há faixa',a=>{
+  _naoAdmin('tecnico'); S.aba='treinos'; S.pendAdmin=null;
+  S.elenco=[{id:'y',nome:'Bia',email:'b@x.com',aprovado:true}];
+  a.eq(bannerPendentes(),'','');});
+teste('liberação','o mesmo atleta não é contado duas vezes',a=>{
+  /* o administrador que entra numa equipe é gestor E administrador: as duas
+     listas trazem a mesma pessoa, e o aviso dizia "2 cadastros" */
+  _atleta(); S.u.perfil='tecnico'; S.modoAtleta=false; S.gestao=true; S.adminOrig=null; S.aba='treinos';
+  S.elenco=[{id:'x',nome:'Ana',email:'A@x.com',aprovado:false}];
+  S.pendAdmin=[{id:'x',nome:'Ana',email:'a@x.com',aprovado:false,equipe:'t'}];
+  a.ok(/1 cadastro aguardando/.test(bannerPendentes()),'e-mail é a identidade, sem olhar maiúscula');});
+teste('liberação','quem espera é avisado quando o acesso sai',a=>{
+  _atleta(); S.u.aprovado=false; S.u.equipe='t'; S.u.email='novo@x.com';
+  /* o aviso é adiado 500 ms para não disputar a tela com o render; aqui o
+     temporizador é desligado para o teste não abrir uma folha de verdade */
+  const _st=window.setTimeout; window.setTimeout=()=>0;
+  try{
+    localStorage.removeItem(K_ESPERA);
+    a.eq(conferirLiberacao(),false,'pendente não avisa nada');
+    a.eq(localStorage.getItem(K_ESPERA),'novo@x.com','primeiro o app marca a espera no aparelho');
+    S.u.aprovado=true;
+    a.eq(conferirLiberacao(),true,'na virada para aprovado, avisa');
+    a.eq(localStorage.getItem(K_ESPERA),null,'a marca é consumida');
+    a.eq(conferirLiberacao(),false,'e não volta a disparar na segunda passada');
+  } finally { window.setTimeout=_st; localStorage.removeItem(K_ESPERA); }});
+teste('liberação','atleta independente não vira pendente',a=>{
+  /* todo cadastro nasce com aprovado=false — a regra do Firestore exige isso.
+     Quem escolhe "ainda não tenho equipe" fica assim para sempre e não precisa
+     de liberação nenhuma: sem este filtro o administrador receberia um e-mail
+     por PRO que se cadastra sozinho. */
+  const pendente=u=>!!(u.equipe||u.perfil==='tecnico');
+  a.ok(!pendente({perfil:'pro',equipe:null}),'PRO sozinho não entra na fila');
+  a.ok(pendente({perfil:'pro',equipe:'t'}),'PRO que pediu equipe entra');
+  a.ok(pendente({perfil:'tecnico',equipe:null}),'técnico entra mesmo sem equipe ainda');});
+/* ── O ADMINISTRADOR APAGA A CONTA DE OUTRA PESSOA (v195) ──────────────────
+   Reaproveita `apagarDadosDaConta`, a mesma do "apagar minha conta". O risco
+   de uma segunda rotina era ela esquecer a Saúde ou as cópias diárias — por
+   isso o primeiro teste é justamente esse. */
+teste('exclusão admin','apaga tudo que é da pessoa, não só o cadastro',async a=>{
+  _atleta(); S.u.email='barbato.bruno@gmail.com';
+  const apagadas=[]; const _ap=window.apagarChave,_an=window.apagarAnexo,_set=DB.set,_get=DB.get;
+  window.apagarChave=async k=>{apagadas.push(k)};
+  window.apagarAnexo=async()=>{};
+  DB.set=async()=>{}; DB.get=async k=>(k==='pro_B9'?{seco:[]}:null);
+  try{
+    const alvo={id:'B9',email:'outro@x.com',nome:'Outro',equipe:null,perfil:'pro'};
+    const r=await apagarDadosDaConta(alvo,null);
+    a.ok(apagadas.includes('pro_B9'),'o pro_ sai');
+    a.ok(apagadas.includes('pro_B9_sau'),'a Saúde sai');
+    a.ok(apagadas.includes('pro_B9_bk3'),'as cópias diárias saem');
+    a.ok(apagadas.includes('pro_B9_bkundo'),'inclusive a de desfazer');
+    a.ok(apagadas.includes('u_outro@x.com'),'e o cadastro, por último');
+    a.eq(r.cadastroApagado,true,'');
+  } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+teste('exclusão admin','recusa na equipe não impede apagar os dados da pessoa',async a=>{
+  /* `eq_<id>_users` é update, e até a v195 o administrador não escrevia em
+     documento de equipe. O cadastro TEM que sair mesmo assim, e a sobra
+     precisa ser nomeada — não anunciada como sucesso. */
+  _atleta(); S.u.email='barbato.bruno@gmail.com';
+  const apagadas=[]; const _ap=window.apagarChave,_an=window.apagarAnexo,_set=DB.set,_get=DB.get;
+  window.apagarChave=async k=>{apagadas.push(k)};
+  window.apagarAnexo=async()=>{};
+  DB.set=async k=>{ if(/^eq_/.test(k))throw Error('Missing or insufficient permissions.') };
+  DB.get=async k=>(k==='eq_t_users'?['outro@x.com']:null);
+  try{
+    const alvo={id:'B9',email:'outro@x.com',nome:'Outro',equipe:'t',equipeNome:'T',perfil:'pro',cpf:'111'};
+    const r=await apagarDadosDaConta(alvo,{seco:[]});
+    a.eq(r.cadastroApagado,true,'o cadastro sai apesar da recusa');
+    a.ok(apagadas.includes('eq_t_perf_B9'),'o snapshot de performance é delete, e passa');
+    a.ok(r.falhas.some(x=>x.rot==='equipe: lista de membros'),'a sobra é identificada');
+  } finally { window.apagarChave=_ap; window.apagarAnexo=_an; DB.set=_set; DB.get=_get; }});
+teste('exclusão admin','o X não aparece na própria conta',a=>{
+  _atleta(); S.u.email='barbato.bruno@gmail.com';
+  const _sh=window.sheet; let html='';
+  window.sheet=h=>{html=h};
+  try{
+    S.equipesDevList=[];
+    S.adminUsuarios=[{email:'barbato.bruno@gmail.com',nome:'Bruno',perfil:'pro'},
+                     {email:'outro@x.com',nome:'Outro',perfil:'pro'}];
+    abrirAdminUsuario('barbato.bruno@gmail.com');
+    a.ok(!/apagarUsuarioAdmin/.test(html),'na minha própria conta não há X');
+    a.ok(/você/.test(html),'e a folha diz que sou eu');
+    abrirAdminUsuario('outro@x.com');
+    a.ok(/apagarUsuarioAdmin\('outro@x\.com'\)/.test(html),'na dos outros, há');
+  } finally { window.sheet=_sh; }});
+teste('exclusão admin','quem não é administrador não apaga ninguém',a=>{
+  _naoAdmin('tecnico');
+  const _sh=window.sheet; let chamou=false; window.sheet=()=>{chamou=true};
+  try{
+    S.adminUsuarios=[{email:'outro@x.com',nome:'Outro',perfil:'pro'}];
+    apagarUsuarioAdmin('outro@x.com');
+    a.ok(!chamou,'a folha de confirmação nem abre');
+  } finally { window.sheet=_sh; }});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -7672,7 +7878,18 @@ function abrirAdminUsuario(email){
   const u=(S.adminUsuarios||[]).find(x=>x.email===email);if(!u)return;
   const eqs=S.equipesDevList||[];
   const conf=u.confirmacaoEmail||null, confRot=conf?.status==='confirmado'?'Confirmado':conf?.status==='enviado'?'Envio aceito pelo Firebase':conf?.status==='falhou'?'Envio recusado pelo Firebase':'Sem diagnóstico (cadastro antigo)';
-  sheet(`<h2>Gerenciar usuário</h2><div class="small muted">${esc(u.email)}</div>
+  /* O ✕ fica no cabeçalho, já dois cliques dentro (lista → nome → ✕), e
+     nunca na linha da lista: um toque errado rolando 50 nomes apagaria a conta
+     de alguém.
+
+     ⚠️ E vem com a palavra "apagar" colada. Um ✕ vermelho sozinho no canto
+     superior direito de uma folha é lido como "fechar" por qualquer pessoa —
+     `title` não aparece no celular, e descobrir o engano pela folha de
+     confirmação de exclusão é tarde demais para o susto. */
+  sheet(`<div class="row"><h2 style="margin:0">Gerenciar usuário</h2><div class="grow"></div>
+      ${u.email===S.u.email?'<span class="xs muted">você</span>'
+        :`<button class="sm ghost" style="color:var(--clock)" title="Apagar este usuário" onclick="apagarUsuarioAdmin('${esc(u.email)}')">✕ apagar</button>`}</div>
+    <div class="small muted">${esc(u.email)}</div>
     <div class="note ${conf?.status==='falhou'?'warn':conf?.status==='confirmado'?'ok':''}" style="margin:10px 0"><b>E-mail: ${confRot}</b>${conf?.erro?`<div class="xs muted" style="margin-top:3px">Erro: ${esc(conf.erro)}</div>`:''}<div class="xs muted" style="margin-top:3px">Isto confirma o pedido de envio, não a entrega na caixa postal.</div></div>
     <div class="field"><label for="auNome">Nome</label><input id="auNome" value="${esc(u.nome||'')}"></div>
     <div class="field"><label for="auPerfil">Perfil</label><select id="auPerfil">${[['atleta','Atleta'],['pro','Atleta PRO'],['tecnico','Técnico']].map(([v,n])=>`<option value="${v}" ${u.perfil===v?'selected':''}>${n}</option>`).join('')}</select></div>
@@ -7682,6 +7899,69 @@ function abrirAdminUsuario(email){
     <label class="small" style="display:flex;gap:8px;margin:10px 0 16px"><input id="auAtivo" type="checkbox" style="width:auto" ${u.ativo!==false?'checked':''}>Conta ativa</label>
     <button class="primary full" onclick="salvarAdminUsuario('${esc(u.email)}')">Salvar alterações</button>`);
 }
+/* ── O ADMINISTRADOR APAGA A CONTA DE OUTRA PESSOA ───────────────────
+   Reaproveita `apagarDadosDaConta`, a mesma rotina do "apagar minha conta"
+   (v192): ela é inteiramente parametrizada por `u`, não olha `S.u`, e já sabe
+   a ordem certa — anexo antes do pro_, cadastro por último. Escrever uma
+   segunda rotina de exclusão seria garantir que uma das duas esquecesse a
+   Saúde ou as cópias diárias.
+
+   ⚠️ DUAS COISAS NÃO SAEM DAQUI, e a tela diz as duas:
+
+   1. O LOGIN do Firebase Auth. Só o próprio usuário apaga o dele
+      (`currentUser.delete()`) ou o Admin SDK, que exige servidor. Na prática
+      a pessoa fica trancada do lado de fora — sem `u_<email>`, o
+      `autenticarFB` recusa a entrada — mas também não consegue se cadastrar
+      de novo com o mesmo e-mail. Quem quiser liberar o endereço remove o
+      login no Console › Authentication › Users.
+
+   2. Os documentos da EQUIPE (lista de membros, liberação de CPF, o vínculo
+      do técnico). As regras dão `delete` de tudo ao administrador, mas o
+      `update` de `eq_*` continua só para o técnico DAQUELA equipe — e esses
+      passos são update, não delete. Enquanto a regra não mudar, eles falham
+      e o relatório nomeia o que ficou. */
+function apagarUsuarioAdmin(email){
+  if(!ehAdmin())return;
+  const u=(S.adminUsuarios||[]).find(x=>x.email===email); if(!u)return;
+  if(u.email===S.u.email)return alerta('Não dá por aqui',
+    'Esta é a sua própria conta. Para apagá-la, use Ajustes › Apagar minha conta — lá o app também remove o seu login.');
+  sheet(`<h2>Apagar ${esc(u.nome||u.email)}?</h2>
+    <div class="small muted" style="margin-top:2px">${esc(u.email)}</div>
+    <div class="note" style="margin:12px 0;border-color:var(--clock)"><b>Isto não tem volta.</b>
+      <div class="xs" style="margin-top:6px">Sai tudo que é da pessoa: marcas, Saúde, exames e anexos,
+      bioimpedância, treinos pessoais, as cópias diárias dos últimos 7 dias e o cadastro.</div>
+      <div class="xs muted" style="margin-top:6px"><b>Fica:</b> o login no Firebase Auth — a pessoa não
+      entra mais, mas o e-mail dela também não pode ser reusado até você remover em
+      Console › Authentication › Users. Os treinos lançados pela equipe também ficam.</div></div>
+    <button class="full danger" onclick="confirmarApagarUsuarioAdmin('${esc(u.email)}')">Apagar definitivamente</button>
+    <button class="full ghost" style="margin-top:8px" onclick="abrirAdminUsuario('${esc(u.email)}')">Cancelar</button>`);
+}
+async function confirmarApagarUsuarioAdmin(email){
+  if(!ehAdmin())return;
+  const u=await DB.get(kUser(email));
+  if(!u)return toast('Usuário não encontrado');
+  if(u.email===S.u.email)return;
+  toast('Apagando…');
+  const r=await apagarDadosDaConta(u,null);
+  await registrarAuditoria('apagar_usuario',email,u,null);
+  fecharSheet();
+  S.adminUsuarios=null; S.pendAdmin=null;
+  await carregarAdminUsuarios(); await carregarPendentesAdmin(true);
+  render();
+  if(!r.cadastroApagado)return alerta('Conta NÃO apagada',
+    `O cadastro de <b>${esc(u.nome||email)}</b> continua no banco, então nada foi concluído.`
+    +`<br><br>O que falhou: <b>${esc((r.falhas[0]&&r.falhas[0].erro)||'desconhecido')}</b>.`);
+  const eqFalhou=r.falhas.filter(x=>x.rot.indexOf('equipe:')===0);
+  if(eqFalhou.length)return alerta('Conta apagada, com sobra',
+    `Os dados de <b>${esc(u.nome||email)}</b> foram removidos.`
+    +`<br><br>Ficou para trás, porque é documento da equipe e as regras reservam a escrita ao técnico dela: `
+    +`<b>${eqFalhou.map(x=>esc(x.rot.replace('equipe: ',''))).join(', ')}</b>.`
+    +`<br><br>Peça ao técnico de ${esc(u.equipeNome||u.equipe||'')} para remover, ou publique a regra que libera o administrador.`);
+  /* "Ana apagado" — o app não sabe o gênero de ninguém e não tem por que
+     adivinhar. Concordando com "conta", a frase fica certa para qualquer
+     pessoa. */
+  toast('Conta de '+prim(u.nome||email)+' apagada');
+}
 async function registrarAuditoria(acao,alvo,antes,depois){if(!ehAdmin())return;await DB.set(`admin_audit_${Date.now()}_${uid()}`,{acao,alvo,admin:S.u.email,em:Date.now(),antes,depois})}
 async function salvarAdminUsuario(email){
   if(!ehAdmin())return;const u=await DB.get(kUser(email));if(!u)return toast('Usuário não encontrado');const antes={...u}, novoEq=(document.getElementById('auEquipe')||{}).value;
@@ -7689,7 +7969,7 @@ async function salvarAdminUsuario(email){
   const novaAf=val('auAfiliacao');
   u.afiliacao=novaAf?(novaAf===nomeAfiliacao(antes)&&antes.afiliacao?antes.afiliacao:'admin:'+slug(novaAf)):null;u.afiliacaoNome=novaAf||null;
   if(u.equipe!==novoEq){if(u.equipe)await transacao(kEqUsers(u.equipe),xs=>(xs||[]).filter(x=>x!==email));u.equipe=novoEq;const eq=(S.equipesDevList||[]).find(e=>e.slug===novoEq);u.equipeNome=eq?eq.nome:'';if(novoEq)await transacao(kEqUsers(novoEq),xs=>{xs=xs||[];if(!xs.includes(email))xs.push(email);return xs})}
-  if(!await DB.set(kUser(email),u))return;await registrarAuditoria('editar_usuario',email,antes,u);fecharSheet();S.adminUsuarios=null;await carregarAdminUsuarios();toast('Usuário atualizado');render();
+  if(!await DB.set(kUser(email),u))return;await registrarAuditoria('editar_usuario',email,antes,u);fecharSheet();S.adminUsuarios=null;await carregarAdminUsuarios();await carregarPendentesAdmin(true);toast('Usuário atualizado');render();
 }
 function telaEquipes(){
   if(!ehDev())return`<div class="empty"><div class="big">Sem acesso</div></div>`;

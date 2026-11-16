@@ -79,6 +79,7 @@ provar que ainda vale.
 | Procedência viaja com o dado | VFC da noite ≠ média semanal; parcial oficial ≠ digitada | `hrvF`, `origemParc`, `serieHRV` |
 | O id do item de treino **sobrevive à releitura** | os tempos lançados moram em `registros[atleta][itemId]`; reler o texto gerava ids novos e os tempos ficavam órfãos dentro do documento — sumiam da tela sem aviso | `casarItens`, teste `metragem` |
 | Metragem é dado, não enfeite | volume errado vira carga, ACWR, extrato e relatório errados; o parser tem teste com treinos reais, como vieram do WhatsApp | `interpretar`, teste `metragem` |
+| Aviso que depende da aba certa não é aviso | a fila de liberação vivia dentro da tela Equipe: quem se cadastrava ficava parado e quem aprova não sabia que havia fila | `bannerPendentes`, `conferirLiberacao` |
 | Parcial de prova se lê por trecho **ou** acumulada, e o app diz qual entendeu | o 200 livre de Buenos Aires foi anotado por trecho e não salvava; exigir um formato só faz o atleta digitar errado | `lerParciaisProva`, teste `tempo` |
 | A aspa de segundo é separador decimal | `30"68` virava 3068 segundos — 51 minutos — porque a aspa era apagada | `parseTempo`, teste `tempo` |
 | Balizamento com sorteio tem série e raia, e elas não podem se perder | o Meet Program de Buenos Aires foi lido pelo parser do psych sheet: achou a prova e perdeu série, raia e a série inteira — funcionou o bastante para parecer certo | `parseHytekPrograma`, teste `balizamento` |
@@ -219,6 +220,54 @@ Reencenar, no navegador, com banco simulado:
 
 Cada uma custou tempo de verdade.
 
+- **O domínio meros360.com tem UM registro SPF, e tem que continuar tendo um.**
+  Ele serve o Firebase (envio da confirmação) e o Cloudflare Email Routing
+  (`contato@` e `noreply@` encaminhando para o Gmail) no mesmo
+  `v=spf1 include:_spf.firebasemail.com include:_spf.mx.cloudflare.net ~all`.
+  Todo assistente de serviço de e-mail propõe um TXT `v=spf1` NOVO; aceitar
+  isso cria dois registros, o que invalida os dois, e o e-mail do app começa a
+  cair em spam sem nada ter mudado no código. Serviço novo entra como mais um
+  `include:` no registro que já existe.
+- **O modelo de e-mail do Firebase está BLOQUEADO neste projeto.** Salvar nome
+  do remetente, assunto ou corpo devolve "as atualizações de modelos de e-mail
+  não estão disponíveis para este projeto" e descarta tudo; o `<textarea>` do
+  corpo vem `disabled`. Não é falta de plano — o Blaze não muda isso. O que
+  resta é mudar o que as VARIÁVEIS valem: `%APP_NAME%` é o nome do projeto no
+  Google Cloud e `%DISPLAY_NAME%` é o `displayName` do Auth, que o app grava no
+  cadastro — antes de mandar o e-mail, ou não adianta. Domínio e idioma do
+  modelo são outros endpoints e esses gravam normalmente.
+- **Existe UMA rotina de exclusão de conta, e ela é `apagarDadosDaConta(u)`.**
+  Serve tanto ao "apagar minha conta" quanto ao administrador apagando a de
+  outra pessoa: não olha `S.u`, e já sabe a ordem (anexo antes do `pro_`,
+  porque depois não há mais como achar as URLs; cadastro por último, porque
+  enquanto ele existe dá para tentar de novo). Uma segunda rotina acabaria
+  esquecendo a Saúde ou as cópias diárias — foi exatamente o que a do técnico
+  (`confirmarApagarAtleta`) sempre fez.
+- **O administrador apaga tudo, mas NÃO escrevia em documento de equipe.**
+  As regras dão `delete` irrestrito a `ehAdmin()`, porém o `update` de `eq_*`
+  era só do técnico daquela equipe — e tirar alguém da lista de membros ou
+  liberar o CPF é update. Por isso a v195 acrescentou
+  `|| ( ehEq() && ehAdmin() && naoMexeEm('equipe') )`. Enquanto essa regra não
+  estiver PUBLICADA no console, a exclusão pelo painel deixa o e-mail na lista
+  da equipe — e a tela diz isso, em vez de anunciar sucesso.
+- **O login do Firebase Auth não sai pelo cliente.** Só o próprio dono
+  (`currentUser.delete()`) ou o Admin SDK. Apagar a conta de outra pessoa
+  tranca ela do lado de fora (sem `u_<email>` o login é recusado), mas também
+  impede que aquele e-mail seja cadastrado de novo até alguém remover o login
+  em Console › Authentication › Users.
+- **Metade do fluxo de cadastro acontece no app de OUTRA pessoa.** O técnico
+  aprova o atleta, o administrador aprova o técnico — e nenhum dos dois lados
+  via nada. Quem mexer nisso lembre que aviso dentro do app só alcança quem
+  abre o app: por isso existe `backend/notificacoes.gs`, uma ponte em Apps
+  Script que manda e-mail. Cloud Functions exigiriam o plano Blaze.
+- **`aprovado=false` não quer dizer "esperando".** Toda conta nasce assim — a
+  regra do Firestore exige. O atleta independente fica assim para sempre.
+  Pendente de verdade é quem tem `equipe` ou é `perfil==='tecnico'`; sem esse
+  filtro, cada PRO que se cadastra sozinho virava um e-mail para o administrador.
+- **O cadastro não guarda o e-mail em campo.** `camposSeguranca` espelha
+  `dono`, `equipe`, `perfil` e `aprovado`, mas o e-mail é o próprio id do
+  documento (`u_<email>`). Quem for ler o Firestore de fora do app vai
+  procurar `donoEmail` e não achar.
 - **Correção de parser NÃO é retroativa.** O texto do treino é interpretado
   uma vez, ao salvar: o documento guarda os blocos já calculados e o índice
   guarda o volume. Consertar o parser não conserta o passado. Quem corrigir

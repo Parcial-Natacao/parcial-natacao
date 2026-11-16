@@ -335,6 +335,12 @@ service cloud.firestore {
         // treino/competição: membro aprovado da equipe lança os seus tempos
         || ( ehEqAtleta() && aprovado() && resource.data.equipe == minhaEq()
              && naoMexeEm('equipe') )
+        // O administrador global escreve em documento de equipe. Ele JÁ pode
+        // apagar qualquer coisa (ver EXCLUSÃO), então isto não amplia alcance:
+        // só permite CORRIGIR em vez de destruir. Sem esta linha, apagar um
+        // usuário pelo painel deixava o e-mail dele na lista de membros e o CPF
+        // marcado como usado, porque esses passos são update, não delete.
+        || ( ehEq() && ehAdmin() && naoMexeEm('equipe') )
         // demais documentos da equipe: só o técnico (ou o dono da equipe)
         || ( ehEq() && !ehEqAtleta() && naoMexeEm('equipe')
              && tecnicoDe(resource.data.equipe) )
