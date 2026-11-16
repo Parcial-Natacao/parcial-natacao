@@ -90,6 +90,10 @@
   --rope-ink:#8A6700;            /* amarelo não tem contraste como TEXTO no claro */
   /* fundos dos avisos e destaques */
   --water-bg:#EFF6FA; --clock-bg:#FDF3F2; --ok-bg:#EFF8F3; --rope-bg:#FDF8E8;
+  /* a bolinha de informação: azul cheio com o glifo branco. Tem cor própria
+     em vez de usar --water porque ela não é um acento do conteúdo — é sempre
+     o mesmo botão, em qualquer card, e precisa ser reconhecível como tal. */
+  --info-fundo:#82ADE5; --info-borda:#5B88CE; --info-glifo:#FFFFFF;
   /* cartão-herói do relatório: escuro nos dois temas, por isso tem cor própria */
   --lead-bg:#141A1F; --lead-ink:#F4F2EE; --lead-2:#B9C2C9;
   --veu:rgba(18,24,28,.45);      /* véu atrás das folhas */
@@ -116,6 +120,9 @@
   --clock:#FF6257; --rope:#F5C33B; --water:#56B6D6; --ok:#43C293;
   --rope-ink:#F5C33B;
   --water-bg:#10242D; --clock-bg:#2B1715; --ok-bg:#0F2620; --rope-bg:#282211;
+  /* no escuro o mesmo azul claro vira uma lanterna: desce de luminosidade e a
+     borda sobe, para o círculo continuar tendo contorno */
+  --info-fundo:#4E7FBE; --info-borda:#7FA9E0; --info-glifo:#FFFFFF;
   --lead-bg:#1D2127; --lead-ink:#EEF1F4; --lead-2:#9BA5B0;
   --veu:rgba(0,0,0,.62);
   --sh:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.32);
@@ -137,8 +144,21 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
 /* TRILHO DE COR POR DOMINIO. O relatorio e uma coluna de vinte retangulos
    brancos iguais; a cor na borda da o mapa que faltava e deixa claro, ao
    rolar, se aquilo fala de prova, de treino, de carga ou de corpo. */
-.info-i{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;min-height:0;margin-left:6px;padding:0;border:1px solid var(--line-forte);border-radius:50%;background:transparent;color:var(--ink-3);font-size:11px;font-weight:800;font-style:italic;line-height:1;vertical-align:middle;flex:0 0 auto}
-.info-i:hover{color:var(--ink);border-color:var(--ink-3)}
+/* ⚠️ TUDO AQUI É EM `em`, DE PROPÓSITO.
+   A bolinha aparece ao lado de texto de 5 tamanhos diferentes — do título de
+   card ao `xs muted` de rodapé. Com 17px fixos ela ficava do tamanho da letra
+   num lugar e do dobro no outro. Em `em`, o círculo é sempre ~1,15× a altura
+   do texto que acompanha, em qualquer um deles. */
+.info-i{display:inline-flex;align-items:center;justify-content:center;
+  width:1.45em;height:1.45em;min-height:0;margin-left:.45em;padding:0;
+  border:1px solid var(--info-borda);border-radius:50%;
+  background:var(--info-fundo);color:var(--info-glifo);
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:.78em;font-weight:700;font-style:normal;line-height:1;
+  vertical-align:-.05em;flex:0 0 auto;cursor:pointer;
+  transition:filter .12s}
+.info-i:hover,.info-i:focus-visible{filter:brightness(1.08)}
+.info-i:active{filter:brightness(.94)}
 .card[data-dom]{position:relative;padding-left:19px}
 .card[data-dom]::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--dom)}
 .card[data-dom="prova"]{--dom:var(--rope)}
@@ -559,14 +579,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v198"></script>
-<script src="./inicio-e-grupos.js?v=v198"></script>
+<script src="./persistencia-segura.js?v=v199"></script>
+<script src="./inicio-e-grupos.js?v=v199"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v198';
+const VER='v199';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
