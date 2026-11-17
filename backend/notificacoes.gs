@@ -190,12 +190,48 @@ function verificarCadastros() {
 
   gravarEstado_(estado);
 
+  const despedidas = enviarDespedidas_();
+
   if (novos.length) avisarAdministrador_(admin, novos);
   liberados.forEach(function (x) { avisarLiberado_(x.email, x.u); });
 
-  const resumo = novos.length + ' novo(s), ' + liberados.length + ' liberado(s), ' + agora.length + ' na fila';
+  const resumo = novos.length + ' novo(s), ' + liberados.length + ' liberado(s), ' + despedidas + ' despedida(s), ' + agora.length + ' na fila';
   Logger.log(resumo);
   return resumo;
+}
+
+/* ── 4b) QUEM SAIU ─────────────────────────────────────────
+   O app não manda e-mail: depois de apagar o cadastro, a pessoa já não tem
+   permissão para escrever nada e o próprio `u_` — onde estaria o e-mail dela —
+   não existe mais. Por isso ele grava ANTES um `despedida_<uid>` com o mínimo
+   necessário, e quem envia é este script.
+
+   ⚠️ O documento é APAGADO depois do envio. Se ficasse, viraria uma lista de
+   e-mails de ex-usuários num banco de quem acabou de pedir para ser esquecido
+   — exatamente o contrário do que a exclusão promete. */
+function enviarDespedidas_() {
+  var n = 0;
+  var r = fs_(':runQuery', 'post', {
+    structuredQuery: {
+      from: [{ collectionId: 'kv' }],
+      where: { fieldFilter: { field: { fieldPath: 'categoria' }, op: 'EQUAL', value: { stringValue: 'despedida' } } },
+      limit: 50
+    }
+  }) || [];
+  r.forEach(function (linha) {
+    var d = linha.document;
+    if (!d || !d.name) return;
+    var id = d.name.split('/').pop();
+    if (id.indexOf('despedida_') !== 0) return;
+    var v = null;
+    try { v = JSON.parse(d.fields.v.stringValue); } catch (e) { v = null; }
+    if (v && v.email) {
+      try { avisarSaida_(v.email, v.nome || ''); n++; }
+      catch (e) { Logger.log('despedida falhou: ' + e); return; }
+    }
+    fs_('/kv/' + encodeURIComponent(id), 'delete');
+  });
+  return n;
 }
 
 /* ── 5) OS E-MAILS ─────────────────────────────────────────────────────────
@@ -220,6 +256,30 @@ function avisarAdministrador_(para, lista) {
       + '\n\nTécnico é liberado por você, na aba Equipes. Atleta é liberado pelo'
       + ' técnico da equipe, na tela Equipe.\n\n' + APP_URL
       + '\n\n— aviso automático; você recebe uma vez por cadastro.'
+  });
+}
+
+function avisarSaida_(email, nome) {
+  var prim = String(nome || '').trim().split(/\s+/)[0] || '';
+  MailApp.sendEmail({
+    to: email,
+    name: APP_NOME,
+    subject: 'Sua conta no ' + APP_NOME + ' foi excluída',
+    body: (prim ? 'Olá, ' + prim + '!
+
+' : '')
+      + 'Sua conta no ' + APP_NOME + ' foi excluída, e com ela todos os seus dados:'
+      + ' marcas, Saúde, exames, treinos pessoais e as cópias diárias.'
+      + '
+
+Obrigado por ter usado o app. Se um dia quiser voltar, é só criar uma'
+      + ' conta nova com o mesmo e-mail — a porta fica aberta.'
+      + '
+
+' + APP_URL
+      + '
+
+— ' + APP_NOME
   });
 }
 

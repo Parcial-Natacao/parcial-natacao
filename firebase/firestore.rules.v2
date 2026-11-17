@@ -239,7 +239,8 @@ service cloud.firestore {
       function ehTime() { return chave.matches('time_.*'); }
       function ehMeuTime() { return logado() && chave == 'time_' + meuUid(); }
       function ehTimePublico() { return resource.data.get('categoria', null) == 'time'; }
-      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime(); }
+      function ehDespedida() { return chave.matches('despedida_.*'); }
+      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime() && !ehDespedida(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
@@ -309,6 +310,12 @@ service cloud.firestore {
              && request.resource.data.equipe == null
              && request.resource.data.perfil == null
              && request.resource.data.categoria == 'time' )
+        // O recado de despedida: quem está apagando a própria conta grava UM
+        // documento, com o próprio uid na chave, para o Apps Script poder
+        // mandar o e-mail de saída depois que o cadastro já não existe. Só
+        // criar, nunca ler nem editar: ninguém varre a lista de quem saiu.
+        || ( ehDespedida() && chave == 'despedida_' + meuUid()
+             && request.resource.data.dono == meuUid() )
         || ( ehOutro() && ehAdmin() );
 
       // ─────────────────────── ATUALIZAÇÃO ──────────────────────

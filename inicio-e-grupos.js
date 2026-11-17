@@ -250,7 +250,13 @@ async function compartilharTreinoGrupo(){await grAcao(async()=>{
 async function revogarCompartilhamentoGrupo(){await grAcao(async()=>{const o=S.treino?.origem;if(o?.tipo!=='grupo')throw Error('Treino sem origem de grupo');const id=grMembroId(o.workoutId,S.u.id);if(FB)await fdb.collection('group_records').doc(id).delete();else await grSet('group_records',id,{groupId:o.groupId,uid:S.u.id,revogado:true});toast('Compartilhamento removido do grupo');},false);}
 async function apagarDadosGruposDaConta(){
   const u=grIdentidade(),donos=await grLista('groups',[['ownerUid',u.id]]);
-  if(donos.some(g=>!g.arquivado))throw Error('Transfira a responsabilidade ou arquive seus grupos antes de apagar a conta.');
+  /* ⚠️ ESTE é o único motivo legítimo de recusar a exclusão: outras pessoas
+     dependem deste grupo. A marca `bloqueio` separa esta recusa, que é
+     DESENHADA, de uma falha técnica — que não pode impedir ninguém de sair. */
+  if(donos.some(g=>!g.arquivado)){
+    const e=Error('Transfira a responsabilidade ou arquive seus grupos antes de apagar a conta.');
+    e.bloqueio=true; throw e;
+  }
   const pares=await Promise.all([grLista('group_records',[['uid',u.id]]),grLista('group_members',[['uid',u.id]]),grLista('group_invites',[['email',u.email.toLowerCase()]]),grLista('group_claims',[['uid',u.id]])]);
   const cols=['group_records','group_members','group_invites','group_claims'];
   for(let n=0;n<pares.length;n++)for(const d of pares[n]){if(FB)await fdb.collection(cols[n]).doc(d.id).delete();else await DB.set('grlocal_'+cols[n]+'_'+d.id,null);}

@@ -260,6 +260,27 @@ textarea{min-height:170px;font-family:var(--mono);font-size:15px;line-height:1.6
 label{display:block;font-family:var(--disp);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
 .field{margin:12px 0}
 .field-erro{display:block;color:var(--clock);font-size:13px;margin-top:5px;min-height:0}
+/* ⚠️ O `appearance:none` DA REGRA ACIMA APAGA O DESENHO DO CHECKBOX.
+   Ela existe para os campos de texto e o select, mas pega todo `input` — e um
+   checkbox sem aparência nativa fica só com a borda: marcado e desmarcado
+   viram quase a mesma coisa, e a pessoa não sabe se confirmou. Era o caso da
+   caixa "Confirmo que os dados são meus" no cadastro.
+   Aqui ele volta a ter corpo próprio: caixa de 22 px e, quando marcado, fundo
+   cheio com a marca desenhada em SVG (não é pseudo-elemento, que em `input`
+   não é confiável em todo navegador).
+   O `width` vem com !important de propósito: havia `style="width:auto"` escrito
+   à mão em vários pontos para escapar do `width:100%` da regra geral, e estilo
+   inline ganha de classe. */
+input[type=checkbox]{
+  width:22px!important;height:22px;min-height:0;flex:0 0 auto;padding:0;margin:0;
+  border:1.5px solid var(--line-forte);border-radius:6px;background:var(--card);
+  cursor:pointer;transition:background-color .12s,border-color .12s;vertical-align:-.25em}
+input[type=checkbox]:checked{
+  background-color:var(--ink);border-color:var(--ink);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.5l5 5L19.5 7'/%3E%3C/svg%3E");
+  background-size:15px;background-position:center;background-repeat:no-repeat}
+input[type=checkbox]:focus-visible{outline:2px solid var(--water);outline-offset:2px}
+input[type=checkbox]:disabled{opacity:.5;cursor:default}
 input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock);background:var(--clock-bg)}
 .progress{height:6px;border-radius:999px;background:var(--line);overflow:hidden;margin:12px 0 0}
 .progress span{display:block;height:100%;border-radius:999px;background:var(--clock);transition:width .2s}
@@ -633,14 +654,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v205"></script>
-<script src="./inicio-e-grupos.js?v=v205"></script>
+<script src="./persistencia-segura.js?v=v208"></script>
+<script src="./inicio-e-grupos.js?v=v208"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v205';
+const VER='v208';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -957,6 +978,9 @@ function camposSeguranca(k,v){
        O split corta o sufixo das versões diárias (pro_<uid>_bk3). */
     o.dono=val._dono||k.slice(4).split('_')[0]||null;
   }
+  /* a categoria é o que o Apps Script consulta — sem ela o recado fica no
+     banco e ninguém é avisado de nada */
+  else if(k.startsWith('despedida_')){ o.dono=k.slice(10)||null; o.categoria='despedida'; }
   else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null);o.geradorVersao=val.origem?.tipo==='gerador'?(val.origem.versao||null):null; }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
@@ -2453,7 +2477,9 @@ function telaCadastro(){
          <option value="">— escolha sua equipe —</option>
          ${opcoesCatalogo.map(e=>`<option value="${esc(e.nome)}" ${CAD.equipe===e.nome?'selected':''}>${esc(e.nome)}</option>`).join('')}
        </select>
-       <div class="xs muted" style="margin-top:5px">A equipe é opcional e não precisa ter técnico. Se ela não estiver aqui, crie sua conta sem equipe e registre-a depois.</div>`
+       <div class="xs muted" style="margin-top:5px">Opcional${info('Equipe no cadastro',
+         `A equipe é opcional e <b>não precisa ter técnico</b> — ela é só a sua afiliação.`
+         +`<br><br>Se a sua não estiver na lista, crie a conta sem equipe e registre-a depois. Nada se perde por começar sem.`)}</div>`
     : !precisaLista
     ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" autocapitalize="words" placeholder="ex.: A3 Swim Team">
        <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Digite o nome oficial da equipe. Se ela já existir, seu cadastro será vinculado a ela.':'Digite exatamente o nome informado pelo seu técnico.'}</div>`
@@ -2463,7 +2489,9 @@ function telaCadastro(){
             ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" list="listaEquipes" autocomplete="off" autocapitalize="characters" placeholder="digite para buscar sua equipe">
                <datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>
                <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou (digite para buscar).':'Digite e escolha a mesma equipe do seu técnico.'}</div>`
-            : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
+            : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda${info('Sem equipes na lista',
+                `As equipes são criadas pelo administrador do app, não no cadastro — é o que impede alguém de inventar uma equipe e virar gestor sem revisão.`
+                +`<br><br>Peça ao administrador para criar a sua primeiro.`)}</div>`));
   const escolhaEquipe=`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
       <button type="button" class="${!CAD.semEquipe?'on':''}" aria-pressed="${!CAD.semEquipe}" onclick="selSituacaoEquipe('com')">Tenho uma equipe</button>
       <button type="button" class="${CAD.semEquipe?'on':''}" aria-pressed="${!!CAD.semEquipe}" onclick="selSituacaoEquipe('sem')">Ainda não tenho equipe</button>
@@ -4559,7 +4587,9 @@ function telaAguardando(){
     <p class="small" style="margin-top:10px">Olá, ${esc(prim(S.u.nome))}! ${tec
       ? `Seu cadastro de <b>técnico</b> da equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação do administrador</b> do app.`
       : `Seu cadastro na equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação</b> do técnico.`}</p>
-    <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
+    <p class="small muted" style="margin-top:8px">Você pode fechar e voltar depois${info('Enquanto você espera',
+      `Assim que a liberação sair, tudo aparece aqui sozinho — não é preciso se cadastrar de novo nem ficar com o app aberto.`
+      +`<br><br>Você também recebe um e-mail avisando.`)}</p>
   </div>
   <button class="ghost full" style="margin-top:18px" onclick="sincronizar(false)">Já fui liberado? Atualizar</button>
   <button class="ghost full" onclick="abrirMeusGrupos()">Meus grupos privados e convites</button>
@@ -4586,7 +4616,9 @@ function telaElenco(){
     <span class="tag o">${esc(S.u.equipeNome||'')}</span></div>
   <div class="card">
     <div class="eyebrow">incluir atleta existente</div>
-    <p class="xs muted" style="margin:4px 0 8px">Coloque na sua equipe um atleta já cadastrado no app (pelo e-mail dele). Se ele estava em outra equipe, é transferido.</p>
+    <p class="xs muted" style="margin:4px 0 8px">Pelo e-mail com que ele se cadastrou${info('Incluir atleta já cadastrado',
+      `Coloca na sua equipe um atleta que <b>já tem conta</b> no app.`
+      +`<br><br>Se ele estava em outra equipe, é transferido — ninguém fica em duas ao mesmo tempo.`)}</p>
     <div class="field"><label>E-mail do atleta</label><input id="incEmail" inputmode="email" autocapitalize="off" autocorrect="off" placeholder="atleta@email.com"></div>
     <button class="primary full" onclick="incluirNaEquipe()">Incluir na equipe</button>
   </div>
@@ -5786,6 +5818,26 @@ teste('exclusão admin','quem não é administrador não apaga ninguém',a=>{
     apagarUsuarioAdmin('outro@x.com');
     a.ok(!chamou,'a folha de confirmação nem abre');
   } finally { window.sheet=_sh; }});
+/* ── A EXCLUSÃO PARAVA POR ERRO QUE NÃO ERA BLOQUEIO (v207) ────────────────
+   Qualquer falha ao varrer os grupos — consulta negada, índice faltando,
+   rede — abortava TUDO com "Exclusão não iniciada". A pessoa ficava sem
+   conseguir apagar a conta e sem entender o porquê. Só existe um motivo
+   legítimo de recusar: ela ainda é dona de um grupo ativo. */
+teste('exclusão','recusa de grupo ativo vem marcada como bloqueio',a=>{
+  const e=Error('Transfira a responsabilidade ou arquive seus grupos antes de apagar a conta.');
+  e.bloqueio=true;
+  a.eq(e.bloqueio,true,'o bloqueio desenhado se identifica');
+  a.ok(!Error('Missing or insufficient permissions.').bloqueio,
+    'falha técnica não — e por isso não pode impedir alguém de sair do app');});
+teste('exclusão','o recado de despedida leva só o necessário',a=>{
+  /* o app não manda e-mail; ele grava o recado ANTES de apagar o cadastro,
+     porque depois a pessoa perde a permissão de escrever e o u_ — onde
+     estaria o e-mail dela — já não existe. */
+  const c=camposSeguranca('despedida_U9',{email:'x@y.com',nome:'Ana'});
+  a.eq(c.dono,'U9','o dono sai da chave, que é o uid');
+  a.eq(c.categoria,'despedida','e a categoria é o que o Apps Script consulta');
+  a.eq(c.equipe,null,'sem equipe');
+  a.eq(c.perfil,null,'sem perfil — o recado não carrega perfil de ninguém');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -8287,8 +8339,9 @@ function telaAtletaDetalhe(){
   </div>
   ${cardFadigaAtleta(a)}
   <div class="card">
-    <div class="eyebrow">currículo ABMN do atleta</div>
-    <p class="xs muted" style="margin:4px 0 8px">Importe o <b>Currículo On-Line</b> (PDF) e o app registra as marcas dele. Os melhores tempos são os da <b>faixa etária atual</b> — não os da vida inteira, que um master dificilmente repete.</p>
+    <div class="eyebrow">currículo ABMN do atleta${info('Currículo ABMN do atleta',
+      `Importe o <b>Currículo On-Line</b> (PDF) e o app registra as marcas dele.`
+      +`<br><br>Os melhores tempos são os da <b>faixa etária atual</b> — não os da vida inteira, que um master dificilmente repete.`)}</div>
     ${a.abmnEm?`<div class="note" style="margin:0 0 8px"><b>Currículo enviado em ${brData(new Date(a.abmnEm).toISOString().slice(0,10))}.</b> Aguardando ${esc(prim(a.nome))} <b>abrir o app</b> — só o próprio atleta grava nos dados dele, então as marcas aparecem para você depois que ele entrar. Se estiver demorando, peça para ele abrir o app.</div>`:''}
     <input type="file" id="abmnAt" accept="application/pdf,.pdf" style="display:none" onchange="importarABMNAtleta(this,'${a.id}')">
     <button class="full" onclick="document.getElementById('abmnAt').click()">Enviar currículo ABMN (PDF)</button>
@@ -8296,14 +8349,17 @@ function telaAtletaDetalhe(){
   </div>
   <button class="primary full" style="margin:2px 0 4px" onclick="abrirLaudoAtleta('${a.id}')">Ver relatório completo</button>
   <button class="full" style="margin:0 0 4px" onclick="abrirMarcasAtleta('${a.id}')">Ver as marcas como o atleta vê</button>
-  <div class="xs muted" style="margin-bottom:6px">Desempenho, projeções e carga do atleta. A aba Saúde (VFC, exames) é privada e não aparece aqui.</div>
+  <div class="xs muted" style="margin-bottom:6px">Desempenho, projeções e carga${info('O que você enxerga do atleta',
+    `Desempenho, projeções e carga de treino.`
+    +`<br><br>A aba <b>Saúde</b> — VFC, sono, exames, bioimpedância — é privada do atleta e <b>não aparece aqui</b>. O que chega até você é o score de prontidão, nunca o dado bruto.`)}</div>
   ${a.telefone?`<a class="btnlink zap" href="https://wa.me/${telWa(a.telefone)}" target="_blank" rel="noopener">Conversar no WhatsApp</a>`:''}
   <div class="card">
     <div class="eyebrow">nível</div>
     <div class="opt" style="margin-top:8px">${NIVEIS.map(n=>`<button class="${a.nivel===n?'on':''}" onclick="mudarNivel('${a.id}','${n}')">${n}</button>`).join('')}</div>
   </div>
-  ${a.perfil!=='pro'?`<div class="card"><div class="eyebrow">recursos avançados opcionais</div>
-    <p class="xs muted" style="margin:4px 0 10px">O perfil continua sendo Atleta (saúde ou lazer), mas você pode liberar recursos específicos. A Saúde continua privada do atleta (nem você enxerga).</p>
+  ${a.perfil!=='pro'?`<div class="card"><div class="eyebrow">recursos avançados opcionais${info('Recursos avançados',
+    `O perfil continua sendo <b>Atleta</b> (saúde ou lazer) — liberar um recurso não transforma ninguém em PRO.`
+    +`<br><br>A <b>Saúde</b> continua privada do atleta, mesmo liberada: nem você enxerga.`)}</div>
     ${[['podeMarcas','Marcas','a aba Marcas + importação do currículo da ABMN'],
        ['podeSaude','Saúde','a aba Saúde (VFC, sono, exames, bioimpedância) — só para o próprio atleta'],
        ['podeRelatorio','Relatório','a aba Relatório de performance do próprio atleta']].map(([f,tit,desc])=>`
@@ -8319,12 +8375,23 @@ function telaAtletaDetalhe(){
     <div class="eyebrow">administração</div>
     <button class="full ghost" style="margin-top:9px" onclick="resetSenhaAtleta('${a.id}')">Gerar link de nova senha</button>
     ${a.equipe?`<button class="full ghost" style="margin-top:9px;color:var(--clock)" onclick="removerDaEquipe('${a.id}')">Remover da equipe</button>
-    <div class="xs muted" style="margin-top:6px">Tira o atleta desta equipe, <b>sem apagar o cadastro</b> — ele fica sem equipe e mantém o histórico e as marcas dele.</div>`:''}
+    ${/* ⚠️ TRÊS BOTÕES DESTRUTIVOS DE NOME PARECIDO, UM EMBAIXO DO OUTRO.
+         A legenda de cada um é o que separa "remover da equipe" de "remover do
+         app" de "apagar". Escondida atrás de um toque, a escolha vira sorteio.
+         Por isso aqui a frase ENCURTA em vez de sumir: fica na tela o que
+         distingue, e vai para o "i" o resto. */''}
+    <div class="xs muted" style="margin-top:6px">Mantém o cadastro, o histórico e as marcas${info('Remover da equipe',
+      `Tira o atleta <b>desta equipe</b>, sem apagar o cadastro dele.`
+      +`<br><br>Ele fica sem equipe, continua entrando no app e mantém o histórico e as marcas. Dá para vinculá-lo a outra equipe depois.`)}</div>`:''}
     <button class="full ${a.ativo===false?'':'danger'}" style="margin-top:9px" onclick="alternarAtivo('${a.id}')">
       ${a.ativo===false?'Reativar atleta':'Remover do app'}</button>
-    <div class="xs muted" style="margin-top:8px">Remover do app desativa o acesso e tira o atleta das listas, sem apagar o histórico de treinos.</div>
+    <div class="xs muted" style="margin-top:8px">Desativa o acesso, mantém o histórico${info('Remover do app',
+      `Desativa o acesso do atleta e tira o nome das listas, <b>sem apagar</b> o histórico de treinos.`
+      +`<br><br>É reversível: o mesmo botão reativa.`)}</div>
     <button class="full ghost" style="margin-top:12px;color:var(--clock)" onclick="apagarAtleta('${a.id}')">Apagar definitivamente…</button>
-    <div class="xs muted" style="margin-top:6px">Apagar tira o atleta e os dados dele de vez e libera o CPF (o login continua no Firebase).</div>
+    <div class="xs muted" style="margin-top:6px" role="note">Apaga os dados <b>de vez</b>${info('Apagar definitivamente',
+      `Tira o atleta e os dados dele <b>de vez</b>, e libera o CPF para ser usado de novo. Não tem volta.`
+      +`<br><br>O <b>login</b> continua existindo — só o próprio dono ou o administrador do projeto apaga um login, no Console.`)}</div>
   </div><div style="height:20px"></div>`;
 }
 async function togglePermAtleta(atId,flag){
@@ -8636,8 +8703,25 @@ async function confirmarApagarMinhaConta(){
     catch(e){ return toast(traduzErroFB(e.code)); }
   }
   toast('Apagando…');
-  try{await apagarDadosGruposDaConta();}catch(e){return alerta('Exclusão não iniciada',esc(e.message));}
+  /* ⚠️ SÓ O BLOQUEIO DE VERDADE PARA A EXCLUSÃO.
+     Qualquer erro aqui — consulta negada, índice faltando, rede — abortava TUDO
+     com "Exclusão não iniciada", e a pessoa ficava sem conseguir apagar a conta
+     sem entender o porquê. Só existe UM motivo legítimo para recusar: ela ainda
+     é dona de um grupo ativo, e aí outras pessoas dependem dela. O resto é
+     falha técnica nossa: vira uma sobra relatada no fim, como os outros passos,
+     e não impede a pessoa de sair do app. */
+  let sobraGrupos=null;
+  try{ await apagarDadosGruposDaConta(); }
+  catch(e){
+    if(e&&e.bloqueio)return alerta('Exclusão não iniciada',esc(e.message));
+    sobraGrupos=(e&&e.message)||String(e);
+    console.warn('grupos na exclusão',sobraGrupos);
+  }
   const r=await apagarDadosDaConta(u,S.pro);
+  if(sobraGrupos)r.falhas.push({rot:'grupos',erro:sobraGrupos});
+  /* o aviso de despedida é gravado ANTES de apagar o cadastro: depois a pessoa
+     não tem mais permissão para escrever nada */
+  if(r.cadastroApagado)try{ await registrarDespedida(u); }catch(e){ console.warn('despedida',e&&e.message); }
   /* ⚠️ NÃO apagar o login se o cadastro sobreviveu: sem login ninguém entra
      para tentar de novo, e o dado fica no banco para sempre. */
   if(!r.cadastroApagado){
@@ -8658,8 +8742,21 @@ async function confirmarApagarMinhaConta(){
     `Os seus dados foram removidos, inclusive Saúde, treinos pessoais e as cópias diárias.`
     +`<br><br>O que não deu para remover, porque pertence à equipe e só o técnico escreve: `
     +`<b>${eqFalhou.map(x=>esc(x.rot.replace('equipe: ',''))).join(', ')}</b>. Peça ao técnico para limpar.`);
-  else toast('Conta apagada');
+  else alerta('Sua conta foi excluída',
+    `Todos os seus dados foram removidos do ${APP_NOME}.`
+    +`<br><br>Obrigado por ter usado o app — se um dia quiser voltar, é só criar uma conta nova com o mesmo e-mail.`);
   render();
+}
+/* ⚠️ O APP NÃO MANDA E-MAIL — ELE DEIXA O RECADO.
+   Não há servidor aqui: quem envia é o Apps Script (backend/notificacoes.gs),
+   que lê o Firestore de minuto em minuto. Mas depois de apagar o cadastro a
+   pessoa perde a permissão de escrever qualquer coisa — e o próprio `u_` some,
+   que era onde estaria o e-mail dela. Por isso o recado é gravado ANTES, num
+   documento que só tem o necessário para a despedida, e o script o apaga
+   depois de enviar. */
+async function registrarDespedida(u){
+  if(!FB||!u||!u.email)return;
+  await DB.set('despedida_'+u.id,{email:u.email,nome:u.nome||'',em:Date.now()});
 }
 /* A remoção propriamente dita, separada da tela: é o que dá para testar sem
    depender de Firebase, de senha e de sheet aberta. Devolve as chaves que
@@ -10239,7 +10336,9 @@ function telaMarcas(){
   ${acc('mk_lc','Piscina longa · 50m',nLC?`${nLC} prova(s)`:'sem marcas',nLC?pbsTabela(pro.pbs,'LC50'):'<div class="small muted">Nenhuma marca de piscina longa. Toque em + Tempo.</div>')}
   ${acc('mk_alvos','Provas-alvo','provas foco da projeção',cardAlvos(pro)||'<div class="small muted">Sem provas-alvo definidas.</div>')}
   <div class="eyebrow" style="margin:16px 4px 4px">histórico de competições · por prova</div>
-  ${histProvas||'<div class="card"><div class="small muted">Nenhum resultado ainda. Use + Tempo (com a competição) ou o técnico lança nas competições.</div></div>'}
+  ${histProvas||`<div class="card"><div class="small muted">Nenhum resultado ainda${info('Como entram os resultados',
+    `Por <b>+ Tempo</b>, informando a competição junto — é a competição que transforma um tempo solto em ponto do histórico.`
+    +`<br><br>Ou pelo técnico, quando ele lança os tempos oficiais na aba Competição.`)}</div></div>`}
   ${espelho?'':`<div class="row noprint" style="margin:14px 0 0"><div class="grow"></div>
     <button class="sm ghost" onclick="abrirLimparMarcas()">Conferir procedência das marcas</button></div>`}
   <div style="height:20px"></div>`;
@@ -10836,7 +10935,8 @@ function telaStore(){
       <span class="av">${st.n[0]}</span>
       <span class="grow"><b>${st.n}</b><span class="xs muted" style="display:block">${st.dom}${st.nota?' · '+st.nota:''}</span></span>
       <span class="tag o">abrir ↗</span></a>`).join('')}
-    <div class="xs muted" style="margin-top:10px">Sugestões de equipamento: óculos, touca, maiô/sunga, palmar, pull buoy, nadadeira, snorkel frontal.</div>
+    <div class="xs muted" style="margin-top:10px">Sugestões de equipamento${info('O que costuma entrar aqui',
+      `Óculos, touca, maiô ou sunga, palmar, pull buoy, nadadeira e snorkel frontal.`)}</div>
   </div><div style="height:20px"></div>`;
 }
 
@@ -14563,8 +14663,10 @@ function cardPredicao(pro,comPct,est){
       <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div>
       ${p.aviso?`<div class="note warn" style="margin-top:6px">${esc(p.aviso)}</div>`:''}</div>`;}).join('');
-  return`<div class="card" data-dom="prova"><div class="eyebrow">projeção de tempo — provas-alvo</div>
-    <div class="small muted" style="margin:4px 0 4px">Tempo de <b>competição</b> provável, a partir dos seus <b>melhores tiros</b> convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>. Estimativa de apoio — não é garantia.</div>
+  return`<div class="card" data-dom="prova"><div class="eyebrow">projeção de tempo — provas-alvo${info('Projeção de tempo',
+      `Tempo de <b>competição</b> provável, não tempo de treino.`
+      +`<br><br>Sai dos seus <b>melhores tiros</b>, convertidos para condição de prova (<b>saída de bloco + taper</b>) e <b>calibrados pelas suas competições anteriores</b>.`
+      +`<br><br>Estimativa de apoio — não é garantia, e a faixa é heurística: ela não é um intervalo estatístico com cobertura conhecida.`)}</div>
     ${linhas}
     ${/* P1-C — CINCO COISAS DIFERENTES, que estavam num parágrafo só e eram
          lidas como se fossem a mesma. A mais importante: a faixa é
@@ -14577,7 +14679,9 @@ function cardPredicao(pro,comPct,est){
       <tr><td><b>3. Qualidade dos dados</b></td><td class="muted">força da evidência: quanto dado existe e o quanto o modelo já acertou nesta prova. <b>Não é probabilidade</b> de nadar dentro da faixa.</td></tr>
       <tr><td><b>4. Suficiência</b></td><td class="muted">se há base para projetar. Sem tiro recente desta prova, o app diz <b>indisponível</b> em vez de projetar a partir de outra.</td></tr>
       <tr><td><b>5. Erro histórico</b></td><td class="muted">o que o modelo de fato errou com você, prova a prova — medido, não estimado. É o único dos cinco que é verificável contra resultado.</td></tr>
-    </tbody></table>${semCal?'<div class="xs muted" style="margin-top:6px"><b>Registre seus resultados em Marcas</b>: sem competição registrada o modelo não sabe o seu ganho real treino→prova e mantém a faixa larga.</div>':''}
+    </tbody></table>${semCal?`<div class="xs muted" style="margin-top:6px"><b>Registre seus resultados em Marcas</b>${info('Por que a faixa está larga',
+      `Sem competição registrada, o modelo não sabe o seu ganho real de treino para prova — e, na dúvida, abre a faixa em vez de fingir precisão.`
+      +`<br><br>A cada resultado que você lança em Marcas ela aperta.`)}</div>`:''}
   </div>`;
 }
 /* ── O QUE MUDOU EM 28 DIAS + POR QUÊ ───────────────────────────────────────
@@ -15413,14 +15517,17 @@ function cardPlanoAcao(pro,motor,diag,comPct){
   const ri=recomendaIntensidade(motor);
   /* "Plano de ação" soava como prescrição — e o app não prescreve treino, essa
      decisão é do técnico. O nome passa a dizer o que o card de fato entrega. */
-  return`<div class="card"><div class="eyebrow">indicadores para decisão</div>
-    <div class="xs muted" style="margin:4px 0 8px">Leitura dos dados para o <b>técnico decidir</b>. O app não prescreve treino.</div>
+  return`<div class="card"><div class="eyebrow">indicadores para decisão${info('Indicadores para decisão',
+      `Leitura dos dados para o <b>técnico decidir</b>. <b>O app não prescreve treino</b> — essa decisão é de quem treina você.`
+      +`<br><br>O card era chamado de "plano de ação", que soava como prescrição. O nome mudou para dizer o que ele de fato entrega.`)}</div>
     <div class="eyebrow" style="margin-top:6px">direção da carga</div>
     <div class="note ${ri.t}" style="margin:6px 0 10px"><b>${ri.nivel}:</b> ${ri.txt}</div>
     ${treinos.length?`<div class="eyebrow">pontos a trabalhar</div>${treinos.map(f=>`<div class="note ${f.t}" style="margin:6px 0 0">${f.txt}</div>`).join('')}`:''}
     <div class="sep"></div>
     <h3 style="margin:4px 0 8px">Para a competição</h3>
-    ${comp.length?comp.map(f=>`<div class="note ${f.t}" style="margin-bottom:8px">${f.txt}</div>`).join(''):'<div class="small muted">Registre resultados de competição (em Marcas) para indicadores específicos por prova.</div>'}
+    ${comp.length?comp.map(f=>`<div class="note ${f.t}" style="margin-bottom:8px">${f.txt}</div>`).join(''):`<div class="small muted">Registre resultados em <b>Marcas</b>${info('Indicadores por prova',
+      `Os indicadores desta seção são <b>por prova</b>: eles comparam as suas últimas competição a competição, na mesma distância, estilo e piscina.`
+      +`<br><br>Sem resultado registrado não há o que comparar.`)}</div>`}
   </div>`;
 }
 /* ── UM CARTÃO QUEBRADO NÃO PODE DERRUBAR O RELATÓRIO ──────────────────────
@@ -15830,7 +15937,9 @@ function botaoDemo(){
   if(FB)return'';   /* no modo em rede não há demonstração — só contas reais */
   return`<div class="card" style="border-style:dashed;background:none;box-shadow:none">
     <div class="eyebrow">demonstração</div>
-    <p class="small muted" style="margin:6px 0 10px">Equipe A3 Swim Team já montada, com treinos, competição e dados. Entre sem cadastro para conhecer.</p>
+    <p class="small muted" style="margin:6px 0 10px">Entre sem cadastro para conhecer${info('Modo demonstração',
+      `Uma equipe já montada — A3 Swim Team — com treinos, competição e dados de exemplo.`
+      +`<br><br>Nada do que você fizer aqui vai para a sua conta, e nada da demonstração entra no app de ninguém.`)}</p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="sm" onclick="demo('tecnico')">Ver como técnico</button>
       <button class="sm" onclick="demo('pro')">Ver como Bruno (PRO)</button>
