@@ -260,6 +260,27 @@ textarea{min-height:170px;font-family:var(--mono);font-size:15px;line-height:1.6
 label{display:block;font-family:var(--disp);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
 .field{margin:12px 0}
 .field-erro{display:block;color:var(--clock);font-size:13px;margin-top:5px;min-height:0}
+/* ⚠️ O `appearance:none` DA REGRA ACIMA APAGA O DESENHO DO CHECKBOX.
+   Ela existe para os campos de texto e o select, mas pega todo `input` — e um
+   checkbox sem aparência nativa fica só com a borda: marcado e desmarcado
+   viram quase a mesma coisa, e a pessoa não sabe se confirmou. Era o caso da
+   caixa "Confirmo que os dados são meus" no cadastro.
+   Aqui ele volta a ter corpo próprio: caixa de 22 px e, quando marcado, fundo
+   cheio com a marca desenhada em SVG (não é pseudo-elemento, que em `input`
+   não é confiável em todo navegador).
+   O `width` vem com !important de propósito: havia `style="width:auto"` escrito
+   à mão em vários pontos para escapar do `width:100%` da regra geral, e estilo
+   inline ganha de classe. */
+input[type=checkbox]{
+  width:22px!important;height:22px;min-height:0;flex:0 0 auto;padding:0;margin:0;
+  border:1.5px solid var(--line-forte);border-radius:6px;background:var(--card);
+  cursor:pointer;transition:background-color .12s,border-color .12s;vertical-align:-.25em}
+input[type=checkbox]:checked{
+  background-color:var(--ink);border-color:var(--ink);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.5l5 5L19.5 7'/%3E%3C/svg%3E");
+  background-size:15px;background-position:center;background-repeat:no-repeat}
+input[type=checkbox]:focus-visible{outline:2px solid var(--water);outline-offset:2px}
+input[type=checkbox]:disabled{opacity:.5;cursor:default}
 input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock);background:var(--clock-bg)}
 .progress{height:6px;border-radius:999px;background:var(--line);overflow:hidden;margin:12px 0 0}
 .progress span{display:block;height:100%;border-radius:999px;background:var(--clock);transition:width .2s}
@@ -633,14 +654,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v206"></script>
-<script src="./inicio-e-grupos.js?v=v206"></script>
+<script src="./persistencia-segura.js?v=v207"></script>
+<script src="./inicio-e-grupos.js?v=v207"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v206';
+const VER='v207';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -957,6 +978,9 @@ function camposSeguranca(k,v){
        O split corta o sufixo das versões diárias (pro_<uid>_bk3). */
     o.dono=val._dono||k.slice(4).split('_')[0]||null;
   }
+  /* a categoria é o que o Apps Script consulta — sem ela o recado fica no
+     banco e ninguém é avisado de nada */
+  else if(k.startsWith('despedida_')){ o.dono=k.slice(10)||null; o.categoria='despedida'; }
   else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null);o.geradorVersao=val.origem?.tipo==='gerador'?(val.origem.versao||null):null; }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
@@ -5786,6 +5810,26 @@ teste('exclusão admin','quem não é administrador não apaga ninguém',a=>{
     apagarUsuarioAdmin('outro@x.com');
     a.ok(!chamou,'a folha de confirmação nem abre');
   } finally { window.sheet=_sh; }});
+/* ── A EXCLUSÃO PARAVA POR ERRO QUE NÃO ERA BLOQUEIO (v207) ────────────────
+   Qualquer falha ao varrer os grupos — consulta negada, índice faltando,
+   rede — abortava TUDO com "Exclusão não iniciada". A pessoa ficava sem
+   conseguir apagar a conta e sem entender o porquê. Só existe um motivo
+   legítimo de recusar: ela ainda é dona de um grupo ativo. */
+teste('exclusão','recusa de grupo ativo vem marcada como bloqueio',a=>{
+  const e=Error('Transfira a responsabilidade ou arquive seus grupos antes de apagar a conta.');
+  e.bloqueio=true;
+  a.eq(e.bloqueio,true,'o bloqueio desenhado se identifica');
+  a.ok(!Error('Missing or insufficient permissions.').bloqueio,
+    'falha técnica não — e por isso não pode impedir alguém de sair do app');});
+teste('exclusão','o recado de despedida leva só o necessário',a=>{
+  /* o app não manda e-mail; ele grava o recado ANTES de apagar o cadastro,
+     porque depois a pessoa perde a permissão de escrever e o u_ — onde
+     estaria o e-mail dela — já não existe. */
+  const c=camposSeguranca('despedida_U9',{email:'x@y.com',nome:'Ana'});
+  a.eq(c.dono,'U9','o dono sai da chave, que é o uid');
+  a.eq(c.categoria,'despedida','e a categoria é o que o Apps Script consulta');
+  a.eq(c.equipe,null,'sem equipe');
+  a.eq(c.perfil,null,'sem perfil — o recado não carrega perfil de ninguém');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -8651,8 +8695,25 @@ async function confirmarApagarMinhaConta(){
     catch(e){ return toast(traduzErroFB(e.code)); }
   }
   toast('Apagando…');
-  try{await apagarDadosGruposDaConta();}catch(e){return alerta('Exclusão não iniciada',esc(e.message));}
+  /* ⚠️ SÓ O BLOQUEIO DE VERDADE PARA A EXCLUSÃO.
+     Qualquer erro aqui — consulta negada, índice faltando, rede — abortava TUDO
+     com "Exclusão não iniciada", e a pessoa ficava sem conseguir apagar a conta
+     sem entender o porquê. Só existe UM motivo legítimo para recusar: ela ainda
+     é dona de um grupo ativo, e aí outras pessoas dependem dela. O resto é
+     falha técnica nossa: vira uma sobra relatada no fim, como os outros passos,
+     e não impede a pessoa de sair do app. */
+  let sobraGrupos=null;
+  try{ await apagarDadosGruposDaConta(); }
+  catch(e){
+    if(e&&e.bloqueio)return alerta('Exclusão não iniciada',esc(e.message));
+    sobraGrupos=(e&&e.message)||String(e);
+    console.warn('grupos na exclusão',sobraGrupos);
+  }
   const r=await apagarDadosDaConta(u,S.pro);
+  if(sobraGrupos)r.falhas.push({rot:'grupos',erro:sobraGrupos});
+  /* o aviso de despedida é gravado ANTES de apagar o cadastro: depois a pessoa
+     não tem mais permissão para escrever nada */
+  if(r.cadastroApagado)try{ await registrarDespedida(u); }catch(e){ console.warn('despedida',e&&e.message); }
   /* ⚠️ NÃO apagar o login se o cadastro sobreviveu: sem login ninguém entra
      para tentar de novo, e o dado fica no banco para sempre. */
   if(!r.cadastroApagado){
@@ -8673,8 +8734,21 @@ async function confirmarApagarMinhaConta(){
     `Os seus dados foram removidos, inclusive Saúde, treinos pessoais e as cópias diárias.`
     +`<br><br>O que não deu para remover, porque pertence à equipe e só o técnico escreve: `
     +`<b>${eqFalhou.map(x=>esc(x.rot.replace('equipe: ',''))).join(', ')}</b>. Peça ao técnico para limpar.`);
-  else toast('Conta apagada');
+  else alerta('Sua conta foi excluída',
+    `Todos os seus dados foram removidos do ${APP_NOME}.`
+    +`<br><br>Obrigado por ter usado o app — se um dia quiser voltar, é só criar uma conta nova com o mesmo e-mail.`);
   render();
+}
+/* ⚠️ O APP NÃO MANDA E-MAIL — ELE DEIXA O RECADO.
+   Não há servidor aqui: quem envia é o Apps Script (backend/notificacoes.gs),
+   que lê o Firestore de minuto em minuto. Mas depois de apagar o cadastro a
+   pessoa perde a permissão de escrever qualquer coisa — e o próprio `u_` some,
+   que era onde estaria o e-mail dela. Por isso o recado é gravado ANTES, num
+   documento que só tem o necessário para a despedida, e o script o apaga
+   depois de enviar. */
+async function registrarDespedida(u){
+  if(!FB||!u||!u.email)return;
+  await DB.set('despedida_'+u.id,{email:u.email,nome:u.nome||'',em:Date.now()});
 }
 /* A remoção propriamente dita, separada da tela: é o que dá para testar sem
    depender de Firebase, de senha e de sheet aberta. Devolve as chaves que
