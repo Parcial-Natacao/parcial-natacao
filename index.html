@@ -654,14 +654,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v208"></script>
-<script src="./inicio-e-grupos.js?v=v208"></script>
+<script src="./persistencia-segura.js?v=v209"></script>
+<script src="./inicio-e-grupos.js?v=v209"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v208';
+const VER='v209';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2510,7 +2510,9 @@ function telaCadastro(){
       <div class="field"><label for="cdNasc">Data de nascimento</label><input id="cdNasc" value="${esc(CAD.nascimento||'')}" type="date" max="${dataMaxNascimento()}">
         <div class="xs muted" style="margin-top:5px">O cadastro é para <b>maiores de ${IDADE_MINIMA} anos</b>. Menor de idade só com o responsável — fale com o administrador.</div></div>
       <div class="field"><label for="cdTel">WhatsApp</label><input id="cdTel" value="${esc(CAD.telefone||'')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="(67) 99999-9999">
-        <div class="xs muted" style="margin-top:5px">Usado para receber treinos e tempos. Não exibimos seu número publicamente.</div></div>
+        <div class="xs muted" style="margin-top:5px">Não exibimos seu número${info('Para que serve o WhatsApp',
+          `Para você receber treinos e tempos do seu técnico.`
+          +`<br><br>O número <b>não aparece publicamente</b> em lugar nenhum do app — só o técnico da sua equipe enxerga.`)}</div></div>
     </div>
     ${atleta?`<div class="field"><label for="cdCpf">CPF <span class="muted">(opcional)</span></label><input id="cdCpf" value="${esc(CAD.cpf||'')}" inputmode="numeric" placeholder="000.000.000-00"></div>`:''}
     ${p!=='tecnico'?`<div class="field"><label>Onde você compete</label><div class="opt"><button type="button" id="tpA" class="${TIPO==='piscina'?'on':''}" onclick="selTipo('piscina')">Piscina</button><button type="button" id="tpB" class="${TIPO==='aguas'?'on':''}" onclick="selTipo('aguas')">Águas abertas</button></div></div>`:''}`;
@@ -5179,7 +5181,9 @@ function cardExtrato(ym){
     (t.length?'<div class="sep"></div>'+acc('ex_t_'+ym,'Todos os tiros do mês',t.length+' tiro(s)',t.map(linhaTiro).join('')):'')+
     (function(){const sr=(S.extratoSerie||{})[ym];
       return sr?'<div class="sep"></div><div class="eyebrow">os últimos 12 meses</div>'+graficoMeses(sr):'';})()+
-    '<div class="xs muted" style="margin-top:10px">O extrato descreve e aponta padrões a partir dos seus dados. Decisão de carga é sua e do seu técnico.</div>'+
+    '<div class="xs muted" style="margin-top:10px">Descritivo'+info('O que o extrato é',
+      'Ele <b>descreve</b> e aponta padrões a partir dos seus dados — não recomenda nem prescreve.'
+      +'<br><br>Decisão de carga é sua e do seu técnico.')+'</div>'+
   '</div>';
 }
 
@@ -11374,14 +11378,15 @@ function cardMedidorProntidao(){
 function cardProntidaoSubj(){
   const p=prontidaoSubj(7); if(!p)return'';
   const v=veredictoProntidao(p.media);
-  return`<div class="card"><div class="eyebrow">prontidão · check-in subjetivo</div>
+  return`<div class="card"><div class="eyebrow">prontidão · check-in subjetivo${info('Check-in subjetivo',
+      `Sono, energia, dor muscular, estresse e humor — leitura de prontidão <b>sem relógio</b>.`
+      +`<br><br>Ela não substitui a fadiga por carga: complementa. Quando as duas discordam, essa divergência costuma ser o sinal mais útil do dia.`)}</div>
     <div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v" style="color:${v.cor}">${p.media}</div><div class="l">média 7d (0-100)</div></div>
       <div class="kpi"><div class="v">${p.hoje!=null?p.hoje:'—'}</div><div class="l">hoje</div></div>
       <div class="kpi"><div class="v">${p.n}</div><div class="l">check-ins 7d</div></div>
     </div>
     <div class="note" style="margin-top:10px;border-color:${v.cor}"><b>${v.nivel[0].toUpperCase()+v.nivel.slice(1)}:</b> ${v.txt}</div>
-    <div class="xs muted" style="margin-top:6px">Sono, energia, dor muscular, estresse e humor — leitura de prontidão sem relógio, complementa a fadiga por carga.</div>
   </div>`;
 }
 /* ── Sono por faixa ────────────────────────────────────────────────────────
@@ -12254,7 +12259,9 @@ function abrirTreinoExtra(data,id){
 function formTreinoExtra(){
   const d=S.secoDraft||{};
   return`<h2>${S.secoEdit?'Editar treino':'Novo treino'}</h2>
-    <div class="small muted" style="margin-bottom:8px">Musculação, bike, corrida, funcional, core, mobilidade… entra no seu calendário e no relatório (carga e fadiga).</div>
+    <div class="small muted" style="margin-bottom:8px">Musculação, bike, corrida, funcional, core, mobilidade…${info('Treino fora d\'água',
+      `Entra no seu calendário e no relatório, somando com a natação na <b>carga</b> e na <b>fadiga</b>.`
+      +`<br><br>É o que põe a musculação e a piscina na mesma escala: duração × RPE.`)}</div>
     <input type="file" id="fSeco" accept="image/*,application/pdf" style="display:none" onchange="fotoSeco(this)">
     ${temIA()?`<input type="file" id="iaSeco" accept="image/*,application/pdf" style="display:none" onchange="lerSecoPorIA(this)">`:''}
     <div class="grid2">
@@ -13682,7 +13689,10 @@ function cardComposicaoRelativa(pro){
       ${c.fonte==='água corporal'
         ?'Fórmula: massa magra ≈ água corporal ÷ 0,732 (hidratação média do tecido magro); a gordura sai por diferença. É método aceito, mas pressupõe hidratação normal no dia da medição.'
         :'Fórmula: tabela por idade e sexo — não é uma medição sua.'}
-      <span class="xs muted" style="display:block;margin-top:4px">Valor original do aparelho preservado no registro, para auditoria. Estimativa <b>não alimenta score, radar nem projeção</b>. Com uma medição confiável (dobras ou DEXA) registrada, o app passa a usá-la.</span></div>`:''}
+      <span class="xs muted" style="display:block;margin-top:4px">Não alimenta score, radar nem projeção${info('Por que ela fica de fora',
+        `O valor original do aparelho fica preservado no registro, para auditoria — nada é reescrito.`
+        +`<br><br>Mas uma estimativa não entra em score, radar nem projeção: isso daria a ela o mesmo peso de uma medição.`
+        +`<br><br>Com uma medição confiável registrada (dobras ou DEXA), o app passa a usar essa.`)}</span></div>`:''}
     ${/* Sem evidência individual, recomendar perda de peso é extrapolar — a
          ressalva continua no app, no "i" do cabeçalho deste card. */''}
   </div>`;
@@ -14575,8 +14585,10 @@ function cardAprendizado(pro){
   const pbs=pro.pbs||{};
   const pis=pbs[`${a.d} ${a.e} LC50`]?'LC50':'SC25';
   const p=precisaoModelo(pro,a.d,a.e,pis);
-  if(!p||!p.n)return`<div class="card" data-dom="prova"><div class="eyebrow">aprendizado do modelo</div>
-    <p class="small muted" style="margin-top:6px">Ainda não há competição registrada para comparar com a previsão. <b>Registre seus resultados em Marcas</b> — a cada prova o app passa a saber o quanto costuma errar com você, e a projeção deixa de ser um palpite genérico.</p></div>`;
+  if(!p||!p.n)return`<div class="card" data-dom="prova"><div class="eyebrow">aprendizado do modelo${info('Aprendizado do modelo',
+    `Este card mede <b>o quanto a projeção errou</b> com você, prova a prova — é a única leitura do relatório que é verificável contra resultado real.`
+    +`<br><br>Para existir, ele precisa de competição registrada: a cada prova que você lança em Marcas, o app aprende o seu erro típico e a projeção deixa de ser um palpite genérico.`)}</div>
+    <p class="small muted" style="margin-top:6px"><b>Registre seus resultados em Marcas</b></p></div>`;
   const sinal=v=>(v>0?'+':'')+ (Math.abs(v)>=1000?fmt(Math.abs(v),true):(v/1000).toFixed(2)+'s');
   const linhas=p.itens.map(x=>{
     const cor=x.erro<0?'var(--ok)':(x.erro>=1200?'var(--clock)':'var(--ink-2)');   /* verde = nadou mais rapido */
@@ -14634,7 +14646,9 @@ function cardAprendizado(pro){
       const fora=todas.filter(r=>!dentro.has(r.data)).sort((x,y)=>y.data.localeCompare(x.data));
       if(!fora.length)return'';
       return`<div class="note" style="margin-top:8px"><b>${fora.length} de ${todas.length} vez(es) que você nadou esta prova ficaram fora desta comparação</b>, a mais recente em ${brData(fora[0].data)}${fora[0].comp?` (${esc(fora[0].comp)})`:''}.
-        <span class="xs muted" style="display:block;margin-top:4px">Motivo: só entra aqui a prova que tinha <b>tiros registrados antes dela</b> — sem o lado do treino não há previsão para comparar com o resultado. Elas continuam valendo em <b>Marcas</b> e no histórico de evolução; o que não dá é medir erro de previsão onde não houve previsão possível.</span></div>`;})()}
+        ${info('Por que elas ficaram fora',
+          `Só entra nesta comparação a prova que tinha <b>tiros registrados antes dela</b> — sem o lado do treino não havia previsão, e não dá para medir erro de previsão onde não houve previsão possível.`
+          +`<br><br>Elas continuam valendo em <b>Marcas</b> e no histórico de evolução. Ficar de fora daqui não é descarte.`)}</div>`;})()}
     ${/* P1-B — COBERTURA. Só é medida sobre previsões PROSPECTIVAS (a faixa
          reconstruída não existe), e só é afirmada com amostra. Antes, uma
          única prova dentro da faixa virava "cobertura 100%". */''}
@@ -15335,7 +15349,14 @@ function paginaResumo(pro,motor,comPct){
   return`<div class="pagina-um" data-dom="prova">
     <div class="eyebrow">resumo executivo</div>
     <h2 style="margin:2px 0 2px">Quadro de indicadores</h2>
-    <p class="small muted" style="margin:0 0 4px">Cinco blocos, do estado geral à estimativa da prova. Cada número guarda período, fonte, nº de observações e o que ele não permite concluir — abra <b>“como este número é apurado”</b> para ver, ou imprima, que no PDF vem tudo aberto. <b>Nenhum deles é probabilidade</b> de nadar bem, vencer ou bater recorde.</p>
+    ${/* ⚠️ "Nenhum deles é probabilidade" FICA NA TELA.
+         Eu tinha mandado essa frase inteira para o "i" e um teste de 2026 pegou:
+         ela não é explicação, é COMPROMISSO. Um quadro de cinco escores lido por
+         um atleta e pelo técnico dele não pode deixar essa ressalva atrás de um
+         toque — quem não tocar vai ler escore como chance de vencer. */''}
+    <p class="small muted" style="margin:0 0 4px">Cinco blocos, do estado geral à estimativa da prova. <b>Nenhum deles é probabilidade</b> de nadar bem, vencer ou bater recorde.${info('Como ler este quadro',
+      `Cada número guarda <b>período, fonte, nº de observações</b> e o que ele não permite concluir — abra "como este número é apurado" para ver, ou imprima: no PDF vem tudo aberto.`
+      )}</p>
     ${bloco(1,'Como você está hoje',
       fichaIndicador({nome:'Prontidão do dia',valor:pr==null?null:pr,unidade:'0–100',cor:cor(pr),
         periodo:'hoje contra a sua base de 28 dias',fonte:'relógio (VFC, FC de repouso, sono) e carga',
