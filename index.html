@@ -253,8 +253,12 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock)
 .report-lead .muted{color:var(--lead-2)}
 .report-lead .note{color:var(--ink);border-left-width:0;border-radius:var(--r-sm)}
 .report-meta{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;margin-top:12px;color:var(--lead-2)}
-.report-meta>div{display:flex;gap:7px;align-items:baseline}
-.report-meta b{font:700 24px/1 var(--mono);color:var(--lead-ink)}
+.report-meta>div{display:flex;gap:9px;align-items:baseline;width:100%}
+/* "100%" e "87%" têm larguras diferentes, então os rótulos ao lado começavam
+   em pontos diferentes e as duas linhas ficavam esfarrapadas. Largura mínima
+   no número põe os rótulos em coluna. */
+.report-meta b{font:700 24px/1 var(--mono);color:var(--lead-ink);
+  min-width:3.6ch;text-align:right;font-variant-numeric:tabular-nums;flex:0 0 auto}
 .report-meta small{width:100%}
 .report-details>summary{cursor:pointer;list-style:none;font-family:var(--disp);font-weight:700;text-transform:uppercase;
   letter-spacing:.06em;padding:14px 2px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -272,12 +276,23 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:var(--clock)
   display:flex;align-items:center;justify-content:center;background:var(--card-2);border:1px solid var(--line)}
 .perfil b{font-family:var(--disp);font-size:20px;text-transform:uppercase;display:block;line-height:1.1}
 .perfil.on{border-color:var(--ink);border-width:2px}
+.perfis.pedindo .perfil{border-color:var(--water);box-shadow:0 0 0 3px var(--water-bg);animation:pede-perfil .9s ease-out 2}
+@keyframes pede-perfil{0%,100%{box-shadow:0 0 0 3px var(--water-bg)}50%{box-shadow:0 0 0 7px var(--water-bg)}}
+@media (prefers-reduced-motion:reduce){.perfis.pedindo .perfil{animation:none}}
 .perfil.on .ic{background:var(--ink);color:var(--deck);border-color:var(--ink)}
 table{width:100%;border-collapse:collapse;font-size:14.5px}
 th{font-family:var(--disp);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);text-align:left;
   padding:7px 5px;border-bottom:1.5px solid var(--line);font-weight:600}
-td{padding:8px 5px;border-bottom:1px solid var(--line)}
+td{padding:8px 5px;border-bottom:1px solid var(--line);vertical-align:middle}
+/* ⚠️ COLUNA DE NÚMERO ALINHA À DIREITA, E O CABEÇALHO VAI JUNTO.
+   `.n` já dizia "isto é número" (mono + tabular-nums), mas ficava encostado
+   à esquerda como texto. Numa coluna de tempos, "30.21" e "1:13.12"
+   começavam no mesmo ponto e terminavam em pontos diferentes — os dígitos
+   não formavam coluna e a tabela parecia desmontada. À direita, as unidades
+   ficam uma sobre a outra, que é para o que serve tabular-nums. O `th.n`
+   acompanha, ou o rótulo fica sobre o nada. */
 td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+td.n,th.n{text-align:right}
 td input{padding:7px 5px;font-family:var(--mono);font-size:15px;text-align:center;border-radius:8px;min-height:40px}
 .z{display:inline-block;font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   padding:2px 8px;border-radius:6px;border:1.5px solid}
@@ -595,14 +610,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v201"></script>
-<script src="./inicio-e-grupos.js?v=v201"></script>
+<script src="./persistencia-segura.js?v=v202"></script>
+<script src="./inicio-e-grupos.js?v=v202"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v201';
+const VER='v202';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2339,18 +2354,17 @@ function telaEntrada(){
   </div>
   <div class="card" style="margin-top:22px">
     <div class="eyebrow">quem é você</div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+    <div id="listaPerfis" class="perfis${S.pedePerfil?' pedindo':''}" style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
       ${[['atleta','A','Atleta','Para quem nada por saúde ou lazer. Registre seus treinos de forma simples.'],
          ['pro','P','Atleta PRO','Para quem compete: acompanhamento diário, todos os tempos, Garmin, histórico e relatório de análise.'],
          ['tecnico','T','Técnico','Comanda a equipe, monta os treinos por nível e cronometra as competições.']]
-        .map(([k,i,t,d])=>`<button class="perfil ${S.perfilEscolhido===k?'on':''}" onclick="push();S.perfilEscolhido='${k}';render()">
+        .map(([k,i,t,d])=>`<button class="perfil ${S.perfilEscolhido===k?'on':''}" onclick="escolherPerfil('${k}')">
           <span class="ic">${i}</span><span><b>${t}</b><span class="small muted">${d}</span></span></button>`).join('')}
     </div>
     <div class="grid2" style="margin-top:14px">
-      <button class="primary" ${S.perfilEscolhido?'':'disabled'} onclick="push();CAD_PASSO=1;CAD={};S.vista='cadastro';render()">Criar conta</button>
+      <button class="primary" onclick="irCriarConta()">Criar conta</button>
       <button onclick="push();S.vista='login';render()">Já tenho conta</button>
     </div>
-    ${S.perfilEscolhido?'':'<div class="small muted center" style="margin-top:10px">Escolha um perfil apenas para criar uma conta.</div>'}
   </div>
   ${botaoDemo()}`;
 }
@@ -2465,6 +2479,22 @@ function telaCadastro(){
     <div class="grid2" style="margin-top:16px">${CAD_PASSO>1?'<button onclick="passoCadastro(-1)">Voltar etapa</button>':'<span></span>'}${CAD_PASSO<3?'<button class="primary" onclick="passoCadastro(1)">Continuar</button>':'<button id="btnCriarConta" class="primary" onclick="enviarCadastro()">Criar conta</button>'}</div>
     ${CAD_PASSO===3?`<div class="xs muted" style="margin-top:10px;text-align:center">Ao criar a conta você concorda com a <a href="./privacidade.html" target="_blank" rel="noopener"><b>Política de Privacidade</b></a>. Dados de saúde (relógio, exames, bioimpedância e check-in) são <b>opcionais</b> e só são tratados com o seu consentimento — o seu técnico não os enxerga.</div>`:''}
   </div>`;
+}
+/* ⚠️ BOTÃO PRIMÁRIO DESABILITADO NA PRIMEIRA TELA PARECE QUEBRADO.
+   "Criar conta" nascia cinza e inerte até alguém escolher um perfil, e a
+   explicação ficava embaixo, em cinza claro. Quem abre o app pela primeira
+   vez lê o botão principal como defeito antes de ler como estado. Agora ele
+   responde sempre: sem perfil escolhido, ACENDE os três cartões e diz o que
+   falta, em vez de não fazer nada. */
+function escolherPerfil(k){ S.perfilEscolhido=k; S.pedePerfil=false; push(); render(); }
+function irCriarConta(){
+  if(!S.perfilEscolhido){
+    S.pedePerfil=true; render();
+    const el=document.getElementById('listaPerfis');
+    if(el)try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(_){}
+    return toast('Escolha um perfil para continuar');
+  }
+  push(); CAD_PASSO=1; CAD={}; S.vista='cadastro'; render();
 }
 function selTipo(t){TIPO=t;
   document.getElementById('tpA').classList.toggle('on',t==='piscina');
@@ -4480,9 +4510,15 @@ function telaTreinosAtleta(){
   </div>
   ${S.treinoView==='lista'?grupoTreinos(lista,cardFn):calendarioTreinos(lista,cardFn,'abrirTreinoExtra')}`:
     ''}
-  ${lista.length?`<button class="ghost full" style="margin-top:14px" onclick="conferirMetragemTodos()">Conferir a metragem dos treinos</button>${info('Conferir a metragem',
+  ${/* ⚠️ BOTÃO DE BLOCO NÃO TEM LINHA DE TEXTO PARA O "i" SE ALINHAR.
+       Pendurado solto depois do </button>, ele cai sozinho na linha de baixo,
+       encostado na esquerda — foi o que aconteceu aqui e no "Prova em foco".
+       Numa linha flex os dois viram irmãos e o `align-items:center` resolve
+       sem depender de `vertical-align`, que só vale dentro de texto. */''}
+  ${lista.length?`<div class="row" style="margin-top:14px;gap:9px;align-items:center">
+    <button class="ghost grow" onclick="conferirMetragemTodos()">Conferir a metragem dos treinos</button>${info('Conferir a metragem',
     `Relê o texto de cada treino com as correções mais novas do app — o parser melhorou várias vezes, e treino antigo guardou a leitura antiga.`
-    +`<br><br>Mostra o que mudaria <b>antes</b> de gravar. Nada é alterado sem você confirmar.`)}
+    +`<br><br>Mostra o que mudaria <b>antes</b> de gravar. Nada é alterado sem você confirmar.`)}</div>
   `:''}`;
 }
 
@@ -7197,9 +7233,29 @@ teste('confirmação','sem endereço guardado a tela não mente',a=>{
 /* ── ATLETA PRO COMPETITIVO (v159) ─────────────────────────────────────────
    PRO é o atleta que compete e usa o acompanhamento completo; não é gestor,
    não depende de convite e pode começar sem equipe ou técnico. */
+teste('cadastro PRO','o botão Criar conta nunca nasce desabilitado',a=>{
+  /* botão primário cinza e inerte na PRIMEIRA tela do app é lido como defeito
+     antes de ser lido como estado. Sem perfil escolhido ele acende os três
+     cartões em vez de não fazer nada. */
+  const _p=S.perfilEscolhido; S.perfilEscolhido=null; S.pedePerfil=false;
+  try{
+    const h=telaEntrada();
+    a.ok(!/class="primary"[^>]*disabled/.test(h),'sem perfil, o botão continua ativo');
+    a.ok(/irCriarConta\(\)/.test(h),'e chama o caminho que pede o perfil');
+    a.ok(!/class="perfis pedindo"/.test(h),'os cartões começam apagados');
+    S.pedePerfil=true;
+    a.ok(/class="perfis pedindo"/.test(telaEntrada()),'e acendem quando o app pede o perfil');
+  } finally { S.perfilEscolhido=_p; S.pedePerfil=false; }});
 teste('cadastro PRO','a escolha explica a diferença para o atleta de lazer',a=>{
   const h=telaEntrada();
-  a.ok(h.includes("S.perfilEscolhido='pro'"),'PRO é uma escolha direta de cadastro');
+  /* o teste cobrava o `onclick` escrito à mão e quebrou quando ele virou uma
+     função. Agora cobra o COMPORTAMENTO, que é o que importa: PRO é escolha
+     direta de cadastro, sem convite e sem passar por outro perfil. */
+  a.ok(h.includes("escolherPerfil('pro')"),'PRO é uma escolha direta de cadastro');
+  {const _p=S.perfilEscolhido,_r=window.render,_u=window.push;
+   window.render=()=>{}; window.push=()=>{};
+   try{ escolherPerfil('pro'); a.eq(S.perfilEscolhido,'pro','e escolher de fato marca o perfil'); }
+   finally{ S.perfilEscolhido=_p; window.render=_r; window.push=_u; }}
   a.ok(/Para quem compete/.test(h),'explica a finalidade competitiva');
   a.ok(/saúde ou lazer/.test(h),'diferencia o atleta comum');});
 teste('cadastro PRO','não pede código e aceita começar independente',a=>{
