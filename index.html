@@ -654,14 +654,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v207"></script>
-<script src="./inicio-e-grupos.js?v=v207"></script>
+<script src="./persistencia-segura.js?v=v208"></script>
+<script src="./inicio-e-grupos.js?v=v208"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v207';
+const VER='v208';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2477,7 +2477,9 @@ function telaCadastro(){
          <option value="">— escolha sua equipe —</option>
          ${opcoesCatalogo.map(e=>`<option value="${esc(e.nome)}" ${CAD.equipe===e.nome?'selected':''}>${esc(e.nome)}</option>`).join('')}
        </select>
-       <div class="xs muted" style="margin-top:5px">A equipe é opcional e não precisa ter técnico. Se ela não estiver aqui, crie sua conta sem equipe e registre-a depois.</div>`
+       <div class="xs muted" style="margin-top:5px">Opcional${info('Equipe no cadastro',
+         `A equipe é opcional e <b>não precisa ter técnico</b> — ela é só a sua afiliação.`
+         +`<br><br>Se a sua não estiver na lista, crie a conta sem equipe e registre-a depois. Nada se perde por começar sem.`)}</div>`
     : !precisaLista
     ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" autocapitalize="words" placeholder="ex.: A3 Swim Team">
        <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Digite o nome oficial da equipe. Se ela já existir, seu cadastro será vinculado a ela.':'Digite exatamente o nome informado pelo seu técnico.'}</div>`
@@ -2487,7 +2489,9 @@ function telaCadastro(){
             ? `<input id="cdEquipe" value="${esc(CAD.equipe||'')}" list="listaEquipes" autocomplete="off" autocapitalize="characters" placeholder="digite para buscar sua equipe">
                <datalist id="listaEquipes">${[...S.equipesDisp].sort((a,b)=>a.nome.localeCompare(b.nome)).map(e=>`<option value="${esc(e.nome)}"></option>`).join('')}</datalist>
                <div class="xs muted" style="margin-top:5px">${p==='tecnico'?'Escolha a equipe que o desenvolvedor já criou (digite para buscar).':'Digite e escolha a mesma equipe do seu técnico.'}</div>`
-            : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda. Peça ao desenvolvedor para criar a sua equipe primeiro.</div>`));
+            : `<div class="note" style="border-color:var(--clock)">Nenhuma equipe disponível ainda${info('Sem equipes na lista',
+                `As equipes são criadas pelo administrador do app, não no cadastro — é o que impede alguém de inventar uma equipe e virar gestor sem revisão.`
+                +`<br><br>Peça ao administrador para criar a sua primeiro.`)}</div>`));
   const escolhaEquipe=`<div class="field"><label>Qual é sua situação hoje?</label><div class="opt">
       <button type="button" class="${!CAD.semEquipe?'on':''}" aria-pressed="${!CAD.semEquipe}" onclick="selSituacaoEquipe('com')">Tenho uma equipe</button>
       <button type="button" class="${CAD.semEquipe?'on':''}" aria-pressed="${!!CAD.semEquipe}" onclick="selSituacaoEquipe('sem')">Ainda não tenho equipe</button>
@@ -4583,7 +4587,9 @@ function telaAguardando(){
     <p class="small" style="margin-top:10px">Olá, ${esc(prim(S.u.nome))}! ${tec
       ? `Seu cadastro de <b>técnico</b> da equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação do administrador</b> do app.`
       : `Seu cadastro na equipe <b>${esc(S.u.equipeNome||'')}</b> foi recebido e está <b>aguardando a liberação</b> do técnico.`}</p>
-    <p class="small muted" style="margin-top:8px">Assim que for aprovado, tudo aparece aqui. Você pode fechar e voltar depois.</p>
+    <p class="small muted" style="margin-top:8px">Você pode fechar e voltar depois${info('Enquanto você espera',
+      `Assim que a liberação sair, tudo aparece aqui sozinho — não é preciso se cadastrar de novo nem ficar com o app aberto.`
+      +`<br><br>Você também recebe um e-mail avisando.`)}</p>
   </div>
   <button class="ghost full" style="margin-top:18px" onclick="sincronizar(false)">Já fui liberado? Atualizar</button>
   <button class="ghost full" onclick="abrirMeusGrupos()">Meus grupos privados e convites</button>
@@ -4610,7 +4616,9 @@ function telaElenco(){
     <span class="tag o">${esc(S.u.equipeNome||'')}</span></div>
   <div class="card">
     <div class="eyebrow">incluir atleta existente</div>
-    <p class="xs muted" style="margin:4px 0 8px">Coloque na sua equipe um atleta já cadastrado no app (pelo e-mail dele). Se ele estava em outra equipe, é transferido.</p>
+    <p class="xs muted" style="margin:4px 0 8px">Pelo e-mail com que ele se cadastrou${info('Incluir atleta já cadastrado',
+      `Coloca na sua equipe um atleta que <b>já tem conta</b> no app.`
+      +`<br><br>Se ele estava em outra equipe, é transferido — ninguém fica em duas ao mesmo tempo.`)}</p>
     <div class="field"><label>E-mail do atleta</label><input id="incEmail" inputmode="email" autocapitalize="off" autocorrect="off" placeholder="atleta@email.com"></div>
     <button class="primary full" onclick="incluirNaEquipe()">Incluir na equipe</button>
   </div>
@@ -10328,7 +10336,9 @@ function telaMarcas(){
   ${acc('mk_lc','Piscina longa · 50m',nLC?`${nLC} prova(s)`:'sem marcas',nLC?pbsTabela(pro.pbs,'LC50'):'<div class="small muted">Nenhuma marca de piscina longa. Toque em + Tempo.</div>')}
   ${acc('mk_alvos','Provas-alvo','provas foco da projeção',cardAlvos(pro)||'<div class="small muted">Sem provas-alvo definidas.</div>')}
   <div class="eyebrow" style="margin:16px 4px 4px">histórico de competições · por prova</div>
-  ${histProvas||'<div class="card"><div class="small muted">Nenhum resultado ainda. Use + Tempo (com a competição) ou o técnico lança nas competições.</div></div>'}
+  ${histProvas||`<div class="card"><div class="small muted">Nenhum resultado ainda${info('Como entram os resultados',
+    `Por <b>+ Tempo</b>, informando a competição junto — é a competição que transforma um tempo solto em ponto do histórico.`
+    +`<br><br>Ou pelo técnico, quando ele lança os tempos oficiais na aba Competição.`)}</div></div>`}
   ${espelho?'':`<div class="row noprint" style="margin:14px 0 0"><div class="grow"></div>
     <button class="sm ghost" onclick="abrirLimparMarcas()">Conferir procedência das marcas</button></div>`}
   <div style="height:20px"></div>`;
@@ -10925,7 +10935,8 @@ function telaStore(){
       <span class="av">${st.n[0]}</span>
       <span class="grow"><b>${st.n}</b><span class="xs muted" style="display:block">${st.dom}${st.nota?' · '+st.nota:''}</span></span>
       <span class="tag o">abrir ↗</span></a>`).join('')}
-    <div class="xs muted" style="margin-top:10px">Sugestões de equipamento: óculos, touca, maiô/sunga, palmar, pull buoy, nadadeira, snorkel frontal.</div>
+    <div class="xs muted" style="margin-top:10px">Sugestões de equipamento${info('O que costuma entrar aqui',
+      `Óculos, touca, maiô ou sunga, palmar, pull buoy, nadadeira e snorkel frontal.`)}</div>
   </div><div style="height:20px"></div>`;
 }
 
@@ -15926,7 +15937,9 @@ function botaoDemo(){
   if(FB)return'';   /* no modo em rede não há demonstração — só contas reais */
   return`<div class="card" style="border-style:dashed;background:none;box-shadow:none">
     <div class="eyebrow">demonstração</div>
-    <p class="small muted" style="margin:6px 0 10px">Equipe A3 Swim Team já montada, com treinos, competição e dados. Entre sem cadastro para conhecer.</p>
+    <p class="small muted" style="margin:6px 0 10px">Entre sem cadastro para conhecer${info('Modo demonstração',
+      `Uma equipe já montada — A3 Swim Team — com treinos, competição e dados de exemplo.`
+      +`<br><br>Nada do que você fizer aqui vai para a sua conta, e nada da demonstração entra no app de ninguém.`)}</p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="sm" onclick="demo('tecnico')">Ver como técnico</button>
       <button class="sm" onclick="demo('pro')">Ver como Bruno (PRO)</button>
