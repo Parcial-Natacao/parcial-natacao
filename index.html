@@ -154,7 +154,17 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
    num lugar e do dobro no outro. Em `em`, o círculo é sempre ~1,15× a altura
    do texto que acompanha, em qualquer um deles. */
 .info-i{display:inline-flex;align-items:center;justify-content:center;
-  width:1.45em;height:1.45em;min-height:0;margin-left:.45em;padding:0;
+  /* ⚠️ O GLIFO É MENOR QUE O CÍRCULO DE PROPÓSITO, E DESCE UM POUCO.
+     Medido: o "i" da Georgia ocupava 66% do diâmetro interno e o ponto começava
+     a 0,57 px do topo da caixa — encostado na circunferência. Duas causas:
+     o glifo era grande demais para o emblema, e `line-height:1` centra a CAIXA
+     DE LINHA, não a tinta: a fonte reserva descida abaixo da base que o "i"
+     não usa, então a tinta sobe dentro da caixa.
+     .64em de fonte em círculo de 1.77em dá o MESMO círculo de antes (.64×1.77
+     ≈ .78×1.45) com o glifo em ~54% do diâmetro. O padding-top de .1em
+     compensa a assimetria medida de 0,05em entre o centro da tinta e o da
+     caixa. Quem mexer no tamanho remede as duas coisas. */
+  width:1.77em;height:1.77em;min-height:0;margin-left:.36em;padding:.1em 0 0;
   /* ⚠️ O ÍCONE NÃO COMPETE COM O CONTEXTO.
      O círculo azul cheio chamava mais atenção que o número ao lado dele —
      numa tela com oito cartões viravam oito pontos azuis disputando o olho.
@@ -167,7 +177,7 @@ h3{font-size:17px;text-transform:uppercase;letter-spacing:.02em}
   border:1.25px solid currentColor;border-radius:50%;
   background:transparent;color:var(--info-traco);
   font-family:Georgia,'Times New Roman',serif;
-  font-size:.78em;font-weight:700;font-style:normal;line-height:1;
+  font-size:.64em;font-weight:700;font-style:normal;line-height:1;
   flex:0 0 auto;cursor:pointer;transition:color .13s,background .13s,transform .09s;
   /* ⚠️ O ALINHAMENTO NÃO É `middle`, E NÃO É CHUTE.
      `vertical-align:middle` centra a bolinha na ALTURA-X (altura do "x"), mas
@@ -623,14 +633,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v203"></script>
-<script src="./inicio-e-grupos.js?v=v203"></script>
+<script src="./persistencia-segura.js?v=v204"></script>
+<script src="./inicio-e-grupos.js?v=v204"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v203';
+const VER='v204';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4528,7 +4538,10 @@ function telaTreinosAtleta(){
        encostado na esquerda — foi o que aconteceu aqui e no "Prova em foco".
        Numa linha flex os dois viram irmãos e o `align-items:center` resolve
        sem depender de `vertical-align`, que só vale dentro de texto. */''}
-  ${lista.length?`<div class="row" style="margin-top:14px;gap:9px;align-items:center">
+  ${/* o `em` do ícone herda do CONTÊINER, e aqui o contêiner é a linha, não o
+       rótulo do botão: sem o font-size abaixo ele sai 28% maior que os outros
+       ícones da mesma tela (18,1 px contra 14,1–14,7 px, medido). */''}
+  ${lista.length?`<div class="row" style="margin-top:14px;gap:9px;align-items:center;font-size:13px">
     <button class="ghost grow" onclick="conferirMetragemTodos()">Conferir a metragem dos treinos</button>${info('Conferir a metragem',
     `Relê o texto de cada treino com as correções mais novas do app — o parser melhorou várias vezes, e treino antigo guardou a leitura antiga.`
     +`<br><br>Mostra o que mudaria <b>antes</b> de gravar. Nada é alterado sem você confirmar.`)}</div>
