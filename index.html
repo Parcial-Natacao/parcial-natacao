@@ -633,14 +633,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v204"></script>
-<script src="./inicio-e-grupos.js?v=v204"></script>
+<script src="./persistencia-segura.js?v=v205"></script>
+<script src="./inicio-e-grupos.js?v=v205"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v204';
+const VER='v205';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5017,7 +5017,9 @@ async function serieMeses(ym,n){
 }
 function graficoMeses(serie){
   const s=(serie||[]).filter(m=>m.n||m.cargaSem);
-  if(s.length<3)return '<div class="xs muted" style="margin-top:6px">Menos de três meses com registro — a linha longa aparece quando houver histórico.</div>';
+  if(s.length<3)return `<div class="xs muted" style="margin-top:6px">Menos de três meses com registro${info('Linha longa',
+    `A linha longa precisa de pelo menos três meses com registro para dizer alguma coisa — com dois pontos você tem uma reta, não uma tendência.`
+    +`<br><br>Ela aparece sozinha assim que o histórico chegar lá.`)}</div>`;
   const W=300,H=108,base=H-18,topo=10;
   const cargas=s.map(m=>m.cargaSem||0), maxC=Math.max.apply(null,cargas)||1;
   const pcts=s.map(m=>m.pct).filter(v=>v!=null);
@@ -12649,7 +12651,9 @@ function cardFadigaAtleta(a){
   const temCarga=!!(f&&f.aguda!=null);
   const v=veredictoFadiga(temCarga?f:null);
   const pr=f&&f.prontidao; const pv=pr?veredictoProntidao(pr.media):null;
-  return`<div class="card"><div class="eyebrow">situação · carga & fadiga</div>
+  return`<div class="card"><div class="eyebrow">situação · carga & fadiga${info('Carga e fadiga do atleta',
+      `Soma a <b>natação</b> (treinos da equipe) com o <b>fora d'água</b> que o atleta registra.`
+      +`<br><br>Carga = duração × RPE. <b>Não inclui dados de Saúde</b> — esses são do atleta e não chegam aqui.`)}</div>
     ${temCarga?`<div class="grid3" style="margin-top:8px">
       <div class="kpi"><div class="v">${f.cronica}</div><div class="l">fitness</div></div>
       <div class="kpi"><div class="v">${f.aguda}</div><div class="l">fadiga 7d</div></div>
@@ -12662,7 +12666,6 @@ function cardFadigaAtleta(a){
       <div class="xs muted" style="margin-top:4px">Origem: <b>${esc(f&&f.fontePront||'check-in')}</b>. Você vê só o <b>placar</b> — VFC, sono, exames e as respostas do check-in ficam privados do atleta.</div>`
       :`<div class="note warn" style="margin-top:10px"><b>Prontidão indisponível.</b> Sem ela você não tem como saber se dá para subir a carga. Peça a ${esc(prim(a.nome))} para fazer o <b>check-in diário</b> na aba Saúde (leva 20 segundos) ou importar os dados do relógio.</div>`}
     ${f&&f.nNat?`<div class="xs muted" style="margin-top:6px"><b>Cobertura da carga:</b> ${f.nNatCom} de ${f.nNat} treino(s) de natação com RPE e duração preenchidos.${f.nNatCom<f.nNat?` Os outros ${f.nNat-f.nNatCom} entram como <b>zero</b> — a carga está subestimada e a comparação com o fora d'água fica distorcida.`:''}</div>`:''}
-    <div class="xs muted" style="margin-top:6px">Natação (treinos da equipe) + fora d'água do atleta. Carga = duração × RPE. Não inclui dados de Saúde.</div>
   </div>`;
 }
 /* ── FORÇA ESTRUTURADA (FASE 1) ─────────────────────────────────────────────
@@ -14455,13 +14458,15 @@ function cardParciais(pro,motor,comPct){
         :s.r<-0.5?`Abrir mais rápido <b>não</b> tem custado a segunda metade aqui. ${s.n} provas — amostra pequena.`
         :`Abertura e manutenção não andam juntas de forma clara (${s.n} provas).`}</div>`:''}
     </div>`}).join('');
-  return`<div class="card" data-dom="prova" id="c-parciais"><div class="eyebrow">parciais de prova — ${esc(nome)}</div>
+  return`<div class="card" data-dom="prova" id="c-parciais"><div class="eyebrow">parciais de prova — ${esc(nome)}${info('Como ler as parciais',
+      `<b>Diferença</b> = segunda metade − primeira. Positiva é o normal: a primeira tem a saída.`
+      +`<br><br><b>Variação</b> é o desvio dessa diferença entre provas — quanto menor, mais repetível é a sua divisão de prova.`
+      +`<br><br><b>Origem não declarada</b> é registro antigo: o app não promove dado sem procedência a oficial.`)}</div>
     <div class="small muted" style="margin:4px 0 6px">Como a prova se divide em <b>${meio}m + ${meio}m</b>. Só provas desta distância, estilo e piscina.</div>
     <table><thead><tr><th>prova</th><th class="n">1º ${meio}</th><th class="n">2º ${meio}</th><th class="n">dif.</th><th>origem</th></tr></thead><tbody>${linhas}</tbody></table>
     ${blocos}
     ${pp.misturaOrigem?`<div class="note warn" style="margin-top:8px"><b>Origens diferentes não entram na mesma média.</b> Estas parciais vêm de ${ord.length} procedências (${ord.map(o=>ORIGEM_PARC[o]).join(', ')}), e cronometragem oficial não se mistura com tempo digitado depois. Por isso cada origem tem o seu bloco acima.</div>`:''}
     ${pp.semParcial?`<div class="xs muted" style="margin-top:6px"><b>${pp.semParcial} prova(s) de ${esc(nome)} ficaram fora</b> — só têm o tempo final registrado, sem a passagem dos ${meio}m. Continuam valendo em Marcas; o que não dá é dividir uma prova sem a parcial dela.</div>`:''}
-    <div class="xs muted" style="margin-top:6px"><b>Diferença</b> = segunda metade − primeira. Positiva é o normal: a primeira tem a saída. <b>Variação</b> é o desvio dessa diferença entre provas — quanto menor, mais repetível é a sua divisão de prova. <b>Origem não declarada</b> é registro antigo: o app não promove dado sem procedência a oficial.</div>
   </div>`;
 }
 function cardAprendizado(pro){
@@ -14638,8 +14643,9 @@ function cardMudancas(pro,comPct){
     const cor=fav==null?'var(--ink-2)':(fav?'var(--ok)':'var(--clock)');
     const d=decDinamico(x.anterior,x.atual,x.dec);
     return`<tr><td>${x.nome}</td><td class="n">${x.anterior.toFixed(d)}${x.un?' '+x.un:''}</td><td class="n" style="font-weight:700">${x.atual.toFixed(d)}${x.un?' '+x.un:''}</td><td class="n" style="color:${cor}">${seta} ${x.dPct>=0?'+':''}${x.dPct.toFixed(0)}%</td></tr>`;}).join('');
-  return`<div class="card"><div class="eyebrow">o que mudou — 28 dias contra os 28 anteriores</div>
-    <div class="small muted" style="margin:4px 0 6px">Média da janela atual (0–28 dias) comparada à da anterior (28–56 dias). São <b>médias de mês</b>: não dizem como está a sua semana — isso é a leitura curta, no estado de performance.</div>
+  return`<div class="card"><div class="eyebrow">o que mudou — 28 dias contra os 28 anteriores${info('O que mudou',
+      `Média da janela atual (0–28 dias) comparada à da anterior (28–56 dias).`
+      +`<br><br>São <b>médias de mês</b>: não dizem como está a sua semana — isso é a leitura curta, no estado de performance.`)}</div>
     <table><thead><tr><th>indicador</th><th class="n">antes</th><th class="n">agora</th><th class="n">Δ</th></tr></thead><tbody>${linhas}</tbody></table>
     ${m.porque.length?`<div class="note" style="margin-top:10px"><b>Por quê:</b> ${m.porque.join(' ')} <span class="muted">(leitura de apoio, não causa comprovada)</span></div>`:''}
   </div>`;
@@ -15024,8 +15030,9 @@ function cardFingerprint(m){
     const yy=y+(Math.abs(dy)<8?(dy<0?-6:12):dy<0?-4:11);
     return`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="${an}" font-size="9.5" font-family="Barlow,sans-serif" fill="var(--ink-2)">${d.eixo}</text>`;}).join('');
   const legenda=dims.map(d=>`<tr><td>${d.eixo}</td><td class="n" style="font-weight:700">${d.score!=null?d.score:'—'}</td><td class="xs muted" style="padding-left:8px">${d.txt}</td></tr>`).join('');
-  return`<div class="card" data-dom="perf"><div class="eyebrow">assinatura de sprint</div>
-    <div class="small muted" style="margin:4px 0 6px">Perfil só com dimensões que você mede — 0 a 100 em cada eixo (mais longe do centro = melhor).</div>
+  return`<div class="card" data-dom="perf"><div class="eyebrow">assinatura de sprint${info('Assinatura de sprint',
+      `Perfil só com dimensões que você mede — nada de estimativa de tabela.`
+      +`<br><br>Cada eixo vai de 0 a 100: <b>mais longe do centro = melhor</b>.`)}</div>
     <div style="display:flex;justify-content:center"><svg viewBox="0 0 250 196" style="width:100%;max-width:290px">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
     <div class="xs muted" style="margin-top:6px"><b>Velocidade</b>=%PB dos melhores 20% dos tiros das provas-alvo (PB ÷ tempo × 100: mais rápido = maior) · <b>Manutenção</b>=constância dos tempos numa série (menor variação = melhor) · <b>Recuperação</b>=prontidão · <b>Especificidade</b>=exposição a ritmo de prova nos últimos 28 dias (tiros ≥92% do PB, com peso para a recência)${dims.some(d=>d.eixo==='Composição')?' · <b>Composição</b>=%gordura medida':''} · <b>Tendência</b>=direção da capacidade. Eixo sem dado confiável <b>sai</b> do gráfico; eixo sem medida fica no centro.</div>
