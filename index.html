@@ -668,7 +668,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v215';
+const VER='v216';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -6949,14 +6949,31 @@ teste('garmin','valor improvavel entra na triagem',a=>{
     {data:'2026-10-02',nado:200,ativDur:380}]});
   a.eq(c.suspeitos.length,1,'so o de 380min e 20km');
   a.eq(c.suspeitos[0].data,'2026-10-02','o dia certo');});
+teste('pacotes','a faixa avisa quando o relógio parou de mandar',a=>{
+  const antes=S.garminAuto, d=new Date(); d.setDate(d.getDate()-9);
+  S.garminAuto={n:5,ate:d.toISOString().slice(0,10)};
+  const h=faixaGarminConectado();
+  a.ok(/parou de mandar/.test(h),'troca a boa notícia pelo aviso');
+  a.ok(/há 9 dias/.test(h),'conta os dias de atraso');
+  a.ok(!/Garmin conectado/.test(h),'não diz conectado ao mesmo tempo');
+  S.garminAuto=antes;
+});
+teste('pacotes','dias de atraso: hoje é zero, ontem é um',a=>{
+  a.eq(diasDesde(hoje()),0,'hoje');
+  const d=new Date(); d.setDate(d.getDate()-1);
+  a.eq(diasDesde(d.toISOString().slice(0,10)),1,'ontem');
+  a.eq(diasDesde(null),null,'sem data, sem conta');
+});
 teste('pacotes','a faixa de conectado só aparece quando há pacote no banco',a=>{
   const antes=S.garminAuto;
   S.garminAuto=null;              a.eq(faixaGarminConectado(),'','sem conexão, sem faixa');
   S.garminAuto={n:0,ate:null};    a.eq(faixaGarminConectado(),'','zero pacotes também não');
-  S.garminAuto={n:3,ate:'2026-11-21'};
+  /* data relativa de propósito: com data fixa o teste passaria a falhar
+     sozinho quatro dias depois, quando a faixa vira aviso de atraso */
+  S.garminAuto={n:3,ate:hoje()};
   const h=faixaGarminConectado();
   a.ok(/Garmin conectado/.test(h),'anuncia a conexão');
-  a.ok(/21\/11/.test(h),'diz até que dia recebeu');
+  a.ok(h.indexOf(brData(hoje()))>=0,'diz até que dia recebeu');
   S.garminAuto=antes;
 });
 teste('pacotes','o pacote do relógio sobrescreve a VFC digitada, com a procedência',a=>{
@@ -11383,8 +11400,29 @@ function telaGarmin(){
    continuava vendo “importe o ZIP do Garmin” como se fosse o único caminho.
    A faixa aparece só quando existe pacote no banco — ela nunca promete uma
    conexão que não está entregando. */
+/* dias inteiros entre duas datas 'AAAA-MM-DD'. As duas vêm no mesmo
+   formato, então `Date.parse` lê as duas em UTC e a diferença é exata. */
+function diasDesde(data){
+  if(!data)return null;
+  const d=(Date.parse(hoje())-Date.parse(data))/86400000;
+  return isNaN(d)?null:Math.round(d);
+}
 function faixaGarminConectado(){
   const a=S.garminAuto; if(!a||!a.n)return '';
+  /* ⚠️ A CHAVE PESSOAL DO GARMIN VENCE — 30, 90, 180 dias ou um ano, o dono
+     escolhe na hora de criar, e não existe refresh. Quando vence, o coletor
+     simplesmente para de trazer dia novo: nada quebra, nada avisa, e a série
+     envelhece em silêncio. Por isso a faixa olha a DATA do último pacote em
+     vez de só contar que existem pacotes. */
+  const atraso=diasDesde(a.ate);
+  if(atraso!=null&&atraso>3)return`<div class="note warn" style="margin:0 0 10px"><div class="xs">
+    <b>O Garmin parou de mandar dados.</b> O último dia recebido foi
+    <b>${brData(a.ate)}</b>, há ${atraso} dias ${info('Por que a coleta para',
+    `O motivo mais comum é a <b>chave pessoal ter vencido</b>. Ela nasce com prazo — 30, 90, 180 dias ou um ano — e não se renova sozinha.`
+    +`<br><br>Para voltar: gere uma chave nova nas configurações do Garmin Connect e substitua a antiga na instalação do coletor.`
+    +`<br><br>Outras causas: o relógio não sincronizou com o Garmin Connect nestes dias, ou o coletor foi desligado.`
+    +`<br><br>Nada se perdeu. Assim que a coleta voltar, os dias que faltam entram na série — a janela do coletor olha para trás.`)}
+  </div></div>`;
   return`<div class="note ok" style="margin:0 0 10px"><div class="xs">
     <b>✓ Garmin conectado.</b> O app busca <b>VFC da noite, FC de repouso e sono</b>
     sozinho, a cada 6 horas — você não precisa importar nada ${info('O que a conexão faz',
