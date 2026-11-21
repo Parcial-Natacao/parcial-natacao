@@ -654,14 +654,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v210"></script>
-<script src="./inicio-e-grupos.js?v=v210"></script>
+<script src="./persistencia-segura.js?v=v211"></script>
+<script src="./inicio-e-grupos.js?v=v211"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v210';
+const VER='v211';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2548,6 +2548,52 @@ function irCriarConta(){
     return toast('Escolha um perfil para continuar');
   }
   push(); CAD_PASSO=1; CAD={}; S.vista='cadastro'; render();
+}
+/* ── O QUE FICOU PARA TRÁS ─────────────────────────────────────
+   Até a v210 a VFC digitada era gravada sem `hrvF`. Quem usou o campo nesse
+   período tem meses de número sem procedência — e, no caso que descobriu o
+   problema, eram médias SEMANAIS tratadas como se fossem noites. Isso desloca
+   a linha de base de 28 dias para cima e achata a variação, que é justamente
+   o sinal: a prontidão do dia passa a quase nunca acusar queda.
+
+   ⚠️ O APP NÃO ADIVINHA QUAL ERA. Não há nada no número que diga se veio da
+   noite ou da semana — 40 ms é plausível para os dois. Então a migração
+   PERGUNTA, em vez de decidir, e mostra o que muda antes de gravar. Mesmo
+   desenho da correção de metragem: nada é reescrito sem confirmação. */
+function vfcSemProcedencia(pro){
+  return (((pro||S.pro||{}).garmin)||[])
+    .filter(x=>x&&x.hrv!=null&&!x.hrvF)
+    .sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+}
+function conferirProcedenciaVfc(){
+  const l=vfcSemProcedencia();
+  if(!l.length)return toast('Todas as suas VFCs já têm procedência registrada');
+  const vals=l.map(x=>x.hrv), med=Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
+  const dp=Math.round(Math.sqrt(vals.reduce((a,b)=>a+(b-med)*(b-med),0)/vals.length));
+  sheet(`<h2>De onde vinham estas VFCs?</h2>
+    <p class="small" style="line-height:1.55;margin:8px 0 0"><b>${l.length} dia(s)</b> com VFC digitada
+      entre ${brData(l[l.length-1].data)} e ${brData(l[0].data)}, sem a fonte registrada — foram
+      lançados antes de o app passar a perguntar.</p>
+    <div class="note" style="margin:12px 0"><b>Média ${med} ms · variação ±${dp} ms.</b>
+      <div class="xs muted" style="margin-top:6px">Variação baixa (±3 ms ou menos) costuma indicar
+      <b>média semanal</b>: a média de sete dias quase não se mexe. Medição de uma noite oscila bem
+      mais. É indício, não prova — só você sabe qual número leu no relógio.</div></div>
+    <div class="xs muted" style="margin-bottom:10px">Últimos valores: ${l.slice(0,8).map(x=>`<b>${x.hrv}</b>`).join(' · ')}${l.length>8?' …':''}</div>
+    <button class="primary full" onclick="marcarProcedenciaVfc('semana')">Eram a média semanal</button>
+    <button class="full" style="margin-top:8px" onclick="marcarProcedenciaVfc('noite')">Eram a VFC da noite</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Decidir depois</button>
+    <div class="xs muted" style="margin-top:10px">Nenhum número é apagado nem alterado: eles só passam
+      a carregar a fonte. Marcados como semanais, continuam no histórico, mas o app deixa de lê-los
+      como se respondessem a uma noite ruim — porque não respondem.</div>`);
+}
+async function marcarProcedenciaVfc(fonte){
+  if(fonte!=='semana'&&fonte!=='noite')return;
+  const l=vfcSemProcedencia(); if(!l.length)return fecharSheet();
+  l.forEach(x=>{ x.hrvF=fonte; });
+  if(!await salvarPro())return toast('Não consegui gravar agora. Tente de novo.');
+  fecharSheet();
+  toast(l.length+' dia(s) marcado(s) como '+(fonte==='semana'?'média semanal':'VFC da noite'));
+  render();
 }
 /* a fonte escolhida vale para o lançamento do dia; nasce em "noite" porque
    é a leitura que o app de fato usa */
@@ -5879,6 +5925,42 @@ teste('VFC','semanal e noite nunca entram na mesma série',a=>{
   const porFonte=f=>g.filter(x=>(x.hrvF||'legado')===f).length;
   a.eq(porFonte('noite'),2,'as noites ficam juntas');
   a.eq(porFonte('semana'),1,'e a semanal, separada');});
+/* ── MESES DE VFC SEM PROCEDÊNCIA (v211) ───────────────────────────────────
+   Até a v210 a digitação gravava `hrv` sem `hrvF`. O app não tem como
+   adivinhar se aqueles números vieram da noite ou da semana — 40 ms é
+   plausível para os dois — então a migração PERGUNTA. */
+teste('VFC','acha só o que foi digitado sem fonte',a=>{
+  const pro={garmin:[
+    {data:'2026-11-21',hrv:41},
+    {data:'2026-11-20',hrv:39,hrvF:'noite'},
+    {data:'2026-11-19',hrv:42},
+    {data:'2026-11-18',hrv:44,hrvF:'semana'},
+    {data:'2026-11-17',sono:7.5},
+  ]};
+  const l=vfcSemProcedencia(pro);
+  a.eq(l.length,2,'só os dois sem hrvF');
+  a.eq(l[0].data,'2026-11-21','e vêm do mais recente para o mais antigo');
+  a.ok(!l.some(x=>x.hrv==null),'dia sem VFC nenhuma não entra');});
+teste('VFC','marcar a fonte não altera nenhum valor',async a=>{
+  _atleta();
+  S.pro.garmin=[{data:'2026-11-21',hrv:41},{data:'2026-11-19',hrv:42,sono:5.5}];
+  const _s=window.salvarPro, _f=window.fecharSheet, _r=window.render, _t=window.toast;
+  window.salvarPro=async()=>true; window.fecharSheet=()=>{}; window.render=()=>{}; window.toast=()=>{};
+  try{
+    await marcarProcedenciaVfc('semana');
+    a.eq(S.pro.garmin[0].hrv,41,'o número continua o mesmo');
+    a.eq(S.pro.garmin[0].hrvF,'semana','só ganha a fonte');
+    a.eq(S.pro.garmin[1].sono,5.5,'e nada mais do dia é tocado');
+    a.eq(vfcSemProcedencia().length,0,'depois não sobra nenhum sem fonte');
+  } finally { window.salvarPro=_s; window.fecharSheet=_f; window.render=_r; window.toast=_t; }});
+teste('VFC','a tabela avisa quando o valor é média semanal',a=>{
+  _atleta();
+  S.pro.garmin=[{data:'2026-11-21',hrv:41,hrvF:'semana'},{data:'2026-11-20',hrv:39,hrvF:'noite'}];
+  S.acc={}; [...telaGarmin().matchAll(/toggleAcc\('([^']+)'\)/g)].forEach(m=>S.acc[m[1]]=true);
+  const h=telaGarmin();
+  a.ok(/41<span class="xs muted"> sem<\/span>|41 <span class="xs muted">sem<\/span>/.test(h),
+    'a semanal sai marcada');
+  a.ok(!/39[^<]*<span class="xs muted">sem/.test(h),'e a da noite, não');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -10989,9 +11071,13 @@ function telaGarmin(){
   const nEx=(S.pro?.exames||[]).length, nBio=(S.pro?.bioimp||[]).length;
   /* ── conteúdos internos de cada seção ── */
   const cProntidao=`${prontidao()}
+    ${(()=>{const l=vfcSemProcedencia(); return l.length?`<div class="note warn" style="margin-top:10px"><div class="row">
+      <span class="grow"><b>${l.length} dia(s) de VFC sem fonte registrada.</b>
+      <div class="xs" style="margin-top:3px">Lançados antes de o app perguntar de onde vinha o número.</div></span>
+      <button class="sm" onclick="conferirProcedenciaVfc()">Resolver</button></div></div>`:''})()}
     ${g.length?`<table style="margin-top:10px"><thead><tr><th>Data</th><th>FC rep</th><th>VFC</th><th>Sono</th><th>Nado</th></tr></thead><tbody>
       ${g.slice(0,12).map(x=>`<tr><td class="small">${brCurta(x.data)}</td><td class="n">${x.fc??'—'}</td>
-        <td class="n">${x.hrv??'—'}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
+        <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
   const cImportar=`
     <p class="small muted" style="margin-top:2px">Entregue o <b>export do Garmin Connect inteiro</b>${info('Importar do Garmin',
