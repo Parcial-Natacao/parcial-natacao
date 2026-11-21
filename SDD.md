@@ -55,6 +55,7 @@ provar que ainda vale.
 | `ehMeuPro()` nas regras aceita `pro_<uid>` **e** `pro_<uid>_*` | Saúde e versões diárias usam sufixo; exigir a chave exata bloqueia as duas | `firebase/regras.test.mjs` casos 37–39 |
 | O espelho (`abrirLaudoAtleta`) carrega `_espelho` **e** `_dono` do outro atleta | denuncia a si mesmo se escapar para uma gravação | teste `espelho` |
 | Robô nenhum escreve dentro de `pro_`: o coletor do Garmin deixa `garmin_<uid>_<data>` e o **dono** incorpora | conta de serviço passa por cima das regras do Firestore, e no registro diário moram `dor`, `sonoQ`, `ctx` e sintomas digitados pela pessoa | `mesclarPacotesGarmin` é pura; testes `pacotes` (6) |
+| A conta é indexada pelo e-mail (`u_<email>`): um domínio digitado errado cria um cadastro órfão | caso real 18/11/2026, `gamil.com` e `gmail.com` da mesma pessoa; o link de confirmação some e a pessoa se cadastra de novo | `emailSugerido()` avisa no passo 2; testes `email` (6) |
 
 ### 1.2 Integridade da gravação
 

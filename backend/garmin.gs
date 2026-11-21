@@ -227,11 +227,14 @@ function garminTestarLeitura() {
     + '\nVFC: ' + Object.keys(hrv).length + ' noite(s) — ' + JSON.stringify(hrv)
     + '\nSono: ' + Object.keys(sono).length + ' noite(s) — ' + JSON.stringify(sono)
     + '\nFC de repouso hoje: ' + fc;
+  Logger.log(msg); return msg;
 }
 function garminInstalarGatilho() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'coletarGarmin') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('coletarGarmin').timeBased().everyHours(6).create();
+  const msg = 'Gatilho instalado: coletarGarmin a cada 6 horas.';
+  Logger.log(msg); return msg;
   return 'gatilho de 6 em 6 horas instalado';
 }
