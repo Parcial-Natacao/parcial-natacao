@@ -265,21 +265,13 @@ function avisarSaida_(email, nome) {
     to: email,
     name: APP_NOME,
     subject: 'Sua conta no ' + APP_NOME + ' foi excluída',
-    body: (prim ? 'Olá, ' + prim + '!
-
-' : '')
+    body: (prim ? 'Olá, ' + prim + '!\n\n' : '')
       + 'Sua conta no ' + APP_NOME + ' foi excluída, e com ela todos os seus dados:'
       + ' marcas, Saúde, exames, treinos pessoais e as cópias diárias.'
-      + '
-
-Obrigado por ter usado o app. Se um dia quiser voltar, é só criar uma'
+      + '\n\nObrigado por ter usado o app. Se um dia quiser voltar, é só criar uma'
       + ' conta nova com o mesmo e-mail — a porta fica aberta.'
-      + '
-
-' + APP_URL
-      + '
-
-— ' + APP_NOME
+      + '\n\n' + APP_URL
+      + '\n\n— ' + APP_NOME
   });
 }
 
