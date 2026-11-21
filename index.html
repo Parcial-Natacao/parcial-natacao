@@ -661,7 +661,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v212';
+const VER='v213';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1628,6 +1628,44 @@ async function copiarTexto(id){
   toast('Toque e segure no texto para copiar');
 }
 
+/* ---------- e-mail: erro de digitação no domínio ─────────────────────────
+   A conta é indexada pelo e-mail (`u_<email>`), e a confirmação chega por lá.
+   Um domínio errado não dá erro nenhum na hora: o cadastro é criado, o link
+   some no vazio e a pessoa se cadastra de novo — foi exatamente o que
+   aconteceu em 18/11/2026, `gamil.com` de manhã cedo e `gmail.com` depois.
+   Dois cadastros da mesma pessoa, e nada no app para perceber.
+
+   ⚠️ DISTÂNCIA DE DAMERAU, NÃO DE LEVENSHTEIN. A troca de duas letras
+   vizinhas — `gmail` → `gamil` — custa UM erro aqui e DOIS em Levenshtein
+   puro. Como o limite é um erro só (mais que isso enche de falso positivo),
+   sem contar a transposição o caso real passaria batido.
+   Isto apenas SUGERE: quem digitou um domínio incomum de verdade segue em
+   frente com um toque. ----------------------------------------------------- */
+const DOMINIOS_COMUNS=['gmail.com','hotmail.com','outlook.com','yahoo.com','yahoo.com.br',
+  'icloud.com','live.com','msn.com','bol.com.br','uol.com.br','ig.com.br','terra.com.br',
+  'globo.com','me.com','outlook.com.br','hotmail.com.br'];
+function distDamerau(a,b){
+  const m=a.length,k=b.length,d=[];
+  for(let i=0;i<=m;i++){d[i]=[i]}
+  for(let j=0;j<=k;j++){d[0][j]=j}
+  for(let i=1;i<=m;i++)for(let j=1;j<=k;j++){
+    const c=a[i-1]===b[j-1]?0:1;
+    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+c);
+    if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1])d[i][j]=Math.min(d[i][j],d[i-2][j-2]+1);
+  }
+  return d[m][k];
+}
+/* devolve o e-mail corrigido, ou null quando não há o que sugerir */
+function emailSugerido(email){
+  const txt=String(email||'').trim().toLowerCase();
+  const m=/^([^@\s]+)@([^@\s]+\.[^@\s]+)$/.exec(txt);
+  if(!m)return null;
+  const dom=m[2];
+  if(DOMINIOS_COMUNS.includes(dom))return null;
+  for(const d of DOMINIOS_COMUNS){ if(distDamerau(dom,d)===1)return m[1]+'@'+d; }
+  return null;
+}
+
 /* ---------- CPF ---------- */
 function cpfLimpo(c){return(c||'').replace(/\D/g,'')}
 /* Senha nova: aceita frases longas e não impõe teto artificial de 8 caracteres.
@@ -2454,12 +2492,26 @@ function passoCadastro(dir){
   if(dir>0&&CAD_PASSO===2){
     if(!CAD.nome||CAD.nome.split(/\s+/).length<2)return toast('Informe nome e sobrenome');
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(CAD.email||''))return toast('Informe um e-mail válido');
+    /* o aviso aparece uma vez; quem confirmar que está certo passa direto */
+    const sug=emailSugerido(CAD.email);
+    if(sug&&CAD.emailConfirmado!==CAD.email){ CAD.sugEmail=sug; render(); return; }
+    CAD.sugEmail=null;
     const idade=idadeDe(CAD.nascimento);
     if(!CAD.nascimento||idade==null||idade<IDADE_MINIMA||idade>110)return toast(`Informe uma data de nascimento válida (idade entre ${IDADE_MINIMA} e 110 anos)`);
     if(!telValido(CAD.telefone))return toast('Informe WhatsApp com DDD');
     if(['atleta','pro'].includes(S.perfilEscolhido)&&CAD.cpf&&!cpfValido(CAD.cpf))return toast('Confira o CPF ou deixe o campo vazio');
   }
   CAD_PASSO=Math.max(1,Math.min(3,CAD_PASSO+dir)); render(); window.scrollTo(0,0);
+}
+function usarEmailSugerido(){
+  guardarCadastro(); CAD.email=CAD.sugEmail; CAD.emailConfirmado=CAD.email; CAD.sugEmail=null;
+  /* `passoCadastro` relê os campos do DOM: sem isto o valor antigo voltaria */
+  const el=document.getElementById('cdEmail'); if(el)el.value=CAD.email;
+  passoCadastro(1);
+}
+function manterEmailDigitado(){
+  guardarCadastro(); CAD.emailConfirmado=CAD.email; CAD.sugEmail=null;
+  passoCadastro(1);
 }
 function selSituacaoEquipe(v){
   guardarCadastro(); CAD.semEquipe=v==='sem'; if(CAD.semEquipe)CAD.equipe=''; render();
@@ -2500,7 +2552,13 @@ function telaCadastro(){
     </div></div>`;
   const equipe=`${p==='pro'?`<div class="note ok" style="margin:0 0 12px"><b>Perfil competitivo.</b> Você terá acompanhamento diário, registro completo dos tempos, Garmin, histórico e relatório de análise. Equipe e técnico continuam opcionais.</div>`:''}${escolhaEquipe}${CAD.semEquipe?`<div class="note ok"><b>Tudo bem.</b> Equipe e técnico são opcionais. Depois de confirmar o e-mail, você já poderá registrar seus próprios treinos e escolher qualquer um dos dois quando quiser.</div>`:`<div class="field"><label for="cdEquipe">${atleta?'Equipe ou clube <span class="muted">(opcional)</span>':'Equipe'}</label>${campoEquipe}</div>`}`;
   const pessoal=`<div class="field"><label for="cdNome">Nome completo</label><input id="cdNome" value="${esc(CAD.nome||'')}" autocapitalize="words" autocomplete="name" placeholder="Nome e sobrenome"></div>
-    <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" placeholder="voce@email.com"></div>
+    <div class="field"><label for="cdEmail">E-mail</label><input id="cdEmail" value="${esc(CAD.email||'')}" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" placeholder="voce@email.com">
+      ${CAD.sugEmail?`<div class="note" style="border-color:var(--clock);margin-top:8px">
+        <b>Confira o e-mail.</b> É para ele que vai o link de confirmação — se estiver errado, a conta nasce sem dono.
+        <div class="row" style="gap:6px;margin-top:8px">
+          <button class="sm primary" onclick="usarEmailSugerido()">Usar ${esc(CAD.sugEmail)}</button>
+          <button class="sm ghost" onclick="manterEmailDigitado()">Está certo assim</button>
+        </div></div>`:''}</div>
     ${/* ⚠️ A NOTA DE UM CAMPO MORA DENTRO DO CAMPO.
          As duas notas eram irmãs DEPOIS do .grid2. Em tela larga, onde as duas
          colunas ficam lado a lado, elas caíam cada uma sob a sua — por acaso.
@@ -6529,6 +6587,39 @@ teste('garmin','sem nada reconhecido, a mensagem diz o que procurar',async a=>{
   a.ok(h.indexOf('DI_CONNECT')>=0,'dizendo onde eles ficam');});
 
 /* ── IDADE MÍNIMA (v141) ─────────────────────────────────────────────────── */
+teste('email','o caso real: gamil.com vira gmail.com',a=>{
+  a.eq(emailSugerido('airerafael@gamil.com'),'airerafael@gmail.com','transposição conta como UM erro');
+});
+teste('email','domínio certo não é corrigido',a=>{
+  a.eq(emailSugerido('fulano@gmail.com'),null,'gmail');
+  a.eq(emailSugerido('fulano@hotmail.com'),null,'hotmail');
+  a.eq(emailSugerido('fulano@uol.com.br'),null,'uol');
+  a.eq(emailSugerido('fulano@ig.com.br'),null,'ig não vira bol');
+});
+teste('email','os erros de digitação mais comuns',a=>{
+  a.eq(emailSugerido('x@gmai.com'),'x@gmail.com','letra faltando');
+  a.eq(emailSugerido('x@gmial.com'),'x@gmail.com','letras trocadas');
+  a.eq(emailSugerido('x@gmail.con'),'x@gmail.com','n no lugar do m');
+  a.eq(emailSugerido('x@hotmai.com'),'x@hotmail.com','hotmail');
+  a.eq(emailSugerido('x@outlok.com'),'x@outlook.com','outlook');
+});
+teste('email','domínio próprio, longe de todos, passa intacto',a=>{
+  a.eq(emailSugerido('bruno@focoengenharia.com.br'),null,'domínio da empresa');
+  a.eq(emailSugerido('aluno@ufms.br'),null,'universidade');
+  a.eq(emailSugerido('x@a3swim.com'),null,'equipe');
+});
+teste('email','entrada que nem é e-mail não quebra',a=>{
+  a.eq(emailSugerido(''),null,'vazio');
+  a.eq(emailSugerido(null),null,'nulo');
+  a.eq(emailSugerido('sem-arroba'),null,'sem arroba');
+  a.eq(emailSugerido('x@semponto'),null,'domínio sem ponto');
+});
+teste('email','a distância trata transposição como um erro só',a=>{
+  a.eq(distDamerau('gmail','gamil'),1,'gmail/gamil');
+  a.eq(distDamerau('abc','abc'),0,'iguais');
+  a.eq(distDamerau('abc','abd'),1,'uma troca');
+  a.eq(distDamerau('abc','ab'),1,'uma remoção');
+});
 teste('idade','o seletor de data já barra quem tem menos de 18',a=>{
   const max=dataMaxNascimento();
   a.eq(idadeDe(max),IDADE_MINIMA,'a data máxima dá exatamente 18 anos');
@@ -10549,8 +10640,8 @@ function telaMarcas(){
     `Esta é a tela do atleta, como ele a vê. Você não edita as marcas dele daqui.`
     +`<br><br>Para enviar o currículo da ABMN, use o card na ficha dele, na Equipe.`)}</div>`:''}
   ${destaquesMarcas(pro)}
-  ${espelho?'':acc('mk_abmn','Importar da ABMN','currículo On-Line em PDF',`
-    <p class="small muted" style="margin:2px 0 8px">Melhores tempos e histórico, de uma vez${info('Importar da ABMN',
+  ${espelho?'':acc('mk_abmn','Importar Histórico e Resultados','currículo On-Line em PDF',`
+    <p class="small muted" style="margin:2px 0 8px">Melhores tempos e histórico, de uma vez${info('Importar Histórico e Resultados',
       `Cada resultado do currículo entra no quadro de evolução da prova correspondente — não é só uma lista de recordes, é o histórico inteiro.`)}</p>
     <input type="file" id="abmnFile" accept="application/pdf,.pdf" style="display:none" onchange="importarABMN(this)">
     <button class="primary full" onclick="document.getElementById('abmnFile').click()">Importar currículo ABMN (PDF)</button>`)}
@@ -11658,9 +11749,13 @@ function cardCheckin(){
     <div class="field" style="margin-top:4px"><label>Quanto dormiu</label>
       <div class="opt">${FAIXAS_SONO.map(f=>`<button class="${sonoNaFaixa(d.sono,f)?'on':''}" onclick="setCheckin('sono',${f.v},true)">${f.r}</button>`).join('')}</div>
       <div class="xs muted" style="margin-top:2px">Faixa aproximada basta — ninguém cronometra o sono.</div></div>
-    ${S.mostrarFC?`<div class="field"><label>FC de repouso <span class="xs muted">bpm</span></label>
-      <input inputmode="numeric" value="${d.fc!=null?d.fc:''}" oninput="setCheckin('fc',this.value?+this.value:null,false)"></div>`
-      :`<button class="sm ghost full" style="margin-bottom:10px" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>`}
+    ${(S.mostrarFC||d.fc!=null)?`<div class="field"><label>FC de repouso <span class="xs muted">bpm · opcional</span></label>
+      <input inputmode="numeric" value="${d.fc!=null?d.fc:''}" oninput="setCheckin('fc',this.value?+this.value:null,false)">
+      <div class="xs muted" style="margin-top:2px">${d.fc!=null&&!S.mostrarFC
+        ?'Veio do relógio. Pode corrigir.'
+        :'Sem relógio: ao acordar, ainda deitado, conte as batidas do pulso por 30 s e dobre.'}</div></div>`
+      :`<button class="sm ghost full" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>
+      <div class="xs muted" style="margin:4px 0 10px">Opcional — sem ela a prontidão sai das cinco notas e do sono. Sem relógio dá para medir: ao acordar, ainda deitado, conte as batidas do pulso por 30 s e dobre.</div>`}
     <button class="primary full" onclick="salvarCheckin()">${feito?'Atualizar check-in':'Salvar check-in'}</button>`;
 }
 /* resumo p/ o subtítulo do acordeão de check-in */
