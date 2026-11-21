@@ -206,18 +206,24 @@ function limparPacotesGarmin() {
   return n;
 }
 
+/* ⚠️ As funções de teste LOGAM, não só devolvem: o Apps Script não mostra
+   valor de retorno no registro de execução. Sem o Logger.log, rodar dá
+   "Execução concluída" e tela em branco — parece que não fez nada.
+   E os nomes começam com `garmin` de propósito: há um `testarLeitura` no
+   notificacoes.gs, e rodar o errado devolve erro de outra coisa. */
 /* ── 5) INSTALAÇÃO E DIAGNÓSTICO ───────────────────────────────────────────
    Rode à mão, no editor, nesta ordem. */
 function garminTestarChave() {
   const t = garminToken_(true);
-  return 'Token obtido (' + t.length + ' caracteres). A chave está válida.';
+  const msg = 'Token obtido (' + t.length + ' caracteres). A chave está válida.';
+  Logger.log(msg); return msg;
 }
 function garminTestarLeitura() {
   const hoje = Utilities.formatDate(new Date(), 'GMT', 'yyyy-MM-dd');
   const de = Utilities.formatDate(new Date(Date.now() - 6 * 86400000), 'GMT', 'yyyy-MM-dd');
   const hrv = garminHrv_(de, hoje), sono = garminSono_(de, hoje);
   let fc = null; try { fc = garminFc_(hoje); } catch (e) { fc = 'erro: ' + e; }
-  return 'Janela ' + de + ' a ' + hoje
+  const msg = 'Janela ' + de + ' a ' + hoje
     + '\nVFC: ' + Object.keys(hrv).length + ' noite(s) — ' + JSON.stringify(hrv)
     + '\nSono: ' + Object.keys(sono).length + ' noite(s) — ' + JSON.stringify(sono)
     + '\nFC de repouso hoje: ' + fc;
