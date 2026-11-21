@@ -661,7 +661,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v213';
+const VER='v214';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -11265,7 +11265,7 @@ function telaGarmin(){
       <span class="grow"><b>${l.length} dia(s) de VFC sem fonte registrada.</b>
       <div class="xs" style="margin-top:3px">Lançados antes de o app perguntar de onde vinha o número.</div></span>
       <button class="sm" onclick="conferirProcedenciaVfc()">Resolver</button></div></div>`:''})()}
-    ${g.length?`<table style="margin-top:10px"><thead><tr><th>Data</th><th>FC rep</th><th>VFC</th><th>Sono</th><th>Nado</th></tr></thead><tbody>
+    ${g.length?`<table style="margin-top:10px"><thead><tr><th>Data</th>${/* o cabeçalho de coluna numérica também leva `n`: `td.n` alinha à direita e o `th` sem a classe ficava à esquerda, com o rótulo fora de prumo com os números */''}<th class="n">FC rep</th><th class="n">VFC</th><th class="n">Sono</th><th class="n">Nado</th></tr></thead><tbody>
       ${g.slice(0,12).map(x=>`<tr><td class="small">${brCurta(x.data)}</td><td class="n">${x.fc??'—'}</td>
         <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
