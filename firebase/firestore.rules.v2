@@ -240,7 +240,13 @@ service cloud.firestore {
       function ehMeuTime() { return logado() && chave == 'time_' + meuUid(); }
       function ehTimePublico() { return resource.data.get('categoria', null) == 'time'; }
       function ehDespedida() { return chave.matches('despedida_.*'); }
-      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime() && !ehDespedida(); }
+      // Pacote diário que o coletor do Garmin deixa para o app incorporar.
+      // Só LEITURA, e só do próprio dono: quem escreve é a conta de serviço,
+      // que não passa por aqui, e quem apaga é o próprio script, depois de 30
+      // dias. O app nunca precisa escrever nem remover um pacote.
+      function ehGarmin() { return chave.matches('garmin_.*'); }
+      function ehMeuGarmin() { return logado() && chave.matches('garmin_' + meuUid() + '_.*'); }
+      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime() && !ehDespedida() && !ehGarmin(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
@@ -287,6 +293,7 @@ service cloud.firestore {
         || ( ehEq() && logado() && ( (usersDaMinhaEq() && aprovado()) || meuPerf() ) )
         // demais documentos da equipe: membro APROVADO dela, ou o dev
         || ( ehEq() && ( ehDev() || ( aprovado() && resource.data.equipe == minhaEq() ) ) )
+        || ( ehGarmin() && ehMeuGarmin() )
         || ( ehCatalogo() && logado() );
 
       // ──────────────────────── CRIAÇÃO ─────────────────────────

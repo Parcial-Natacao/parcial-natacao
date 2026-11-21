@@ -54,6 +54,7 @@ provar que ainda vale.
 | `camposSeguranca` deriva `dono` de `pro_` do **conteúdo**, nunca da chave | é o que faz o Firestore recusar no servidor; derivando da chave, gravar no próprio documento sempre passava | teste `dono`; comentário no `firestore.rules.v2` |
 | `ehMeuPro()` nas regras aceita `pro_<uid>` **e** `pro_<uid>_*` | Saúde e versões diárias usam sufixo; exigir a chave exata bloqueia as duas | `firebase/regras.test.mjs` casos 37–39 |
 | O espelho (`abrirLaudoAtleta`) carrega `_espelho` **e** `_dono` do outro atleta | denuncia a si mesmo se escapar para uma gravação | teste `espelho` |
+| Robô nenhum escreve dentro de `pro_`: o coletor do Garmin deixa `garmin_<uid>_<data>` e o **dono** incorpora | conta de serviço passa por cima das regras do Firestore, e no registro diário moram `dor`, `sonoQ`, `ctx` e sintomas digitados pela pessoa | `mesclarPacotesGarmin` é pura; testes `pacotes` (6) |
 
 ### 1.2 Integridade da gravação
 

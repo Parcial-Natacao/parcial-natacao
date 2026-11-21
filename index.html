@@ -661,7 +661,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v211';
+const VER='v212';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1989,6 +1989,7 @@ async function carregarDados(){
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
     if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
     if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
+    try{ await incorporarPacotesGarmin(); }catch(_){}
     return;
   }
   /* Enquanto aguarda aprovação, o usuário não tem permissão para os dados da
@@ -2036,6 +2037,7 @@ async function carregarDados(){
   if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
   if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
+  try{ await incorporarPacotesGarmin(); }catch(_){}
 }
 /* ── A FOTOGRAFIA DO CACHE VALE MAIS QUE A DO SERVIDOR? ─────────────────────
    Compara o que o servidor acabou de entregar com a cópia que estava no cache
@@ -2548,6 +2550,57 @@ function irCriarConta(){
     return toast('Escolha um perfil para continuar');
   }
   push(); CAD_PASSO=1; CAD={}; S.vista='cadastro'; render();
+}
+/* ── OS PACOTES QUE O COLETOR DEIXA ───────────────────────────────
+   `backend/garmin.gs` puxa VFC, FC de repouso e sono da API da Garmin e grava
+   um documento por dia — `garmin_<uid>_<data>` — em vez de escrever direto no
+   `pro_`. O motivo está lá: a conta de serviço passa por cima das regras do
+   Firestore, e no mesmo registro diário moram `dor`, `sonoQ`, `ctx` e
+   sintomas, que a PESSOA digitou. Quem incorpora é aqui, do lado do dono.
+
+   ⚠️ A CONSULTA É POR FAIXA DE ID, NÃO POR CAMPO. `where('categoria').where
+   ('dono')` exigiria índice composto; a faixa `garmin_<uid>_` usa o índice do
+   próprio id, não precisa de nada, e casa exatamente com a regra do Firestore
+   — o que a consulta pede é o que a regra libera, então ela nunca é negada
+   por inteiro (ver o comentário de `varrerKv`).
+
+   ⚠️ O PACOTE VENCE, CAMPO A CAMPO. O valor do relógio substitui o digitado
+   nos três campos que ele traz — inclusive porque o digitado pode ser a média
+   semanal, que foi o erro que originou tudo isto. Campo que o pacote NÃO traz
+   fica intocado: o dia pode ter sono digitado e VFC do relógio ao mesmo tempo.
+   Nada aqui apaga registro nenhum. */
+/* A mescla é pura de propósito: recebe a série e os pacotes, devolve quantos
+   campos mudaram, e não sabe nada de rede. É o que os testes exercitam. */
+function mesclarPacotesGarmin(serie,pacotes){
+  let mudou=0;
+  for(const p of (pacotes||[])){
+    if(!p||!p.data)continue;
+    let g=serie.find(x=>x&&x.data===p.data);
+    if(!g){ g={data:p.data}; serie.push(g); }
+    for(const campo of ['hrv','fc','sono']){
+      if(p[campo]!=null&&g[campo]!==p[campo]){ g[campo]=p[campo]; mudou++; }
+    }
+    /* a procedência só faz sentido junto do número que ela qualifica */
+    if(p.hrv!=null&&p.hrvF&&g.hrvF!==p.hrvF){ g.hrvF=p.hrvF; mudou++; }
+  }
+  if(mudou)serie.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  return mudou;
+}
+async function incorporarPacotesGarmin(){
+  if(!FB||!S.u||!S.u.id||!temDadosPessoais()||S.laudoAtleta)return 0;
+  const pre='garmin_'+S.u.id+'_';
+  let pacotes=[];
+  try{
+    const FP=firebase.firestore.FieldPath.documentId();
+    const snap=await fdb.collection('kv').orderBy(FP).startAt(pre).endAt(pre+'\uf8ff').get();
+    snap.forEach(d=>{ try{ pacotes.push(JSON.parse(d.data().v)); }catch(_){} });
+  }catch(e){ console.warn('pacotes garmin',e.message); return 0; }
+  if(!pacotes.length)return 0;
+  S.pro=S.pro||proVazio(S.u.id); S.pro.garmin=S.pro.garmin||[];
+  const mudou=mesclarPacotesGarmin(S.pro.garmin,pacotes);
+  if(!mudou)return 0;
+  try{ await salvarPro(); }catch(e){ console.warn('salvar pacotes',e.message); return 0; }
+  return mudou;
 }
 /* ── O QUE FICOU PARA TRÁS ─────────────────────────────────────
    Até a v210 a VFC digitada era gravada sem `hrvF`. Quem usou o campo nesse
@@ -6793,6 +6846,52 @@ teste('garmin','valor improvavel entra na triagem',a=>{
     {data:'2026-10-02',nado:200,ativDur:380}]});
   a.eq(c.suspeitos.length,1,'so o de 380min e 20km');
   a.eq(c.suspeitos[0].data,'2026-10-02','o dia certo');});
+teste('pacotes','o pacote do relógio sobrescreve a VFC digitada, com a procedência',a=>{
+  /* o caso real: 19/11/2026, média semanal 42 digitada à mão, noite de 32 no relógio */
+  const serie=[{data:'2026-11-19',hrv:42,hrvF:'semana',sonoQ:2,dor:3}];
+  const m=mesclarPacotesGarmin(serie,[{data:'2026-11-19',hrv:32,hrvF:'noite',fc:48,sono:5.5}]);
+  a.eq(serie.length,1,'não duplica o dia');
+  a.eq(serie[0].hrv,32,'a noite do relógio vence');
+  a.eq(serie[0].hrvF,'noite','a procedência vem junto');
+  a.eq(serie[0].sonoQ,2,'o que a pessoa digitou e o pacote não traz fica');
+  a.eq(serie[0].dor,3,'dor intocada');
+  a.ok(m>0,'reporta que mudou');
+});
+teste('pacotes','incorporar o mesmo pacote duas vezes não muda nada',a=>{
+  const serie=[];
+  const p=[{data:'2026-11-20',hrv:35,hrvF:'noite',sono:7.1}];
+  a.ok(mesclarPacotesGarmin(serie,p)>0,'a primeira vez grava');
+  a.eq(mesclarPacotesGarmin(serie,p),0,'a segunda não tem o que fazer');
+  a.eq(serie.length,1,'um dia, não dois');
+});
+teste('pacotes','campo ausente no pacote não apaga o que havia',a=>{
+  const serie=[{data:'2026-11-18',hrv:40,hrvF:'noite',sono:8,fc:50}];
+  mesclarPacotesGarmin(serie,[{data:'2026-11-18',sono:6.2}]);
+  a.eq(serie[0].sono,6.2,'o sono do relógio entra');
+  a.eq(serie[0].hrv,40,'a VFC continua');
+  a.eq(serie[0].fc,50,'a FC continua');
+});
+teste('pacotes','pacote de dia novo entra na série, em ordem decrescente',a=>{
+  const serie=[{data:'2026-11-15',hrv:38}];
+  mesclarPacotesGarmin(serie,[{data:'2026-11-17',hrv:33,hrvF:'noite'},{data:'2026-11-16',hrv:34,hrvF:'noite'}]);
+  a.eq(serie.length,3,'três dias');
+  a.eq(serie[0].data,'2026-11-17','o mais recente primeiro');
+  a.eq(serie[2].data,'2026-11-15','o mais antigo por último');
+});
+teste('pacotes','pacote sem data é ignorado sem quebrar o resto',a=>{
+  const serie=[];
+  const m=mesclarPacotesGarmin(serie,[null,{hrv:30},{data:'2026-11-21',fc:47}]);
+  a.eq(serie.length,1,'só o pacote bom entrou');
+  a.eq(serie[0].fc,47,'e entrou certo');
+  a.ok(m>0,'mudou');
+});
+teste('pacotes','procedência sem número não é gravada',a=>{
+  /* `hrvF` sozinho qualificaria uma VFC que não existe */
+  const serie=[];
+  mesclarPacotesGarmin(serie,[{data:'2026-11-21',hrvF:'noite',sono:7}]);
+  a.eq(serie[0].hrvF,undefined,'sem VFC, sem procedência');
+  a.eq(serie[0].sono,7,'o sono entrou');
+});
 teste('garmin','dia ja convertido nao e acusado',a=>{
   const c=conferirVolumeGarmin({garmin:[
     {data:'2026-10-02',nado:400,ativDur:600,ativs:[{k:'x',min:600}]}]});
