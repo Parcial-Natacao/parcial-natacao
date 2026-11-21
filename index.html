@@ -654,14 +654,14 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v209"></script>
-<script src="./inicio-e-grupos.js?v=v209"></script>
+<script src="./persistencia-segura.js?v=v210"></script>
+<script src="./inicio-e-grupos.js?v=v210"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v209';
+const VER='v210';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2548,6 +2548,15 @@ function irCriarConta(){
     return toast('Escolha um perfil para continuar');
   }
   push(); CAD_PASSO=1; CAD={}; S.vista='cadastro'; render();
+}
+/* a fonte escolhida vale para o lançamento do dia; nasce em "noite" porque
+   é a leitura que o app de fato usa */
+let HRV_FONTE='noite';
+function selFonteHrv(f){
+  HRV_FONTE=f;
+  const n=document.getElementById('hfN'), s=document.getElementById('hfS');
+  if(n)n.classList.toggle('on',f==='noite');
+  if(s)s.classList.toggle('on',f==='semana');
 }
 function selTipo(t){TIPO=t;
   document.getElementById('tpA').classList.toggle('on',t==='piscina');
@@ -5842,6 +5851,34 @@ teste('exclusão','o recado de despedida leva só o necessário',a=>{
   a.eq(c.categoria,'despedida','e a categoria é o que o Apps Script consulta');
   a.eq(c.equipe,null,'sem equipe');
   a.eq(c.perfil,null,'sem perfil — o recado não carrega perfil de ninguém');});
+/* ── A VFC DIGITADA NÃO DIZIA DE ONDE VINHA (v210) ──────────────────────────
+   O relógio mostra DOIS números de VFC — a da noite e a média semanal — e o
+   campo pedia só "VFC". O Bruno preencheu a semanal por meses, de boa-fé,
+   porque é a maior das duas. Descoberto em 11/2026 comparando o app com a
+   API da Garmin: nas noites de 30 e 32 ms o app mostrava 43 e 42. */
+teste('VFC','o lançamento do dia grava a procedência junto',a=>{
+  const _f=HRV_FONTE;
+  try{
+    selFonteHrv('noite'); a.eq(HRV_FONTE,'noite','começa e volta para a noite');
+    selFonteHrv('semana'); a.eq(HRV_FONTE,'semana','e a escolha muda o estado');
+  } finally { HRV_FONTE=_f; }});
+teste('VFC','o campo pergunta QUAL VFC, não só "VFC"',a=>{
+  /* o corpo do acordeão só é montado quando a seção está aberta — um teste
+     que esquece isso passa a renderizar só os cabeçalhos e não vê nada */
+  _atleta(); S.mostrarFC=true;
+  S.acc={}; [...telaGarmin().matchAll(/toggleAcc\('([^']+)'\)/g)].forEach(m=>S.acc[m[1]]=true);
+  const h=telaGarmin();
+  a.ok(/da noite/.test(h),'oferece a da noite');
+  a.ok(/m\u00e9dia semanal/.test(h),'e a média semanal');
+  a.ok(/qual-vfc-digitar/.test(h),'e explica a diferença num "i"');});
+teste('VFC','semanal e noite nunca entram na mesma série',a=>{
+  /* a trava já existia; o que faltava era a digitação declarar a fonte */
+  const g=[{data:'2026-11-21',hrv:41,hrvF:'semana'},
+           {data:'2026-11-20',hrv:39,hrvF:'noite'},
+           {data:'2026-11-19',hrv:32,hrvF:'noite'}];
+  const porFonte=f=>g.filter(x=>(x.hrvF||'legado')===f).length;
+  a.eq(porFonte('noite'),2,'as noites ficam juntas');
+  a.eq(porFonte('semana'),1,'e a semanal, separada');});
 teste('duração','1:10 é 1h10, não 1min10s',a=>a.quase(durMin('1:10'),70,0.01));
 teste('duração','hh:mm.ss do Bruno (1:10.30)',a=>a.quase(durMin('1:10.30'),70.3,0.01));
 teste('duração','46:17 continua mm:ss',a=>a.quase(durMin('46:17'),46.28,0.01));
@@ -10984,7 +11021,16 @@ function telaGarmin(){
     ${S.mostrarFC?'':`<button class="sm ghost full" style="margin-top:8px" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>`}
     ${S.mostrarFC?`<div class="grid2" style="margin-top:8px">
       <div><label>FC repouso <span class="xs muted">bpm</span></label><input id="gFC" inputmode="numeric"></div>
-      <div><label>VFC <span class="xs muted">ms · opcional</span></label><input id="gH" inputmode="numeric"></div>
+      <div><label for="gH">VFC <span class="xs muted">ms · opcional</span>${info('Qual VFC digitar',
+        `O relógio mostra <b>dois</b> números de VFC, e eles não são a mesma coisa.`
+        +`<br><br><b>VFC da noite</b> — a média da última noite. É esta que o app quer: ela cai quando você dorme mal, treina demais ou está ficando doente.`
+        +`<br><br><b>Média semanal</b> (ou "status de VFC") — a média dos últimos 7 dias. Ela foi feita para <b>não</b> reagir a uma noite ruim, então não serve para dizer como você está hoje. Costuma ser o número maior dos dois.`
+        +`<br><br>Se você só tiver a semanal à mão, tudo bem: marque <b>média semanal</b> abaixo e o app lida com ela de outro jeito, sem misturar as duas na mesma série.`)}</label>
+        <input id="gH" inputmode="numeric" placeholder="da última noite">
+        <div class="opt" style="margin-top:6px">
+          <button type="button" id="hfN" class="${HRV_FONTE==='noite'?'on':''}" onclick="selFonteHrv('noite')">da noite</button>
+          <button type="button" id="hfS" class="${HRV_FONTE==='semana'?'on':''}" onclick="selFonteHrv('semana')">média semanal</button>
+        </div></div>
     </div>`:''}
     <button class="primary full" style="margin-top:10px" onclick="lancarDia()">Gravar dia</button>`;
   const cExames=`
@@ -12192,7 +12238,19 @@ async function lancarDia(){
   S.pro=S.pro||proVazio();
   let g=(S.pro.garmin||[]).find(x=>x.data===d); if(!g){g={data:d};S.pro.garmin.push(g)}
   const nm=id=>{const v=val(id);return v?parseFloat(v):undefined};
-  if(nm('gFC')!==undefined)g.fc=nm('gFC'); if(nm('gH')!==undefined)g.hrv=nm('gH');
+  if(nm('gFC')!==undefined)g.fc=nm('gFC');
+  /* ⚠️ A VFC DIGITADA PRECISA DIZER DE ONDE VEIO.
+     Esta linha era `g.hrv=nm('gH')` e mais nada — sem `hrvF`. Toda a máquina
+     que o app tem para NUNCA misturar média semanal com medição de uma noite
+     (`hrvF`, a série por fonte, o rótulo "menos sensível que a medida da
+     noite") valia só para o que vinha do export, e era pulada justamente no
+     caminho mais usado: a digitação.
+     O resultado apareceu em novembro de 2026, comparando o app com a API da
+     Garmin: nos dias 17 e 19/11 as noites foram 30 e 32 ms, bem abaixo da
+     faixa habitual, e o app mostrava 43 e 42 — a média semanal, digitada de
+     boa-fé porque o relógio mostra os dois números e o campo não dizia qual
+     deles queria. O app dizia "normal" nos dois dias de maior cobrança. */
+  if(nm('gH')!==undefined){ g.hrv=nm('gH'); g.hrvF=HRV_FONTE; }
   const sh=horasFlex(val('gS')); if(sh!=null)g.sono=sh; if(nm('gP')!==undefined)g.pse=nm('gP');
   S.sonoSel=null;                     /* senão a faixa fica marcada no dia seguinte */
   if(await salvarSaude()===false)return; toast('Gravado'); render();
