@@ -29,6 +29,14 @@ os quatro arquivos precisam estar no mesmo projeto):
 
 5. **Implantar** → autorize os escopos quando o Google pedir → **copie a URL**
    (termina em `/exec`).
+6. Guarde essa URL em **Propriedades do script** como `URL_WEBAPP`.
+
+> ⚠️ **O passo 6 não é opcional.** `ScriptApp.getService().getUrl()` devolve
+> endereços diferentes conforme de onde é chamado: no editor, o `/dev`, que
+> só abre para quem edita o projeto; dentro do Web App publicado, o `/exec`.
+> Como o `redirect_uri` tem de ser idêntico ao registrado no portal, um valor
+> que varia passa no teste e falha na vida real, com um 400 que não explica
+> nada. Com `URL_WEBAPP` preenchida, o endereço é sempre o mesmo.
 
 > ⚠️ "Qualquer pessoa" assusta, e não deveria. O endereço não expõe dado
 > nenhum: sem um **pedido** válido no Firestore — que só o dono da conta
