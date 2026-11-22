@@ -31,6 +31,21 @@ os quatro arquivos precisam estar no mesmo projeto):
    (termina em `/exec`).
 6. Guarde essa URL em **Propriedades do script** como `URL_WEBAPP`.
 
+> ⚠️ **TODA mudança no `conexoes.gs` exige republicar — e NÃO é “Nova
+> implantação”.** A implantação fica presa à VERSÃO do código que existia no
+> momento em que foi criada; salvar o arquivo depois não muda o que o `/exec`
+> serve. Aconteceu aqui: a implantação nasceu às 10:59 com o arquivo ainda
+> quebrado, e o endereço respondia *“Função de script não encontrada: doGet”*
+> mesmo com o código certo salvo no editor.
+>
+> O caminho certo é **Implantar › Gerenciar implantações › ✏️ › Versão: Nova
+> versão › Implantar**. Isso mantém a MESMA URL. “Nova implantação” criaria
+> um endereço diferente — e o antigo é o que está registrado no portal do
+> fabricante como `redirect_uri`.
+>
+> Para conferir sem adivinhação: abra o `/exec` no navegador. Se vier a página
+> “Meros360 — conexões”, a versão publicada é a certa.
+
 > ⚠️ **O passo 6 não é opcional.** `ScriptApp.getService().getUrl()` devolve
 > endereços diferentes conforme de onde é chamado: no editor, o `/dev`, que
 > só abre para quem edita o projeto; dentro do Web App publicado, o `/exec`.
