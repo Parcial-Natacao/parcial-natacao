@@ -103,15 +103,31 @@ Com isso eu preencho `PROVEDORES.garmin` e escrevo o `receberPush_`, que é a
 
 ---
 
-## Passo 5 — o lado do app
+## Passo 5 — o lado do app (**já feito**, falta ligar)
 
-Depois do passo 4, entra no `index.html`:
+O botão **Saúde › Conectar relógio**, a leitura dos vínculos e os campos
+espelhados do pedido estão no `index.html` desde a v2.17.0. Faltam duas
+ligadas, e as duas são suas:
 
-- o botão **Saúde › Conectar relógio**, que grava o `pedido_<uid>_<nonce>` e
-  abre o Web App;
-- a regra do Firestore para `pedido_` e `vinculo_` (uma publicação só, junto);
-- a faixa de conectado passando a ler o `vinculo_`, em vez de deduzir pela
-  existência de pacotes.
+**5a. O endereço do Web App.** Em `index.html`, a constante `URL_CONEXOES`
+(logo abaixo de `IA_URL`) está vazia. Cole nela a URL do passo 1. Enquanto
+estiver vazia o cartão de conectar **não aparece** — de propósito: recurso
+inacabado não fica piscando na tela de ninguém, e o caminho manual do ZIP
+continua inteiro.
+
+**5b. Publicar as regras.** O `firebase/firestore.rules.v2` ganhou os três
+documentos novos. Sem publicar, o botão grava o pedido e leva "permission
+denied" — o Apps Script não acha o pedido e recusa a conexão.
+
+| documento | quem lê | quem escreve |
+|---|---|---|
+| `pedido_<uid>_<nonce>` | ninguém pelo app | só o dono **cria**; o script apaga |
+| `vinculo_<uid>_<prov>` | só o dono | só a conta de serviço |
+| `conexao_<uid>_<prov>` | **ninguém** — nem o administrador | só a conta de serviço |
+
+A última linha é a que importa: os tokens não aparecem em regra nenhuma, e
+no Firestore o que não é permitido é negado. Eles também foram tirados do
+alcance de `ehOutro()`, que senão os entregaria ao administrador global.
 
 ---
 

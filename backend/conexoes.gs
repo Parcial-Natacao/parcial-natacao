@@ -197,12 +197,12 @@ function trocarToken_(prov, corpo) {
 /* ── 3) ONDE A CONEXÃO MORA ────────────────────────────────────────────────
    DOIS documentos, de propósito:
 
-   `conexao_<prov>_<uid>` guarda os TOKENS. Nenhuma regra do Firestore dá
+   `conexao_<uid>_<prov>` guarda os TOKENS. Nenhuma regra do Firestore dá
    leitura a ninguém — nem ao dono, nem ao administrador. Só a conta de
    serviço chega nele, e ela não passa pelas regras. Um token de leitura de
    saúde não tem por que passear pelo navegador.
 
-   `vinculo_<prov>_<uid>` é o que o APP enxerga: provedor, desde quando, e a
+   `vinculo_<uid>_<prov>` é o que o APP enxerga: provedor, desde quando, e a
    última coleta. Sem segredo nenhum. É com ele que a tela diz "conectado"
    sem nunca tocar no token. */
 function gravarConexao_(uid, provedor, t) {
@@ -217,8 +217,11 @@ function gravarConexao_(uid, provedor, t) {
     idNoProvedor: t.user_id || t.userId || null,
     em: agora
   };
-  escrever_('conexao_' + provedor + '_' + uid, dados, uid, 'conexao');
-  escrever_('vinculo_' + provedor + '_' + uid,
+  /* uid ANTES do provedor: é o que deixa o app consultar `vinculo_<uid>_`
+     por faixa de id. Com o provedor na frente, achar os meus vínculos
+     exigiria varrer os de todo mundo — e a regra negaria a consulta. */
+  escrever_('conexao_' + uid + '_' + provedor, dados, uid, 'conexao');
+  escrever_('vinculo_' + uid + '_' + provedor,
     { provedor: provedor, em: agora, ultimaColeta: null, estado: 'ativo' }, uid, 'vinculo');
 }
 
