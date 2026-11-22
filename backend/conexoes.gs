@@ -1,0 +1,366 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MEROS360 — CONEXÕES COM RELÓGIOS (OAuth 2.0)  ·  Google Apps Script
+   ───────────────────────────────────────────────────────────────────────────
+   O QUE ESTE ARQUIVO RESOLVE
+
+   O `garmin.gs` coleta os dados de UMA pessoa: a chave pessoal dela mora nas
+   propriedades do script. Isso não se repete para o time — a faixa Personal
+   da Garmin é para a pessoa ler os próprios dados, a chave vence sem avisar,
+   e guardar a chave pessoal de terceiros está fora do que ela permite.
+
+   Aqui mora o caminho que escala: o atleta toca em "Conectar", autoriza na
+   página do FABRICANTE, e volta. Nenhuma senha, nenhuma chave copiada à mão.
+   É o mesmo fluxo do Strava, e ele precisa de três coisas que um app sem
+   servidor não tem — um endereço público, um segredo guardado longe do
+   navegador, e alguém acordado para receber o retorno. Este Web App é as
+   três.
+
+   ───────────────────────────────────────────────────────────────────────────
+   ⚠️ O UID NÃO PODE VIR NA URL. É A ÚNICA COISA QUE SEGURA TUDO.
+
+   O caminho ingênuo seria `?uid=<uid>`: qualquer um trocaria o parâmetro e
+   penduraria o próprio relógio na conta de outra pessoa — ou, pior, leria os
+   dados dela. Verificar um token do Firebase aqui dentro daria certo, mas
+   exigiria validar RS256 contra as chaves públicas do Google, em Apps
+   Script, na mão.
+
+   O caminho curto usa o que o Firestore já garante: o app grava um PEDIDO
+   em `pedido_<uid>_<nonce>`, e a REGRA só deixa quem está logado como `uid`
+   criar esse documento. Então a existência do pedido já é a prova. Daqui a
+   gente lê o pedido, descobre de quem é, e nunca confia na URL.
+
+   O pedido vale 10 minutos e é apagado assim que serve. Não guarda nada
+   sensível: só uid, provedor e hora.
+
+   ───────────────────────────────────────────────────────────────────────────
+   ⚠️ O SEGREDO DO CLIENTE VAI NAS PROPRIEDADES DO SCRIPT. NUNCA NO REPOSITÓRIO.
+
+   O repositório é PÚBLICO. Um `client_secret` commitado é revogado pelo
+   fabricante em horas — quando dá sorte; quando não dá, alguém usa antes.
+
+   ───────────────────────────────────────────────────────────────────────────
+   ⚠️ OS ENDEREÇOS DE CADA FABRICANTE ESTÃO EM BRANCO DE PROPÓSITO.
+
+   A documentação oficial da Garmin fica atrás do login do portal de
+   desenvolvedor. Preencher `PROVEDORES` com URL de blog é como construir uma
+   ponte com a planta do vizinho: funciona até não funcionar. Depois do
+   registro, copie os valores da documentação do próprio portal — e só então
+   `conexoesConferir()` deixa de reclamar.
+
+   Instalação e registro: backend/CONEXOES.md
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── O CATÁLOGO DE FABRICANTES ─────────────────────────────────────────────
+   Um provedor novo é uma linha aqui mais uma função de coleta — nada no
+   resto do arquivo muda. É esse o ponto de ter feito o encanamento genérico.
+
+   `pkce`      : o fabricante exige code_challenge/code_verifier (a Garmin
+                 exige; é o que dispensa o segredo no navegador).
+   `credNoCorpo`: as credenciais vão no CORPO do POST de token, não no header
+                 `Authorization: Basic`. Isto muda de fabricante para
+                 fabricante e é a causa clássica de um 401 sem explicação.
+   `propSegredo`: nome da propriedade do script. O valor nunca aparece aqui. */
+const PROVEDORES = {
+  garmin: {
+    nome: 'Garmin',
+    autorizar: '',          /* ← portal: URL de consentimento  */
+    token: '',              /* ← portal: troca e refresh       */
+    escopo: '',             /* ← portal                        */
+    pkce: true,
+    credNoCorpo: true,
+    propId: 'GARMIN_CLIENT_ID',
+    propSegredo: 'GARMIN_CLIENT_SECRET'
+  },
+  polar: {
+    nome: 'Polar',
+    autorizar: '',          /* ← documentação do AccessLink    */
+    token: '',
+    escopo: '',
+    pkce: false,
+    credNoCorpo: false,
+    propId: 'POLAR_CLIENT_ID',
+    propSegredo: 'POLAR_CLIENT_SECRET'
+  }
+};
+
+const PEDIDO_VALIDADE_MIN = 10;
+
+/* ── 1) A PORTA DE ENTRADA ─────────────────────────────────────────────────
+   Um Web App do Apps Script não sabe responder 302. O desvio para o
+   fabricante vai então numa página mínima que se redireciona sozinha — e com
+   `target='_top'`, senão ela tenta abrir dentro do próprio iframe do
+   Apps Script e o usuário vê uma tela branca. */
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  try {
+    if (p.a === 'iniciar') return iniciar_(p);
+    if (p.code || p.error) return retorno_(p);
+    return pagina_('Meros360 — conexões',
+      'Este endereço recebe as autorizações de relógio do Meros360.'
+      + '<br><br>Não há nada para fazer aqui: a conexão começa dentro do app, '
+      + 'em <b>Saúde › Conectar relógio</b>.');
+  } catch (err) {
+    return pagina_('Não deu certo', esc_(String(err && err.message || err))
+      + '<br><br>Nada foi gravado. Volte ao app e tente de novo.');
+  }
+}
+
+/* O atleta chega aqui vindo do app, com o id do pedido e o provedor. */
+function iniciar_(p) {
+  /* o provedor sai do PEDIDO, nao do parâmetro da URL: o pedido foi escrito
+     por quem estava logado, o parâmetro foi escrito por quem clicou */
+  const pedido = lerPedido_(p.n);
+  const prov = provedor_(pedido.provedor);
+  const estado = p.n;
+
+  /* PKCE: o verificador fica DAQUI, nunca sai no navegador. O fabricante
+     recebe só o resumo (SHA-256) e, na hora da troca, exige o original.
+     Guardar no cache basta: a janela entre ida e volta são segundos. */
+  let verificador = '';
+  if (prov.pkce) {
+    verificador = aleatorio_(64);
+    CacheService.getScriptCache().put('pkce_' + estado, verificador, 600);
+  }
+
+  const q = [
+    'response_type=code',
+    'client_id=' + encodeURIComponent(propObrig_(prov.propId)),
+    'redirect_uri=' + encodeURIComponent(urlRetorno_()),
+    'state=' + encodeURIComponent(estado)
+  ];
+  if (prov.escopo) q.push('scope=' + encodeURIComponent(prov.escopo));
+  if (prov.pkce) q.push('code_challenge=' + encodeURIComponent(desafio_(verificador)),
+                        'code_challenge_method=S256');
+
+  const destino = prov.autorizar + (prov.autorizar.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
+  return pagina_('Levando você ao ' + prov.nome + '…',
+    'Se nada acontecer, <a href="' + esc_(destino) + '" target="_top">toque aqui</a>.',
+    destino);
+}
+
+/* ── 2) A VOLTA ────────────────────────────────────────────────────────────
+   O fabricante devolve `code` e o nosso `state`. O state é o id do pedido —
+   e é lendo o pedido que descobrimos de quem é a conta. A URL não é fonte de
+   verdade para nada além disso. */
+function retorno_(p) {
+  if (p.error) {
+    return pagina_('Autorização não concluída',
+      'O fabricante respondeu: <b>' + esc_(p.error) + '</b>.'
+      + '<br><br>Nada foi gravado. Se você cancelou, é só isso mesmo.');
+  }
+  const pedido = lerPedido_(p.state);
+  const prov = provedor_(pedido.provedor);
+
+  const corpo = {
+    grant_type: 'authorization_code',
+    code: p.code,
+    redirect_uri: urlRetorno_()
+  };
+  if (prov.pkce) {
+    const v = CacheService.getScriptCache().get('pkce_' + p.state);
+    if (!v) throw new Error('A autorização demorou demais. Comece de novo pelo app.');
+    corpo.code_verifier = v;
+  }
+  const t = trocarToken_(prov, corpo);
+
+  gravarConexao_(pedido.uid, pedido.provedor, t);
+  apagarPedido_(p.state);
+
+  return pagina_('Pronto, ' + prov.nome + ' conectado',
+    'Pode fechar esta aba e voltar ao Meros360.'
+    + '<br><br>Os dados do seu relógio começam a aparecer na aba <b>Saúde</b> '
+    + 'nas próximas horas — não precisa importar nada.');
+}
+
+/* POST de token. As credenciais vão no corpo ou no header conforme o
+   fabricante; errar isso devolve 401 sem dizer por quê. */
+function trocarToken_(prov, corpo) {
+  const id = propObrig_(prov.propId), segredo = propObrig_(prov.propSegredo);
+  const op = { method: 'post', muteHttpExceptions: true,
+    contentType: 'application/x-www-form-urlencoded' };
+  const campos = {};
+  Object.keys(corpo).forEach(function (k) { campos[k] = corpo[k]; });
+  if (prov.credNoCorpo) { campos.client_id = id; campos.client_secret = segredo; }
+  else { op.headers = { Authorization: 'Basic ' + Utilities.base64Encode(id + ':' + segredo) }; }
+  op.payload = Object.keys(campos).map(function (k) {
+    return encodeURIComponent(k) + '=' + encodeURIComponent(campos[k]);
+  }).join('&');
+
+  const r = UrlFetchApp.fetch(prov.token, op);
+  const c = r.getResponseCode(), txt = r.getContentText();
+  if (c !== 200) throw new Error('Troca de token falhou (' + c + '): ' + txt.slice(0, 300));
+  const j = JSON.parse(txt);
+  if (!j.access_token) throw new Error('Resposta sem access_token: ' + txt.slice(0, 200));
+  return j;
+}
+
+/* ── 3) ONDE A CONEXÃO MORA ────────────────────────────────────────────────
+   DOIS documentos, de propósito:
+
+   `conexao_<prov>_<uid>` guarda os TOKENS. Nenhuma regra do Firestore dá
+   leitura a ninguém — nem ao dono, nem ao administrador. Só a conta de
+   serviço chega nele, e ela não passa pelas regras. Um token de leitura de
+   saúde não tem por que passear pelo navegador.
+
+   `vinculo_<prov>_<uid>` é o que o APP enxerga: provedor, desde quando, e a
+   última coleta. Sem segredo nenhum. É com ele que a tela diz "conectado"
+   sem nunca tocar no token. */
+function gravarConexao_(uid, provedor, t) {
+  const agora = Date.now();
+  const dados = {
+    provedor: provedor,
+    uid: uid,
+    acesso: t.access_token,
+    refresh: t.refresh_token || null,
+    expiraEm: t.expires_in ? agora + (Number(t.expires_in) * 1000) : null,
+    escopo: t.scope || null,
+    idNoProvedor: t.user_id || t.userId || null,
+    em: agora
+  };
+  escrever_('conexao_' + provedor + '_' + uid, dados, uid, 'conexao');
+  escrever_('vinculo_' + provedor + '_' + uid,
+    { provedor: provedor, em: agora, ultimaColeta: null, estado: 'ativo' }, uid, 'vinculo');
+}
+
+/* mesma forma dos campos espelhados do resto do banco: `dono` é o que a
+   regra confere, `categoria` é o que a consulta encontra */
+function escrever_(chave, dados, uid, categoria) {
+  const corpo = { fields: {
+    v: { stringValue: JSON.stringify(dados) },
+    dono: { stringValue: uid },
+    categoria: { stringValue: categoria },
+    equipe: { nullValue: null }, perfil: { nullValue: null },
+    aprovado: { nullValue: null }, donoEmail: { nullValue: null }
+  } };
+  fs_('/kv/' + encodeURIComponent(chave) + '?' + [
+    'v', 'dono', 'categoria', 'equipe', 'perfil', 'aprovado', 'donoEmail'
+  ].map(function (c) { return 'updateMask.fieldPaths=' + c; }).join('&'), 'patch', corpo);
+}
+
+/* ── 4) O PEDIDO ───────────────────────────────────────────────────────────
+   Criado pelo app, lido aqui, apagado em seguida. Curto na vida e pobre em
+   conteúdo: se vazar, não serve para nada. */
+function lerPedido_(id) {
+  if (!id) throw new Error('Pedido ausente. Comece pelo app.');
+  const d = fs_('/kv/' + encodeURIComponent('pedido_' + id));
+  if (!d || !d.fields || !d.fields.v) throw new Error('Pedido não encontrado ou já usado.');
+  const p = JSON.parse(d.fields.v.stringValue);
+  if (!p.uid || !p.provedor) throw new Error('Pedido incompleto.');
+  if (!p.em || (Date.now() - p.em) > PEDIDO_VALIDADE_MIN * 60000) {
+    throw new Error('Este pedido expirou. Toque em Conectar de novo.');
+  }
+  /* a chave contém o uid: conferir isso impede que um pedido de outra pessoa
+     seja usado com um id adivinhado */
+  if (id.indexOf(p.uid + '_') !== 0) throw new Error('Pedido inconsistente.');
+  return p;
+}
+function apagarPedido_(id) {
+  try { fs_('/kv/' + encodeURIComponent('pedido_' + id), 'delete'); } catch (e) {}
+}
+
+/* ── 5) O RECEPTOR DE PUSH ─────────────────────────────────────────────────
+   A faixa Starter da Garmin não tem rota de pull: ela EMPURRA os dados para
+   um endereço público toda vez que o relógio sincroniza. Daí as exigências
+   de estar sempre no ar e de ser idempotente.
+
+   Idempotência a gente já tem de graça: o pacote mora em
+   `garmin_<uid>_<data>`, então receber o mesmo dia três vezes grava o mesmo
+   documento três vezes. Nada duplica.
+
+   ⚠️ A FORMA DO CORPO VEM DA DOCUMENTAÇÃO DO PORTAL. `traduzir_` abaixo é o
+   único lugar que precisa saber dela. */
+function doPost(e) {
+  try {
+    const corpo = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const n = receberPush_(corpo);
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, gravados: n }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    /* responder 200 mesmo em erro é deliberado: o fabricante reenvia em caso
+       de falha, e uma fila de reenvio por causa de um dado torto só piora.
+       O erro fica no log de execuções. */
+    console.error('push: ' + (err && err.message || err));
+    return ContentService.createTextOutput(JSON.stringify({ ok: false }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function receberPush_(corpo) {
+  throw new Error('receberPush_ ainda não sabe a forma do corpo. '
+    + 'Preencha com a documentação do portal (ver backend/CONEXOES.md).');
+}
+
+/* ── 6) FERRAMENTAS DE CONFERÊNCIA ─────────────────────────────────────────
+   Rode estas duas no editor do Apps Script. Elas não dependem de nenhum
+   fabricante e provam que a metade que é nossa está de pé. */
+function conexoesUrl() {
+  const u = urlRetorno_();
+  const msg = 'URL deste Web App (use no portal do fabricante):\n' + u;
+  Logger.log(msg); return msg;
+}
+
+function conexoesConferir() {
+  const faltas = [];
+  Object.keys(PROVEDORES).forEach(function (k) {
+    const p = PROVEDORES[k];
+    if (!p.autorizar) faltas.push(k + ': falta a URL de autorização');
+    if (!p.token) faltas.push(k + ': falta a URL de token');
+    if (!props_().getProperty(p.propId)) faltas.push(k + ': falta ' + p.propId);
+    if (!props_().getProperty(p.propSegredo)) faltas.push(k + ': falta ' + p.propSegredo);
+  });
+  let fire = 'Firestore: ';
+  try { fs_('/kv/dev_equipes'); fire += 'ok (conta de serviço respondendo)'; }
+  catch (e) { fire += 'FALHOU — ' + e.message; }
+
+  const msg = [conexoesUrl(), '', fire, '',
+    faltas.length ? 'Pendências:\n- ' + faltas.join('\n- ')
+                  : 'Nenhuma pendência: todos os provedores estão preenchidos.'].join('\n');
+  Logger.log(msg); return msg;
+}
+
+/* ── 7) MIUDEZAS ───────────────────────────────────────────────────────────*/
+function provedor_(id) {
+  const p = PROVEDORES[String(id || '').toLowerCase()];
+  if (!p) throw new Error('Provedor desconhecido: ' + id);
+  if (!p.autorizar || !p.token) {
+    throw new Error(p.nome + ' ainda não está configurado neste script. '
+      + 'Veja backend/CONEXOES.md.');
+  }
+  return p;
+}
+function propObrig_(nome) {
+  const v = props_().getProperty(nome);
+  if (!v) throw new Error('Falta a propriedade ' + nome + ' nas Propriedades do script.');
+  return v;
+}
+/* o endereço que o fabricante chama de volta é o do próprio Web App */
+function urlRetorno_() { return ScriptApp.getService().getUrl(); }
+
+function aleatorio_(n) {
+  const alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  let s = '';
+  for (let i = 0; i < n; i++) s += alfabeto.charAt(Math.floor(Math.random() * alfabeto.length));
+  return s;
+}
+/* base64url do SHA-256, sem padding — é o que o PKCE pede */
+function desafio_(verificador) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, verificador,
+    Utilities.Charset.US_ASCII);
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
+}
+function esc_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+/* páginas do tamanho do recado: quem chega aqui está no meio de outra coisa */
+function pagina_(titulo, html, irPara) {
+  const corpo = '<!doctype html><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + (irPara ? '<script>window.top.location.replace(' + JSON.stringify(irPara) + ')</script>' : '')
+    + '<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:40px 22px;'
+    + 'color:#15171a;background:#f4f3f0}h1{font-size:21px;margin:0 0 12px}'
+    + 'div{max-width:460px;margin:0 auto}a{color:#c0392b}</style>'
+    + '<div><h1>' + esc_(titulo) + '</h1><p>' + html + '</p></div>';
+  return HtmlService.createHtmlOutput(corpo)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
