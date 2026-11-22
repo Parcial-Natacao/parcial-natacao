@@ -344,7 +344,7 @@ service cloud.firestore {
         // Pedido de conexão de relógio: nasce e morre em 10 minutos, e não
         // guarda nada além de uid, provedor e hora.
         || ( ehPedido() && ehMeuPedido() )
-      // O recado de despedida: quem está apagando a própria conta grava UM
+        // O recado de despedida: quem está apagando a própria conta grava UM
         // documento, com o próprio uid na chave, para o Apps Script poder
         // mandar o e-mail de saída depois que o cadastro já não existe. Só
         // criar, nunca ler nem editar: ninguém varre a lista de quem saiu.

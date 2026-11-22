@@ -297,8 +297,13 @@ function receberPush_(corpo) {
    Rode estas duas no editor do Apps Script. Elas não dependem de nenhum
    fabricante e provam que a metade que é nossa está de pé. */
 function conexoesUrl() {
-  const u = urlRetorno_();
-  const msg = 'URL deste Web App (use no portal do fabricante):\n' + u;
+  const u = urlRetorno_(), fixa = props_().getProperty('URL_WEBAPP');
+  let msg = 'URL deste Web App (use no portal do fabricante):\n' + u;
+  if (!fixa && /\/dev$/.test(String(u || ''))) {
+    msg += '\n\n⚠️ Este é o endereço /dev: só abre para quem edita o projeto.'
+         + '\nPublique em Implantar > Nova implantação > App da Web, copie a URL'
+         + '\nque termina em /exec e guarde em URL_WEBAPP nas Propriedades do script.';
+  }
   Logger.log(msg); return msg;
 }
 
@@ -311,6 +316,7 @@ function conexoesConferir() {
     if (!props_().getProperty(p.propId)) faltas.push(k + ': falta ' + p.propId);
     if (!props_().getProperty(p.propSegredo)) faltas.push(k + ': falta ' + p.propSegredo);
   });
+  if (!props_().getProperty('URL_WEBAPP')) faltas.push('URL_WEBAPP (a URL /exec da implantação)');
   let fire = 'Firestore: ';
   try { fs_('/kv/dev_equipes'); fire += 'ok (conta de serviço respondendo)'; }
   catch (e) { fire += 'FALHOU — ' + e.message; }
@@ -336,8 +342,18 @@ function propObrig_(nome) {
   if (!v) throw new Error('Falta a propriedade ' + nome + ' nas Propriedades do script.');
   return v;
 }
-/* o endereço que o fabricante chama de volta é o do próprio Web App */
-function urlRetorno_() { return ScriptApp.getService().getUrl(); }
+/* ⚠️ `getUrl()` DEVOLVE ENDEREÇOS DIFERENTES conforme de onde é chamado.
+   No editor devolve o `/dev`, que só abre para quem tem acesso de edição ao
+   projeto — inútil como retorno de OAuth. Dentro de uma requisição do Web App
+   publicado devolve o `/exec`, que é o certo.
+
+   E o `redirect_uri` precisa ser IDÊNTICO ao registrado no portal, caractere
+   por caractere. Um valor que muda conforme quem chamou é bomba-relógio:
+   passa no teste e falha na vida real, com um 400 que não explica nada.
+   Então a PROPRIEDADE manda, e `getUrl()` fica só de reserva. */
+function urlRetorno_() {
+  return props_().getProperty('URL_WEBAPP') || ScriptApp.getService().getUrl();
+}
 
 function aleatorio_(n) {
   const alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';

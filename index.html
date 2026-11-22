@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.17.0"></script>
-<script src="./inicio-e-grupos.js?v=v2.17.0"></script>
+<script src="./persistencia-segura.js?v=v2.17.1"></script>
+<script src="./inicio-e-grupos.js?v=v2.17.1"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.17.0';
+const VER='v2.17.1';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7032,6 +7032,36 @@ teste('conexão','a lista de provedores tem o Garmin pronto e o Polar em espera'
   a.ok(!!g,'Garmin na lista');
   a.ok(g.nota!=='em breve','Garmin não está marcado como em breve');
   a.eq((PROVEDORES_RELOGIO.find(p=>p.id==='polar')||{}).nota,'em breve','Polar ainda espera');
+});
+teste('prontidão','a frase separa o que a prontidão pediu do que sobrou',a=>{
+  /* o caso que originou isto: prontidão ruim, projeção imóvel */
+  const t=textoProntidao(41,1.5,0,false);
+  a.ok(t.indexOf('pediu +1,5%')>=0,'diz o quanto pediu, com vírgula');
+  a.ok(/no teto/.test(t),'avisa que saturou');
+  a.ok(/absorveu/.test(t),'explica que a âncora engoliu');
+  a.ok(/não mudou/.test(t),'responde “por que não mudou?”');
+});
+teste('prontidão','quando o ajuste passa inteiro, a frase é direta',a=>{
+  const t=textoProntidao(60,0.7,0.7,false);
+  a.ok(/\+0[.,]7%/.test(t),'mostra o efeito');
+  a.ok(!/absorveu/.test(t),'sem conversa de âncora');
+  a.ok(!/teto/.test(t),'0,7% não é teto');
+});
+teste('prontidão','passagem parcial é dita como parcial',a=>{
+  const t=textoProntidao(50,1.5,0.4,false);
+  a.ok(/deixou passar/.test(t),'diz que passou só parte');
+});
+teste('prontidão','72 é o ponto de equilíbrio',a=>{
+  const t=textoProntidao(72,0,0,false);
+  a.ok(/neutra/.test(t),'nem penaliza nem premia');
+  a.ok(!/absorveu/.test(t),'não fala de âncora à toa');
+});
+teste('prontidão','destreino é avisado à parte',a=>{
+  a.ok(/destreino/.test(textoProntidao(40,1.5,0,true)),'aparece quando há');
+  a.ok(!/destreino/.test(textoProntidao(40,1.5,0,false)),'e não quando não há');
+});
+teste('prontidão','sem prontidão, sem frase',a=>{
+  a.eq(textoProntidao(null,0,0,false),null,'nada a dizer');
 });
 teste('versão','as tags <script> pedem a versão que o app diz ser',a=>{
   /* a deriva real: index em `?v=v211`, sw.js em `?v=v216`. Como são URLs
@@ -14768,6 +14798,31 @@ function ordenarPorPiscina(out){
   }
   return out;
 }
+/* ── O QUE A PRONTIDÃO FEZ COM A PROJEÇÃO ────────────────────────
+   A prontidão sempre entrou no cálculo, e nunca apareceu na tela. Quem
+   olhava uma projeção imóvel num dia ruim não tinha como saber se ela foi
+   ignorada, se entrou e saturou, ou se a âncora no PB a engoliu.
+
+   São três coisas diferentes e a frase precisa distinguir as três:
+     • `pedido`  — quanto a prontidão PEDIU (satura em 1,5%, e o teto é
+       atingido já em prontidão 47: abaixo disso tanto faz);
+     • `efeito`  — quanto de fato SOBROU depois da âncora no PB;
+     • `destreino` — sinal separado, que alarga a faixa lenta.
+   Quando `pedido` existe e `efeito` é zero, a frase diz isso com todas as
+   letras: o ajuste foi absorvido. É a resposta para "por que não mudou?". */
+function textoProntidao(pront,pedidoPct,efeitoPct,destreino){
+  if(pront==null)return null;
+  const p=+(pedidoPct||0).toFixed(1), e=+(efeitoPct||0).toFixed(1);
+  /* vírgula decimal: a frase é em português e o “teto de 1,5%” ao lado usa vírgula */
+  const sin=v=>((v>0?'+':'−')+Math.abs(v).toFixed(1)+'%').replace('.',',');
+  const fim=destreino?' Sinal de destreino: a faixa lenta foi alargada.':'';
+  if(p===0)return`Prontidão ${pront}: neutra — 72 é o ponto de equilíbrio do modelo.`+fim;
+  const teto=Math.abs(p)>=1.5?' (no teto de 1,5%)':'';
+  if(e===0)return`Prontidão ${pront}: pediu ${sin(p)}${teto}, mas a âncora no PB absorveu o ajuste `
+    +`— por isso a projeção não mudou.`+fim;
+  if(Math.abs(e)<Math.abs(p))return`Prontidão ${pront}: pediu ${sin(p)}${teto}, a âncora no PB deixou passar ${sin(e)}.`+fim;
+  return`Prontidão ${pront}: ${sin(e)} na projeção${teto}.`+fim;
+}
 function predicao(pro,comPct,est){
   const alvos=(typeof provasAlvo==='function')?provasAlvo(pro):[]; if(!alvos.length||!comPct||!comPct.length)return[];
   const pbs=(pro&&pro.pbs)||{};
@@ -14789,7 +14844,16 @@ function predicao(pro,comPct,est){
          ajuste é limitado: ninguém "está" 5% melhor que o próprio PB de uma hora
          para outra, e destreino tem teto maior que ganho. */
       const destreino=(tend==='↓')||(pront!=null&&pront<45);
-      const ajuste=Math.max(-0.025,Math.min(destreino?0.060:0.030,central/pb-1));
+      const limSup=destreino?0.060:0.030;
+      const ajuste=Math.max(-0.025,Math.min(limSup,central/pb-1));
+      /* ⚠️ O EFEITO REAL SÓ SE MEDE REFAZENDO A CONTA SEM A PRONTIDÃO.
+         `aPr` é o que ela PEDIU; depois da âncora no PB, o que sobra pode ser
+         menos — ou nada, quando os dois valores caem do mesmo lado da trava.
+         Sem este contrafactual a tela só saberia repetir o pedido, que é
+         exatamente a informação que engana. */
+      const semPr=bp*(refPB?pb/refPB:1)*cal.k*(1+aTend);
+      const ajusteSem=Math.max(-0.025,Math.min(limSup,semPr/pb-1));
+      const efeitoPr=(ajuste-ajusteSem)*100;
       central=pb*(1+ajuste);
       /* BANDA ASSIMÉTRICA. Bater o PB é difícil e tem limite físico; nadar mal é
          fácil e tem muito mais espaço. Banda simétrica larga (a v68 inicial) gerava
@@ -14837,7 +14901,7 @@ function predicao(pro,comPct,est){
       else fat.push('Sem prova registrada para calibrar — faixa alargada');
       if(adapt)fat.push(adapt);
       if(pis==='LC50'&&pbs[`${a.d} ${a.e} SC25`])fat.push('Ajustado p/ piscina longa (seu gap SC↔LC)');
-      if(pront!=null)fat.push(`Prontidão ${pront}`); fat.push(`Tendência ${tend}`);
+      fat.push(`Tendência ${tend}`);   /* a prontidão saiu daqui: virou linha própria */
       /* Os percentuais têm que sair dos limites QUE SERÃO EXIBIDOS, não da
          banda pretendida. `low` e `high` acabaram de passar por três travas
          (piso de 3,5% sobre o PB, teto no próprio PB, largura mínima), então
@@ -14850,7 +14914,10 @@ function predicao(pro,comPct,est){
       out.push({prova:`${a.d} ${a.e} ${pis}`,d:a.d,es:a.e,pis,pb,central:Math.round(central),low:L,high:H,
         qual:q,conf:q,calN:cal.n,calK:+cal.k.toFixed(3),
         deltaLowPct:dLow,deltaHighPct:dHigh,referencia:'PB',
-        banda:`${sinal(dLow)} / ${sinal(dHigh)} vs PB`,fatores:fat});
+        banda:`${sinal(dLow)} / ${sinal(dHigh)} vs PB`,fatores:fat,
+        pront:pront==null?null:{score:pront,pedidoPct:+(aPr*100).toFixed(2),
+          efeitoPct:+efeitoPr.toFixed(2),teto:Math.abs(aPr*100)>=1.5-1e-9,destreino},
+        prontTxt:textoProntidao(pront,aPr*100,efeitoPr,destreino)});
     }
   }
   ordenarPorPiscina(out);
@@ -15216,6 +15283,7 @@ function cardPredicao(pro,comPct,est){
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
         <b>${p.prova}</b><span class="n" style="font-weight:800;font-size:1.05em">${fmt(p.low)} – ${fmt(p.high)}</span></div>
       <div class="xs muted">central ~${fmt(p.central)} · PB ${fmt(p.pb)} · ${p.banda} · qualidade dos dados <span style="color:${cor}">${p.qual}%</span></div>
+      ${p.prontTxt?`<div class="xs" style="margin-top:3px;color:${p.pront&&p.pront.efeitoPct===0&&p.pront.pedidoPct!==0?'var(--clock)':'var(--ink-2)'}">${esc(p.prontTxt)}</div>`:''}
       <div class="xs muted" style="margin-top:2px">${p.fatores.join(' · ')}</div>
       ${p.aviso?`<div class="note warn" style="margin-top:6px">${esc(p.aviso)}</div>`:''}</div>`;}).join('');
   return`<div class="card" data-dom="prova"><div class="eyebrow">projeção de tempo — provas-alvo${info('Projeção de tempo',
