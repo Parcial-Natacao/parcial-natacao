@@ -11,17 +11,24 @@
      é impedir origem externa, exfiltração, <base>, <object> e envio de forms.
 
      Se for adicionar um serviço novo, inclua o domínio aqui — senão ele é
-     bloqueado silenciosamente e só aparece no console. -->
+     bloqueado silenciosamente e só aparece no console.
+
+     ⚠️ `apis.google.com` ANDA EM PAR COM O `frame-src`. O Firebase Auth
+     carrega o gapi de lá e, com ele, abre um iframe em
+     `parcial-cdb0e.firebaseapp.com`. Liberar só o `script-src` troca um erro
+     de console por outro: o script passa e o iframe apanha. As duas linhas
+     andam juntas, e o `frame-src` nomeia os dois domínios em vez de abrir
+     geral — continua valendo para todo o resto. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com;
+  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com https://apis.google.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src https://fonts.gstatic.com data:;
   img-src 'self' data: blob: https://firebasestorage.googleapis.com https://*.googleapis.com;
   media-src 'self' data: blob:;
   worker-src 'self' blob:;
   connect-src 'self' blob: https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://firebasestorage.googleapis.com https://cdnjs.cloudflare.com https://*.workers.dev;
-  frame-src 'none';
+  frame-src https://parcial-cdb0e.firebaseapp.com https://apis.google.com;
   object-src 'none';
   base-uri 'none';
   form-action 'none';
@@ -661,7 +668,7 @@ svg.chart{width:100%;height:auto;display:block}
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v214';
+const VER='v216';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2654,6 +2661,11 @@ async function incorporarPacotesGarmin(){
     snap.forEach(d=>{ try{ pacotes.push(JSON.parse(d.data().v)); }catch(_){} });
   }catch(e){ console.warn('pacotes garmin',e.message); return 0; }
   if(!pacotes.length)return 0;
+  /* a prova de que a coleta automática está viva é haver pacote no banco:
+     quem os escreve é o coletor, e só ele. Guardamos em memória — é lido de
+     novo a cada carga, então nunca fica dizendo “conectado” depois que parou. */
+  S.garminAuto={n:pacotes.length,
+    ate:pacotes.map(p=>p.data).filter(Boolean).sort().pop()||null};
   S.pro=S.pro||proVazio(S.u.id); S.pro.garmin=S.pro.garmin||[];
   const mudou=mesclarPacotesGarmin(S.pro.garmin,pacotes);
   if(!mudou)return 0;
@@ -6937,6 +6949,33 @@ teste('garmin','valor improvavel entra na triagem',a=>{
     {data:'2026-10-02',nado:200,ativDur:380}]});
   a.eq(c.suspeitos.length,1,'so o de 380min e 20km');
   a.eq(c.suspeitos[0].data,'2026-10-02','o dia certo');});
+teste('pacotes','a faixa avisa quando o relógio parou de mandar',a=>{
+  const antes=S.garminAuto, d=new Date(); d.setDate(d.getDate()-9);
+  S.garminAuto={n:5,ate:d.toISOString().slice(0,10)};
+  const h=faixaGarminConectado();
+  a.ok(/parou de mandar/.test(h),'troca a boa notícia pelo aviso');
+  a.ok(/há 9 dias/.test(h),'conta os dias de atraso');
+  a.ok(!/Garmin conectado/.test(h),'não diz conectado ao mesmo tempo');
+  S.garminAuto=antes;
+});
+teste('pacotes','dias de atraso: hoje é zero, ontem é um',a=>{
+  a.eq(diasDesde(hoje()),0,'hoje');
+  const d=new Date(); d.setDate(d.getDate()-1);
+  a.eq(diasDesde(d.toISOString().slice(0,10)),1,'ontem');
+  a.eq(diasDesde(null),null,'sem data, sem conta');
+});
+teste('pacotes','a faixa de conectado só aparece quando há pacote no banco',a=>{
+  const antes=S.garminAuto;
+  S.garminAuto=null;              a.eq(faixaGarminConectado(),'','sem conexão, sem faixa');
+  S.garminAuto={n:0,ate:null};    a.eq(faixaGarminConectado(),'','zero pacotes também não');
+  /* data relativa de propósito: com data fixa o teste passaria a falhar
+     sozinho quatro dias depois, quando a faixa vira aviso de atraso */
+  S.garminAuto={n:3,ate:hoje()};
+  const h=faixaGarminConectado();
+  a.ok(/Garmin conectado/.test(h),'anuncia a conexão');
+  a.ok(h.indexOf(brData(hoje()))>=0,'diz até que dia recebeu');
+  S.garminAuto=antes;
+});
 teste('pacotes','o pacote do relógio sobrescreve a VFC digitada, com a procedência',a=>{
   /* o caso real: 19/11/2026, média semanal 42 digitada à mão, noite de 32 no relógio */
   const serie=[{data:'2026-11-19',hrv:42,hrvF:'semana',sonoQ:2,dor:3}];
@@ -11342,6 +11381,7 @@ function telaGarmin(){
     ${cardHistoricoBio(S.pro||{})}`;
   return`
   <div class="row" style="margin:16px 0 10px"><h2>Saúde</h2></div>
+  ${faixaGarminConectado()}
   ${acc('sa_ck','Check-in diário',checkinSub(),cardCheckin())}
   ${acc('sa_med','Medições do dia',medicoesSub(),cardMedicoes())}
   ${acc('sa_pr','Prontidão',g.length?`${g.length} dia(s) de VFC/FC/sono`:'sem dados ainda',cProntidao+cardConcordancia(S.pro)+(()=>{
@@ -11349,10 +11389,49 @@ function telaGarmin(){
     return`<div class="sep"></div><div class="row xs" style="align-items:center">
       <span class="grow">Referência de sono: <b>${r?r.h+'h':'6,5h provisória'}</b>${r?` <span class="muted">(${esc(r.fonte)})</span>`:''}</span>
       <button class="sm ghost" onclick="abrirRefSono()">Ajustar</button></div>`;})())}
-  ${acc('sa_imp','Importar / lançar à mão','do Garmin ou manual',cImportar)}
+  ${acc('sa_imp','Importar / lançar à mão',(S.garminAuto&&S.garminAuto.n)?'só para corrigir ou completar o passado':'do Garmin ou manual',cImportar)}
   ${acc('sa_ex','Exames laboratoriais',nEx?`${nEx} exame(s)`:'nenhum ainda',cExames)}
   ${acc('sa_bio','Bioimpedância',nBio?`${nBio} medição(ões)`:'nenhuma ainda',cBio)}
   <div style="height:20px"></div>`;
+}
+/* ── “O SEU GARMIN ESTÁ CONECTADO” ─────────────────────────────
+   A coleta automática funcionava há dias e a tela nunca disse uma palavra:
+   quem ligou não tinha como saber se tinha dado certo, e quem não ligou
+   continuava vendo “importe o ZIP do Garmin” como se fosse o único caminho.
+   A faixa aparece só quando existe pacote no banco — ela nunca promete uma
+   conexão que não está entregando. */
+/* dias inteiros entre duas datas 'AAAA-MM-DD'. As duas vêm no mesmo
+   formato, então `Date.parse` lê as duas em UTC e a diferença é exata. */
+function diasDesde(data){
+  if(!data)return null;
+  const d=(Date.parse(hoje())-Date.parse(data))/86400000;
+  return isNaN(d)?null:Math.round(d);
+}
+function faixaGarminConectado(){
+  const a=S.garminAuto; if(!a||!a.n)return '';
+  /* ⚠️ A CHAVE PESSOAL DO GARMIN VENCE — 30, 90, 180 dias ou um ano, o dono
+     escolhe na hora de criar, e não existe refresh. Quando vence, o coletor
+     simplesmente para de trazer dia novo: nada quebra, nada avisa, e a série
+     envelhece em silêncio. Por isso a faixa olha a DATA do último pacote em
+     vez de só contar que existem pacotes. */
+  const atraso=diasDesde(a.ate);
+  if(atraso!=null&&atraso>3)return`<div class="note warn" style="margin:0 0 10px"><div class="xs">
+    <b>O Garmin parou de mandar dados.</b> O último dia recebido foi
+    <b>${brData(a.ate)}</b>, há ${atraso} dias ${info('Por que a coleta para',
+    `O motivo mais comum é a <b>chave pessoal ter vencido</b>. Ela nasce com prazo — 30, 90, 180 dias ou um ano — e não se renova sozinha.`
+    +`<br><br>Para voltar: gere uma chave nova nas configurações do Garmin Connect e substitua a antiga na instalação do coletor.`
+    +`<br><br>Outras causas: o relógio não sincronizou com o Garmin Connect nestes dias, ou o coletor foi desligado.`
+    +`<br><br>Nada se perdeu. Assim que a coleta voltar, os dias que faltam entram na série — a janela do coletor olha para trás.`)}
+  </div></div>`;
+  return`<div class="note ok" style="margin:0 0 10px"><div class="xs">
+    <b>✓ Garmin conectado.</b> O app busca <b>VFC da noite, FC de repouso e sono</b>
+    sozinho, a cada 6 horas — você não precisa importar nada ${info('O que a conexão faz',
+    `A cada 6 horas um coletor pergunta à Garmin os seus dados do dia e os deixa no banco. Na próxima vez que você abrir o app, eles entram na sua série.`
+    +`<br><br><b>O que ele traz:</b> VFC da noite, FC de repouso e horas de sono.`
+    +`<br><br><b>O que ele não traz, e por isso o check-in continua:</b> dor, humor, estresse, energia e como VOCÊ sentiu a noite. Relógio nenhum mede isso.`
+    +`<br><br>Nada é apagado: o número do relógio ocupa só o campo do relógio. O que você digitou fica.`)}
+    ${a.ate?`<div class="muted" style="margin-top:3px">Último dia recebido: <b>${brData(a.ate)}</b>.</div>`:''}
+  </div></div>`;
 }
 function prontidao(){
   const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
@@ -11742,16 +11821,21 @@ function cardCheckin(){
     <div class="opt">${[1,2,3,4,5].map(v=>`<button class="${d[campo]===v?'on':''}" onclick="setCheckin('${campo}',${v},true)">${v}</button>`).join('')}</div>
     <div class="xs muted" style="margin-top:2px">1 ${lo} · 5 ${hi}</div></div>`;
   return`
+    ${(S.garminAuto&&S.garminAuto.n)?`<p class="xs muted" style="margin:2px 0 10px">
+      <b>O relógio mede o corpo; estas cinco perguntas medem você.</b> Não se repetem — e quando as duas
+      leituras discordam, é justamente aí que mora a informação (veja <i>Corpo × percepção</i>, na Prontidão).</p>`:''}
     <p class="xs muted" style="margin:2px 0 10px">Como você se sente hoje${info('Check-in do dia',
       `Para quem não usa relógio: estas respostas viram a sua <b>prontidão</b> no relatório, no lugar da VFC.`
       +`<br><br>Quem tem relógio também ganha com o check-in — dor e humor o relógio não mede.`)}</p>
     ${CK_PERG.map(grp).join('')}
     <div class="field" style="margin-top:4px"><label>Quanto dormiu</label>
       <div class="opt">${FAIXAS_SONO.map(f=>`<button class="${sonoNaFaixa(d.sono,f)?'on':''}" onclick="setCheckin('sono',${f.v},true)">${f.r}</button>`).join('')}</div>
-      <div class="xs muted" style="margin-top:2px">Faixa aproximada basta — ninguém cronometra o sono.</div></div>
+      <div class="xs muted" style="margin-top:2px">${(S.garminAuto&&S.garminAuto.n&&d.sono!=null)
+        ?'O relógio já respondeu esta. Toque só se ele errou a noite.'
+        :'Faixa aproximada basta — ninguém cronometra o sono.'}</div></div>
     ${(S.mostrarFC||d.fc!=null)?`<div class="field"><label>FC de repouso <span class="xs muted">bpm · opcional</span></label>
       <input inputmode="numeric" value="${d.fc!=null?d.fc:''}" oninput="setCheckin('fc',this.value?+this.value:null,false)">
-      <div class="xs muted" style="margin-top:2px">${d.fc!=null&&!S.mostrarFC
+      <div class="xs muted" style="margin-top:2px">${(d.fc!=null&&!S.mostrarFC&&S.garminAuto&&S.garminAuto.n)
         ?'Veio do relógio. Pode corrigir.'
         :'Sem relógio: ao acordar, ainda deitado, conte as batidas do pulso por 30 s e dobre.'}</div></div>`
       :`<button class="sm ghost full" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>

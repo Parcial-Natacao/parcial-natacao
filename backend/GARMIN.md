@@ -28,6 +28,14 @@ faz isso de graça.
 2. **Create Key** → aceitar os termos → escolher a validade → **Create**
 3. **A chave aparece UMA vez.** Copie na hora.
 
+> ⚠️ **A chave vence, e a falha é silenciosa.** A validade escolhida no
+> passo 2 (30, 90, 180 dias ou um ano) é definitiva: não existe refresh
+> token, e só se pode ter uma chave por vez. Quando ela vence, o coletor
+> para de trazer dia novo sem erro nenhum — a série simplesmente envelhece.
+> O app cobre isso: a faixa da aba Saúde olha a data do último pacote e,
+> passados três dias sem novidade, troca o “Garmin conectado” por um aviso.
+> Para voltar, repita os passos 1 e 2 com uma chave nova.
+
 ## 2. Guardar a chave onde ela deve morar
 
 No **mesmo projeto do Apps Script** que roda o `notificacoes.gs` (ele reusa a
