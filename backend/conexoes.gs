@@ -39,13 +39,16 @@
    fabricante em horas — quando dá sorte; quando não dá, alguém usa antes.
 
    ───────────────────────────────────────────────────────────────────────────
-   ⚠️ OS ENDEREÇOS DE CADA FABRICANTE ESTÃO EM BRANCO DE PROPÓSITO.
+   ⚠️ OS ENDEREÇOS DE CADA FABRICANTE NÃO MORAM NESTE ARQUIVO. NÃO PODEM.
 
-   A documentação oficial da Garmin fica atrás do login do portal de
-   desenvolvedor. Preencher `PROVEDORES` com URL de blog é como construir uma
-   ponte com a planta do vizinho: funciona até não funcionar. Depois do
-   registro, copie os valores da documentação do próprio portal — e só então
-   `conexoesConferir()` deixa de reclamar.
+   O acordo do Garmin Connect Developer Program trata documentação, materiais
+   técnicos e credenciais como informação confidencial, que não pode ser
+   divulgada a terceiros. Este repositório é PÚBLICO: commitar a URL de
+   autorização, a de token, os escopos ou o formato do push seria publicar
+   material confidencial do fabricante — e o acordo prevê suspensão imediata.
+
+   Então eles vão para as Propriedades do script, do lado do segredo. Aqui
+   ficam só os NOMES das propriedades, que não dizem nada a ninguém.
 
    Instalação e registro: backend/CONEXOES.md
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -59,27 +62,27 @@
    `credNoCorpo`: as credenciais vão no CORPO do POST de token, não no header
                  `Authorization: Basic`. Isto muda de fabricante para
                  fabricante e é a causa clássica de um 401 sem explicação.
-   `propSegredo`: nome da propriedade do script. O valor nunca aparece aqui. */
+   `prop*`     : nome da propriedade do script. Nenhum VALOR aparece aqui. */
 const PROVEDORES = {
   garmin: {
     nome: 'Garmin',
-    autorizar: '',          /* ← portal: URL de consentimento  */
-    token: '',              /* ← portal: troca e refresh       */
-    escopo: '',             /* ← portal                        */
     pkce: true,
     credNoCorpo: true,
     propId: 'GARMIN_CLIENT_ID',
-    propSegredo: 'GARMIN_CLIENT_SECRET'
+    propSegredo: 'GARMIN_CLIENT_SECRET',
+    propAutorizar: 'GARMIN_URL_AUTORIZAR',
+    propToken: 'GARMIN_URL_TOKEN',
+    propEscopo: 'GARMIN_ESCOPO'
   },
   polar: {
     nome: 'Polar',
-    autorizar: '',          /* ← documentação do AccessLink    */
-    token: '',
-    escopo: '',
     pkce: false,
     credNoCorpo: false,
     propId: 'POLAR_CLIENT_ID',
-    propSegredo: 'POLAR_CLIENT_SECRET'
+    propSegredo: 'POLAR_CLIENT_SECRET',
+    propAutorizar: 'POLAR_URL_AUTORIZAR',
+    propToken: 'POLAR_URL_TOKEN',
+    propEscopo: 'POLAR_ESCOPO'
   }
 };
 
@@ -311,10 +314,9 @@ function conexoesConferir() {
   const faltas = [];
   Object.keys(PROVEDORES).forEach(function (k) {
     const p = PROVEDORES[k];
-    if (!p.autorizar) faltas.push(k + ': falta a URL de autorização');
-    if (!p.token) faltas.push(k + ': falta a URL de token');
-    if (!props_().getProperty(p.propId)) faltas.push(k + ': falta ' + p.propId);
-    if (!props_().getProperty(p.propSegredo)) faltas.push(k + ': falta ' + p.propSegredo);
+    [p.propAutorizar, p.propToken, p.propEscopo, p.propId, p.propSegredo].forEach(function (nome) {
+      if (!props_().getProperty(nome)) faltas.push(k + ': falta ' + nome);
+    });
   });
   if (!props_().getProperty('URL_WEBAPP')) faltas.push('URL_WEBAPP (a URL /exec da implantação)');
   let fire = 'Firestore: ';
@@ -329,8 +331,14 @@ function conexoesConferir() {
 
 /* ── 7) MIUDEZAS ───────────────────────────────────────────────────────────*/
 function provedor_(id) {
-  const p = PROVEDORES[String(id || '').toLowerCase()];
-  if (!p) throw new Error('Provedor desconhecido: ' + id);
+  const base = PROVEDORES[String(id || '').toLowerCase()];
+  if (!base) throw new Error('Provedor desconhecido: ' + id);
+  /* a cópia carrega os valores; o catálogo continua sem saber de nada */
+  const p = {};
+  Object.keys(base).forEach(function (k) { p[k] = base[k]; });
+  p.autorizar = props_().getProperty(base.propAutorizar) || '';
+  p.token     = props_().getProperty(base.propToken) || '';
+  p.escopo    = props_().getProperty(base.propEscopo) || '';
   if (!p.autorizar || !p.token) {
     throw new Error(p.nome + ' ainda não está configurado neste script. '
       + 'Veja backend/CONEXOES.md.');
