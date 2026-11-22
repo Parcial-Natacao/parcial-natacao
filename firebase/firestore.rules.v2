@@ -246,7 +246,30 @@ service cloud.firestore {
       // dias. O app nunca precisa escrever nem remover um pacote.
       function ehGarmin() { return chave.matches('garmin_.*'); }
       function ehMeuGarmin() { return logado() && chave.matches('garmin_' + meuUid() + '_.*'); }
-      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime() && !ehDespedida() && !ehGarmin(); }
+
+      // Conectar um relógio por OAuth: três documentos, três tratamentos.
+      //
+      // PEDIDO — o app grava antes de sair para o fabricante, e é ELE que
+      // prova ao Apps Script de quem é a conta. Só CRIAÇÃO, e só com o próprio
+      // uid na chave E no campo `dono`. Sem leitura: o app nunca precisa ler
+      // de volta, e quem apaga é o script, depois de usar.
+      function ehPedido()    { return chave.matches('pedido_.*'); }
+      function ehMeuPedido() { return logado() && chave.matches('pedido_' + meuUid() + '_.*')
+                                && request.resource.data.dono == meuUid(); }
+
+      // VÍNCULO — o que o app mostra: provedor, desde quando, última coleta.
+      // Nenhum segredo. Só leitura, e só do dono; quem escreve é a conta de
+      // serviço, que não passa por aqui.
+      function ehVinculo()    { return chave.matches('vinculo_.*'); }
+      function ehMeuVinculo() { return logado() && chave.matches('vinculo_' + meuUid() + '_.*'); }
+
+      // CONEXÃO — os tokens. Não aparece em regra nenhuma de propósito: sem
+      // permissão explícita o Firestore nega, então NINGUÉM lê, nem o dono,
+      // nem o administrador. A única função dela aqui é sair do alcance de
+      // `ehOutro()`, que de outro modo entregaria os tokens ao administrador.
+      function ehConexao()   { return chave.matches('conexao_.*'); }
+      function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime()
+        && !ehDespedida() && !ehGarmin() && !ehPedido() && !ehVinculo() && !ehConexao(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
@@ -294,6 +317,7 @@ service cloud.firestore {
         // demais documentos da equipe: membro APROVADO dela, ou o dev
         || ( ehEq() && ( ehDev() || ( aprovado() && resource.data.equipe == minhaEq() ) ) )
         || ( ehGarmin() && ehMeuGarmin() )
+        || ( ehVinculo() && ehMeuVinculo() )
         || ( ehCatalogo() && logado() );
 
       // ──────────────────────── CRIAÇÃO ─────────────────────────
@@ -317,7 +341,10 @@ service cloud.firestore {
              && request.resource.data.equipe == null
              && request.resource.data.perfil == null
              && request.resource.data.categoria == 'time' )
-        // O recado de despedida: quem está apagando a própria conta grava UM
+        // Pedido de conexão de relógio: nasce e morre em 10 minutos, e não
+        // guarda nada além de uid, provedor e hora.
+        || ( ehPedido() && ehMeuPedido() )
+      // O recado de despedida: quem está apagando a própria conta grava UM
         // documento, com o próprio uid na chave, para o Apps Script poder
         // mandar o e-mail de saída depois que o cadastro já não existe. Só
         // criar, nunca ler nem editar: ninguém varre a lista de quem saiu.

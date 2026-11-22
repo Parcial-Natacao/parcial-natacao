@@ -661,14 +661,29 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v211"></script>
-<script src="./inicio-e-grupos.js?v=v211"></script>
+<script src="./persistencia-segura.js?v=v2.17.0"></script>
+<script src="./inicio-e-grupos.js?v=v2.17.0"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
    Perfis: atleta · atleta PRO · técnico
    ===================================================================== */
-const VER='v216';
+/* ── O NOME DA VERSÃO ────────────────────────────────────────
+   MAIOR.MENOR.CORREÇÃO, e cada número quer dizer uma coisa só:
+     MAIOR   — muda a cara ou a estrutura; quem abrir vai estranhar de propósito
+     MENOR   — recurso novo, nada do que existia mudou de lugar
+     CORREÇÃO — conserto ou ajuste, sem recurso novo
+
+   Até a v216 era um contador de compilação: dizia que algo mudou, nunca o quê.
+   O 216 virou 2.16, e a partir daqui a numeração conta a história.
+
+   ⚠️ ESTA CONSTANTE APARECE EM QUATRO LUGARES, e os quatro têm de bater:
+   aqui, nas duas tags <script> do cabeçalho (o `?v=`), e no `sw.js` — na
+   `VERSAO` e na lista `ESSENCIAIS`. Eles já derivaram uma vez: o index pedia
+   `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
+   dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
+   `versao` compara as tags com esta constante. ---------------------------- */
+const VER='v2.17.0';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -781,6 +796,13 @@ async function reenviarConfirmacao(){
 /* Leitura por IA (OCR de PDF-imagem + laudo). Cole aqui a URL do seu Cloudflare
    Worker — veja backend/BACKEND-IA.md. Vazio = recurso desligado. */
 const IA_URL='';
+/* ── ONDE MORA O ENCANAMENTO DE OAUTH ──────────────────────────────
+   URL do Web App do Apps Script (`backend/conexoes.gs`), publicado em
+   "Qualquer pessoa". Vazio = o botão "Conectar relógio" não aparece, e o app
+   funciona exatamente como antes — o caminho manual continua inteiro.
+   Não é segredo: é endereço público, e sem um pedido válido no Firestore ele
+   não faz nada. O segredo do cliente nunca sai das propriedades do script. */
+const URL_CONEXOES='';
 const temIA=()=>!!IA_URL;
 
 /* ─────────────────────────────────────────────────────────────
@@ -988,6 +1010,10 @@ function camposSeguranca(k,v){
   /* a categoria é o que o Apps Script consulta — sem ela o recado fica no
      banco e ninguém é avisado de nada */
   else if(k.startsWith('despedida_')){ o.dono=k.slice(10)||null; o.categoria='despedida'; }
+  /* o pedido de conexão é o que prova ao Apps Script de quem é a conta: a
+     regra só deixa criar `pedido_<meu uid>_*` com `dono` igual ao meu uid, e
+     o coletor descobre o dono lendo o documento, nunca a URL */
+  else if(k.startsWith('pedido_')){ o.dono=val.uid||k.slice(7).split('_')[0]||null; o.categoria='pedido'; }
   else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null);o.geradorVersao=val.origem?.tipo==='gerador'?(val.origem.versao||null):null; }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
@@ -2034,6 +2060,7 @@ async function carregarDados(){
     if(temDadosPessoais()&&!S.laudoAtleta)S._proCarregado=JSON.stringify(S.pro);  /* estado íntegro do dia, p/ a versão diária */
     if(temDadosPessoais()&&!S.laudoAtleta)S._sauCenso=censoSaude(S.pro);        /* referência da trava de Saúde */
     if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
+    try{ await carregarVinculos(); }catch(_){}
     try{ await incorporarPacotesGarmin(); }catch(_){}
     return;
   }
@@ -2082,6 +2109,7 @@ async function carregarDados(){
   if(!S.laudoAtleta)try{ await conferirCaixaPreta(); }catch(_){}
   S.tecnico=(S.u.perfil!=='tecnico'&&S.eq?.tecnicoEmail)?await DB.get(kUser(S.eq.tecnicoEmail)):null;
   if(ehDev())try{ await carregarPendentesAdmin(); }catch(_){}
+  try{ await carregarVinculos(); }catch(_){}
   try{ await incorporarPacotesGarmin(); }catch(_){}
 }
 /* ── A FOTOGRAFIA DO CACHE VALE MAIS QUE A DO SERVIDOR? ─────────────────────
@@ -2650,6 +2678,25 @@ function mesclarPacotesGarmin(serie,pacotes){
   }
   if(mudou)serie.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   return mudou;
+}
+/* ── O QUE ESTÁ CONECTADO ────────────────────────────────────
+   `vinculo_<uid>_<provedor>` é escrito pelo Apps Script quando a autorização
+   do fabricante volta. Não guarda segredo nenhum — os tokens moram em
+   `conexao_`, que regra nenhuma deixa ninguém ler, nem o administrador.
+
+   ⚠️ O UID VEM ANTES DO PROVEDOR NA CHAVE. Parece detalhe e não é: a
+   consulta aqui é por FAIXA DE ID, e faixa só funciona com prefixo. Com
+   `vinculo_<provedor>_<uid>` seria preciso varrer os vínculos de todo mundo
+   para achar os meus — e a regra negaria a consulta inteira. */
+async function carregarVinculos(){
+  if(!FB||!S.u||!S.u.id||S.laudoAtleta)return [];
+  const pre='vinculo_'+S.u.id+'_';
+  try{
+    const FP=firebase.firestore.FieldPath.documentId();
+    const snap=await fdb.collection('kv').orderBy(FP).startAt(pre).endAt(pre+'\uf8ff').get();
+    const v=[]; snap.forEach(d=>{ try{ v.push(JSON.parse(d.data().v)); }catch(_){} });
+    S.vinculos=v; return v;
+  }catch(e){ console.warn('vinculos',e.message); return []; }
 }
 async function incorporarPacotesGarmin(){
   if(!FB||!S.u||!S.u.id||!temDadosPessoais()||S.laudoAtleta)return 0;
@@ -6963,6 +7010,42 @@ teste('pacotes','dias de atraso: hoje é zero, ontem é um',a=>{
   const d=new Date(); d.setDate(d.getDate()-1);
   a.eq(diasDesde(d.toISOString().slice(0,10)),1,'ontem');
   a.eq(diasDesde(null),null,'sem data, sem conta');
+});
+teste('conexão','o pedido espelha o dono, que é o que a regra confere',a=>{
+  /* sem `dono` no documento a regra recusa a criação, e o botão falha calado */
+  const c=camposSeguranca('pedido_abc123_x9y8',{uid:'abc123',provedor:'garmin',em:1});
+  a.eq(c.dono,'abc123','dono vem do conteúdo');
+  a.eq(c.categoria,'pedido','categoria para o script achar');
+  const d=camposSeguranca('pedido_abc123_x9y8',{provedor:'garmin'});
+  a.eq(d.dono,'abc123','sem uid no conteúdo, a chave serve de reserva');
+});
+teste('conexão','quem já conectou não vê o convite de conectar',a=>{
+  /* o teste não olha `URL_CONEXOES`: ela vai ser preenchida um dia, e um
+     teste que depende do build vira falha espontânea naquele dia */
+  const antes=S.vinculos;
+  S.vinculos=[{provedor:'garmin',em:1}];
+  a.eq(cardConectarRelogio(),'','com vínculo, o cartão some');
+  S.vinculos=antes;
+});
+teste('conexão','a lista de provedores tem o Garmin pronto e o Polar em espera',a=>{
+  const g=PROVEDORES_RELOGIO.find(p=>p.id==='garmin');
+  a.ok(!!g,'Garmin na lista');
+  a.ok(g.nota!=='em breve','Garmin não está marcado como em breve');
+  a.eq((PROVEDORES_RELOGIO.find(p=>p.id==='polar')||{}).nota,'em breve','Polar ainda espera');
+});
+teste('versão','as tags <script> pedem a versão que o app diz ser',a=>{
+  /* a deriva real: index em `?v=v211`, sw.js em `?v=v216`. Como são URLs
+     diferentes, o pre-cache do sw guardava um endereço que a página nunca
+     pedia — e offline os dois arquivos simplesmente não existiam. */
+  const tags=[...document.querySelectorAll('script[src*="?v="]')];
+  a.ok(tags.length>=2,'as duas tags versionadas existem');
+  tags.forEach(t=>{
+    const v=(t.getAttribute('src')||'').split('?v=')[1];
+    a.eq(v,VER,(t.getAttribute('src')||'').split('?')[0]+' pede a versão certa');
+  });
+});
+teste('versão','o formato é MAIOR.MENOR.CORREÇÃO',a=>{
+  a.ok(/^v\d+\.\d+\.\d+$/.test(VER),'três números, como em '+VER);
 });
 teste('pacotes','a faixa de conectado só aparece quando há pacote no banco',a=>{
   const antes=S.garminAuto;
@@ -11382,6 +11465,7 @@ function telaGarmin(){
   return`
   <div class="row" style="margin:16px 0 10px"><h2>Saúde</h2></div>
   ${faixaGarminConectado()}
+  ${cardConectarRelogio()}
   ${acc('sa_ck','Check-in diário',checkinSub(),cardCheckin())}
   ${acc('sa_med','Medições do dia',medicoesSub(),cardMedicoes())}
   ${acc('sa_pr','Prontidão',g.length?`${g.length} dia(s) de VFC/FC/sono`:'sem dados ainda',cProntidao+cardConcordancia(S.pro)+(()=>{
@@ -11406,6 +11490,41 @@ function diasDesde(data){
   if(!data)return null;
   const d=(Date.parse(hoje())-Date.parse(data))/86400000;
   return isNaN(d)?null:Math.round(d);
+}
+/* ── COMEÇAR UMA CONEXÃO ───────────────────────────────────
+   Grava o pedido e sai do app. O pedido é tudo que o Apps Script vai ter:
+   é lendo ele que descobre de quem é a conta, porque a URL qualquer um
+   reescreve. Por isso o uid NÃO vai no endereço — vai só o id do pedido, e
+   a regra do Firestore garante que só o dono conseguiu criá-lo.
+   Dura 10 minutos e o próprio script o apaga depois de usar. */
+const PROVEDORES_RELOGIO=[
+  {id:'garmin',nome:'Garmin',nota:'VFC, FC de repouso, sono e nados'},
+  {id:'polar', nome:'Polar', nota:'em breve'}
+];
+async function conectarRelogio(provedor){
+  if(!URL_CONEXOES)return toast('A conexão automática ainda não foi configurada neste app.');
+  if(!FB||!S.u||!S.u.id)return toast('Entre na sua conta para conectar um relógio.');
+  const nonce=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+  const id=S.u.id+'_'+nonce;
+  const ok=await DB.set('pedido_'+id,{uid:S.u.id,provedor:provedor,em:Date.now()});
+  if(!ok)return toast('Não consegui iniciar a conexão. Tente de novo.');
+  location.href=URL_CONEXOES+(URL_CONEXOES.indexOf('?')>=0?'&':'?')
+    +'a=iniciar&n='+encodeURIComponent(id);
+}
+/* o cartão só existe quando há para onde mandar a pessoa e ela ainda não
+   conectou nada — recurso inacabado não fica piscando na tela de ninguém */
+function cardConectarRelogio(){
+  if(!URL_CONEXOES||S.laudoAtleta)return '';
+  if((S.vinculos||[]).length)return '';
+  return`<div class="card" style="margin:0 0 10px"><div class="eyebrow">conectar relógio</div>
+    <p class="small muted" style="margin:6px 0 10px">Autorize uma vez e o app busca os seus dados sozinho — sem exportar ZIP, sem digitar nada${info('Como funciona',
+      `Você autoriza na página do <b>próprio fabricante</b>. O Meros360 nunca vê a sua senha.`
+      +`<br><br>Depois disso o app recebe VFC, FC de repouso e sono dia a dia, e você pode desautorizar quando quiser, na sua conta do fabricante.`)}</p>
+    ${PROVEDORES_RELOGIO.map(p=>p.nota==='em breve'
+      ? `<button class="full" style="margin-bottom:6px" disabled>${p.nome} <span class="xs muted">· em breve</span></button>`
+      : `<button class="primary full" style="margin-bottom:6px" onclick="conectarRelogio('${p.id}')">Conectar ${p.nome}</button>
+         <div class="xs muted" style="margin:-2px 0 8px">${p.nota}</div>`).join('')}
+  </div>`;
 }
 function faixaGarminConectado(){
   const a=S.garminAuto; if(!a||!a.n)return '';
