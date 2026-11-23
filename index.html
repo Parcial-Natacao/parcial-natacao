@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.1"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.1"></script>
+<script src="./persistencia-segura.js?v=v2.19.2"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.2"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.1';
+const VER='v2.19.2';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2682,6 +2682,14 @@ function mesclarPacotesGarmin(serie,pacotes){
   if(mudou)serie.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   return mudou;
 }
+/* ⚠️ `nado` NÃO GUARDA METROS, GUARDA CENTENAS DE METROS. `derivarTotaisDoDia`
+   grava `Math.round(metros/100)`, então 4500 m vira 45. Isso ficou escrito em
+   um lugar e esquecido em outro: o Diagnóstico dividia por 10 e acertava, a
+   tabela da Prontidão dividia por 1000 e mostrava "0.0k" num dia de 4,5 km.
+   Quem olhava a tabela concluía, com razão, que a coluna nunca se enchia.
+
+   Agora a conversão tem UM lugar. Quem for mostrar metragem chama isto. */
+function nadoKm(nado){ return ((nado||0)/10).toFixed(1); }
 /* O que esta data JÁ tem de medida de corpo, em palavras. Pura, para o teste
    alcançar: o formulário de lançamento à mão nascia vazio e calado mesmo
    quando o relógio havia respondido horas antes, e a pessoa digitava de novo
@@ -2698,7 +2706,7 @@ function resumoDiaRelogio(rec){
   /* vírgula, não ponto: quem lê escreve em português */
   const v=x=>String(x).replace('.',',');
   if(r.sono!=null)t.push('sono <b>'+v(r.sono)+' h</b>');
-  if(r.nado!=null)t.push('nado <b>'+v((r.nado/1000).toFixed(1))+' km</b>');
+  if(r.nado!=null)t.push('nado <b>'+v(nadoKm(r.nado))+' km</b>');
   return t.join(' · ');
 }
 /* ── O QUE ESTÁ CONECTADO ───────────────────────
@@ -7065,6 +7073,15 @@ teste('conexão','quem já conectou não vê o convite de conectar',a=>{
   a.eq(cardConectarRelogio(),'','com vínculo, o cartão some');
   S.vinculos=antes;
 });
+teste('saúde','metragem: a série guarda centenas de metros',a=>{
+  /* a tabela da Prontidão dividia por 1000 e mostrava 0.0k num dia de
+     4,5 km — o Diagnóstico dividia por 10 e acertava. Agora há um lugar só. */
+  a.eq(nadoKm(45),'4.5','45 centenas são 4,5 km');
+  a.eq(nadoKm(10),'1.0','10 centenas são 1 km');
+  a.eq(nadoKm(0),'0.0','zero não explode');
+  a.eq(nadoKm(null),'0.0','nem a ausência');
+  a.eq(nadoKm(125),'12.5','125 centenas são 12,5 km');
+});
 teste('conexão','o app diz o que a data já tem antes de pedir de novo',a=>{
   a.eq(resumoDiaRelogio(null),'','data vazia não anuncia nada');
   const t=resumoDiaRelogio({data:'2026-11-23',hrv:41,hrvF:'noite',fc:57,sono:7.1});
@@ -7073,7 +7090,7 @@ teste('conexão','o app diz o que a data já tem antes de pedir de novo',a=>{
   a.ok(/7,1 h/.test(t),'mostra o sono, com vírgula');
   a.ok(!/semanal/.test(t),'VFC da noite não leva rótulo de semanal');
   a.ok(/semanal/.test(resumoDiaRelogio({hrv:43,hrvF:'semana'})),'VFC semanal vem rótulada');
-  a.ok(/2,5 km/.test(resumoDiaRelogio({nado:2500})),'nado em quilómetros');
+  a.ok(/4,5 km/.test(resumoDiaRelogio({nado:45})),'45 centenas = 4,5 km');
 });
 teste('conexão','rascunho de check-in acolhe o pacote que chegou depois',a=>{
   /* o caso real: app aberto de madrugada, rascunho criado antes de o
@@ -11507,7 +11524,7 @@ function telaGarmin(){
       <button class="sm" onclick="conferirProcedenciaVfc()">Resolver</button></div></div>`:''})()}
     ${g.length?`<table style="margin-top:10px"><thead><tr><th>Data</th>${/* o cabeçalho de coluna numérica também leva `n`: `td.n` alinha à direita e o `th` sem a classe ficava à esquerda, com o rótulo fora de prumo com os números */''}<th class="n">FC rep</th><th class="n">VFC</th><th class="n">Sono</th><th class="n">Nado</th></tr></thead><tbody>
       ${g.slice(0,12).map(x=>`<tr><td class="small">${brCurta(x.data)}</td><td class="n">${x.fc??'—'}</td>
-        <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
+        <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?nadoKm(x.nado)+'k':'—'}</td></tr>`).join('')}
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
   /* a data do lançamento à mão vive no estado para a nota poder segui-la:
      trocar o dia troca o que o app diz que aquele dia já tem */
@@ -11549,6 +11566,11 @@ function telaGarmin(){
     </div>
     <div class="field" style="margin-top:8px"><label>Quanto dormiu</label>${botoesSono('gS')}</div>
     <div class="xs muted" style="margin-top:-2px">Faixa aproximada basta — ninguém cronometra o sono.</div>
+    <div class="field" style="margin-top:8px"><label>Quanto nadei <span class="xs muted">metros · opcional</span>${info('Metragem do dia',
+      `Os metros do dia alimentam a coluna <b>Nado</b> da Prontidão, ao lado da VFC e do sono — é assim que uma queda de VFC aparece ao lado da semana em que o volume subiu.`
+      +`<br><br>Some tudo o que nadou no dia, em metros. Se nadou duas vezes, some as duas.`
+      +`<br><br>Se depois você importar o ZIP do Garmin com as atividades daquele dia, o número medido pelo relógio assume o lugar deste — ele é mais preciso que a memória de ninguém.`)}</label>
+      <input id="gN" inputmode="numeric" placeholder="ex.: 3000" value="${reloDia.nado!=null?reloDia.nado*100:''}"></div>
     ${S.mostrarFC?'':`<button class="sm ghost full" style="margin-top:8px" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>`}
     ${S.mostrarFC?`<div class="grid2" style="margin-top:8px">
       <div><label>FC repouso <span class="xs muted">bpm</span></label><input id="gFC" inputmode="numeric" value="${reloDia.fc!=null?reloDia.fc:''}"></div>
@@ -12926,6 +12948,11 @@ async function lancarDia(){
      deles queria. O app dizia "normal" nos dois dias de maior cobrança. */
   if(nm('gH')!==undefined){ g.hrv=nm('gH'); g.hrvF=HRV_FONTE; }
   const sh=horasFlex(val('gS')); if(sh!=null)g.sono=sh; if(nm('gP')!==undefined)g.pse=nm('gP');
+  /* ⚠️ O CAMPO PEDE METROS E A SÉRIE GUARDA CENTENAS. A conversão é aqui, na
+     mesma escala que `derivarTotaisDoDia` usa quando a importação manda a
+     metragem medida — se as duas divergissem, um dia lançado à mão e um dia
+     importado apareceriam em unidades diferentes na mesma coluna. */
+  const mn=nm('gN'); if(mn!==undefined)g.nado=Math.round(mn/100);
   S.sonoSel=null;                     /* senão a faixa fica marcada no dia seguinte */
   if(await salvarSaude()===false)return; toast('Gravado'); render();
 }
