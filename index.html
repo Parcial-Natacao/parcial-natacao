@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.18.0"></script>
-<script src="./inicio-e-grupos.js?v=v2.18.0"></script>
+<script src="./persistencia-segura.js?v=v2.19.0"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.0"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.18.0';
+const VER='v2.19.0';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -1014,6 +1014,9 @@ function camposSeguranca(k,v){
      regra só deixa criar `pedido_<meu uid>_*` com `dono` igual ao meu uid, e
      o coletor descobre o dono lendo o documento, nunca a URL */
   else if(k.startsWith('pedido_')){ o.dono=val.uid||k.slice(7).split('_')[0]||null; o.categoria='pedido'; }
+  /* pedido de saída: o app não revoga token (isso é do servidor), ele deixa
+     este recado e o Apps Script avisa o fabricante */
+  else if(k.startsWith('saida_')){ o.dono=val.uid||k.slice(6).split('_')[0]||null; o.categoria='saida'; }
   else if(k.startsWith('pt_')){ o.dono=(k.slice(3).split('_')[0]||null);o.geradorVersao=val.origem?.tipo==='gerador'?(val.origem.versao||null):null; }
   else if(k.startsWith('u_')){
     o.dono=val.id||null;                       /* uid do Firebase, para casar com request.auth.uid */
@@ -7024,6 +7027,17 @@ teste('conexão','o pedido espelha o dono, que é o que a regra confere',a=>{
   const d=camposSeguranca('pedido_abc123_x9y8',{provedor:'garmin'});
   a.eq(d.dono,'abc123','sem uid no conteúdo, a chave serve de reserva');
 });
+teste('conexão','o pedido de saída espelha o dono, como o pedido de conexão',a=>{
+  const c=camposSeguranca('saida_abc123_garmin',{uid:'abc123',provedor:'garmin',em:1});
+  a.eq(c.dono,'abc123','dono vem do conteúdo');
+  a.eq(c.categoria,'saida','categoria para o script achar');
+  const d=camposSeguranca('saida_abc123_garmin',{provedor:'garmin'});
+  a.eq(d.dono,'abc123','sem uid no conteúdo, a chave serve de reserva');
+});
+teste('conexão','a saída não se confunde com o pedido de conexão',a=>{
+  a.eq(camposSeguranca('pedido_abc_x',{uid:'abc'}).categoria,'pedido','pedido');
+  a.eq(camposSeguranca('saida_abc_garmin',{uid:'abc'}).categoria,'saida','saída');
+});
 teste('conexão','quem já conectou não vê o convite de conectar',a=>{
   /* o teste não olha `URL_CONEXOES`: ela vai ser preenchida um dia, e um
      teste que depende do build vira falha espontânea naquele dia */
@@ -7032,10 +7046,25 @@ teste('conexão','quem já conectou não vê o convite de conectar',a=>{
   a.eq(cardConectarRelogio(),'','com vínculo, o cartão some');
   S.vinculos=antes;
 });
+teste('conexão','o convite de conectar não depende de ser administrador',a=>{
+  /* compara as duas visões em vez de afirmar que o cartão aparece: assim o
+     teste não depende de `URL_CONEXOES` estar preenchida — o mesmo cuidado
+     do teste vizinho. Iguais, qualquer que seja o valor. */
+  const antesU=S.u, antesV=S.vinculos;
+  S.vinculos=[];
+  S.u={id:'x',email:(ADMIN_EMAILS[0]||'dono@exemplo.com')};
+  const comoAdmin=cardConectarRelogio();
+  S.u={id:'x',email:'atleta.qualquer@exemplo.com'};
+  const comoAtleta=cardConectarRelogio();
+  S.u=antesU; S.vinculos=antesV;
+  a.eq(comoAtleta,comoAdmin,'atleta vê o mesmo que o administrador');
+});
 teste('conexão','a lista de provedores tem o Garmin pronto e o Polar em espera',a=>{
   const g=PROVEDORES_RELOGIO.find(p=>p.id==='garmin');
   a.ok(!!g,'Garmin na lista');
   a.ok(g.nota!=='em breve','Garmin não está marcado como em breve');
+  /* ACTIVITY segue desligado nos endpoints: prometer nado seria mentira */
+  a.ok(!/nad/i.test(g.nota),'a nota não promete nado');
   a.eq((PROVEDORES_RELOGIO.find(p=>p.id==='polar')||{}).nota,'em breve','Polar ainda espera');
 });
 teste('prontidão','a frase separa o que a prontidão pediu do que sobrou',a=>{
@@ -9173,6 +9202,14 @@ async function confirmarApagarMinhaConta(){
     catch(e){ return toast(traduzErroFB(e.code)); }
   }
   toast('Apagando…');
+  /* ⚠️ A SAÍDA DO FABRICANTE VEM PRIMEIRO, ANTES DE QUALQUER APAGAMENTO.
+     Depois que o cadastro sai, o uid some do Auth e a regra já não deixa criar
+     nada — o recado precisa existir enquanto a pessoa ainda é ela mesma. E ele
+     não é cortesia: a especificação da Garmin diz que o endpoint de remover
+     registro DEVE ser chamado quando o app oferece apagar conta. Falhar aqui
+     não impede a exclusão — nada impede alguém de sair do app. */
+  try{ await pedirSaidaDeTodosOsRelogios(); }
+  catch(e){ console.warn('saída dos relógios',e&&e.message); }
   /* ⚠️ SÓ O BLOQUEIO DE VERDADE PARA A EXCLUSÃO.
      Qualquer erro aqui — consulta negada, índice faltando, rede — abortava TUDO
      com "Exclusão não iniciada", e a pessoa ficava sem conseguir apagar a conta
@@ -11533,9 +11570,42 @@ function diasDesde(data){
    a regra do Firestore garante que só o dono conseguiu criá-lo.
    Dura 10 minutos e o próprio script o apaga depois de usar. */
 const PROVEDORES_RELOGIO=[
-  {id:'garmin',nome:'Garmin',nota:'VFC, FC de repouso, sono e nados'},
+  /* ⚠️ A NOTA É PROMESSA. Só cabe aqui o que o endpoint está configurado
+     para receber: os tipos de ATIVIDADE ficaram desligados de propósito, então
+     nado não chega e não se promete nado. Quando ligar, muda a nota também. */
+  {id:'garmin',nome:'Garmin',nota:'VFC da noite, FC de repouso e sono'},
   {id:'polar', nome:'Polar', nota:'em breve'}
 ];
+/* ── PEDIR A SAÍDA ──────────────────────────────────────────
+   O contrato da Garmin obriga a avisar o fabricante quando a pessoa apaga a
+   conta ou desconecta. Revogar token é operação de servidor — o navegador
+   não tem (nem deve ter) o segredo. Então o app deixa um recado e o Apps
+   Script cumpre a obrigação.
+
+   ⚠️ AO APAGAR A CONTA, ISTO VEM ANTES DE TUDO. Depois de apagar, o uid some
+   do Auth e a regra já não deixa criar nada. O recado tem de estar gravado
+   enquanto a pessoa ainda é ela mesma. */
+async function pedirSaidaRelogio(provedor){
+  if(!FB||!S.u||!S.u.id)return false;
+  try{ return await DB.set('saida_'+S.u.id+'_'+provedor,
+    {uid:S.u.id,provedor:provedor,em:Date.now()}); }
+  catch(e){ console.warn('pedir saída',e.message); return false; }
+}
+/* todos os vínculos de uma vez — usado no apagar-conta */
+async function pedirSaidaDeTodosOsRelogios(){
+  const v=S.vinculos||[]; let n=0;
+  for(const x of v){ if(x&&x.provedor&&await pedirSaidaRelogio(x.provedor))n++; }
+  return n;
+}
+async function desconectarRelogio(provedor){
+  if(!confirm('Desconectar o '+provedor+'? O app para de receber dados novos. '
+    +'Os dias já recebidos continuam na sua Saúde.'))return;
+  const ok=await pedirSaidaRelogio(provedor);
+  if(!ok)return toast('Não consegui registrar a desconexão. Tente de novo.');
+  S.vinculos=(S.vinculos||[]).filter(x=>!x||x.provedor!==provedor);
+  toast('Desconexão pedida. Em alguns minutos o fabricante para de enviar.');
+  render();
+}
 async function conectarRelogio(provedor){
   if(!URL_CONEXOES)return toast('A conexão automática ainda não foi configurada neste app.');
   if(!FB||!S.u||!S.u.id)return toast('Entre na sua conta para conectar um relógio.');
@@ -11551,17 +11621,22 @@ async function conectarRelogio(provedor){
 function cardConectarRelogio(){
   if(!URL_CONEXOES||S.laudoAtleta)return '';
   if((S.vinculos||[]).length)return '';
-  /* ⚠️ TRAVA TEMPORÁRIA — TIRAR DEPOIS DA PRIMEIRA CONEXÃO REAL.
-     O caminho inteiro (autorização, token, id do usuário, push, fila, pacote)
-     nunca rodou de ponta a ponta com uma autorização de verdade: o Data
-     Generator da Garmin recusa id inventado, então só dá para provar
-     conectando alguém. Que esse alguém seja quem escreveu o código, e não um
-     atleta que só queria ver a prontidão do dia. */
-  if(!ehAdmin())return '';
+  /* A trava de administrador caiu aqui. O caminho inteiro — autorização na
+     página da Garmin, troca do código por token, descoberta do id do usuário,
+     push do fabricante, fila, mapeamento e pacote no banco — rodou de ponta a
+     ponta com uma autorização de verdade e um dia de dados de verdade. Só
+     depois disso o convite passou a aparecer para quem não escreveu o código. */
   return`<div class="card" style="margin:0 0 10px"><div class="eyebrow">conectar relógio</div>
     <p class="small muted" style="margin:6px 0 10px">Autorize uma vez e o app busca os seus dados sozinho — sem exportar ZIP, sem digitar nada${info('Como funciona',
       `Você autoriza na página do <b>próprio fabricante</b>. O Meros360 nunca vê a sua senha.`
       +`<br><br>Depois disso o app recebe VFC, FC de repouso e sono dia a dia, e você pode desautorizar quando quiser, na sua conta do fabricante.`)}</p>
+    <div class="note warn" style="margin:0 0 10px"><div class="xs">
+      A Garmin ainda está analisando o Meros360, então a tela dela pode dizer que
+      o app <b>não foi verificado</b>. É esperado: siga em frente ${info('Por que aparece esse aviso',
+      `O cadastro do Meros360 no programa de desenvolvedores da Garmin já foi aprovado — é o que permite esta conexão existir.`
+      +`<br><br>Falta a última etapa, a análise da tela de autorização. Enquanto ela não sai, a Garmin marca o app como não verificado para qualquer pessoa que autorize.`
+      +`<br><br>Não muda nada no que o app recebe, nem em quem pode ver os seus dados. E você desautoriza quando quiser.`)}
+    </div></div>
     ${PROVEDORES_RELOGIO.map(p=>p.nota==='em breve'
       ? `<button class="full" style="margin-bottom:6px" disabled>${p.nome} <span class="xs muted">· em breve</span></button>`
       : `<button class="primary full" style="margin-bottom:6px" onclick="conectarRelogio('${p.id}')">Conectar ${p.nome}</button>
@@ -11592,6 +11667,8 @@ function faixaGarminConectado(){
     +`<br><br><b>O que ele não traz, e por isso o check-in continua:</b> dor, humor, estresse, energia e como VOCÊ sentiu a noite. Relógio nenhum mede isso.`
     +`<br><br>Nada é apagado: o número do relógio ocupa só o campo do relógio. O que você digitou fica.`)}
     ${a.ate?`<div class="muted" style="margin-top:3px">Último dia recebido: <b>${brData(a.ate)}</b>.</div>`:''}
+    ${(S.vinculos||[]).filter(v=>v&&v.provedor).map(v=>`<div class="row noprint" style="margin-top:8px">
+      <div class="grow"></div><button class="sm ghost" onclick="desconectarRelogio('${esc(v.provedor)}')">Desconectar ${esc(v.provedor)}</button></div>`).join('')}
   </div></div>`;
 }
 function prontidao(){
