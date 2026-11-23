@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.2"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.2"></script>
+<script src="./persistencia-segura.js?v=v2.19.3"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.3"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.2';
+const VER='v2.19.3';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -11732,24 +11732,31 @@ function cardConectarRelogio(){
 }
 function faixaGarminConectado(){
   const a=S.garminAuto; if(!a||!a.n)return '';
-  /* ⚠️ A CHAVE PESSOAL DO GARMIN VENCE — 30, 90, 180 dias ou um ano, o dono
-     escolhe na hora de criar, e não existe refresh. Quando vence, o coletor
-     simplesmente para de trazer dia novo: nada quebra, nada avisa, e a série
-     envelhece em silêncio. Por isso a faixa olha a DATA do último pacote em
-     vez de só contar que existem pacotes. */
+  /* ⚠️ A FAIXA OLHA A DATA DO ÚLTIMO PACOTE, NÃO A EXISTÊNCIA DE PACOTES.
+     Quando a entrega para, nada quebra e nada avisa: a série simplesmente
+     envelhece em silêncio, e quem olha a tela vê "conectado" achando que está
+     tudo bem. Contar pacotes diria "conectado" para sempre.
+
+     O texto daqui descrevia o coletor ANTIGO — o que puxava de 6 em 6 horas com
+     chave pessoal de desenvolvedor, que vencia em 30, 90, 180 dias ou um ano.
+     Esse coletor foi desligado em 23/11/2026, quando o push passou a dar conta.
+     O caminho de hoje é o inverso: a Garmin EMPURRA quando há dado novo e a
+     autorização é OAuth, que se renova sozinha. Mandar o atleta gerar chave
+     nova seria mandá-lo consertar o que não quebrou. */
   const atraso=diasDesde(a.ate);
   if(atraso!=null&&atraso>3)return`<div class="note warn" style="margin:0 0 10px"><div class="xs">
     <b>O Garmin parou de mandar dados.</b> O último dia recebido foi
     <b>${brData(a.ate)}</b>, há ${atraso} dias ${info('Por que a coleta para',
-    `O motivo mais comum é a <b>chave pessoal ter vencido</b>. Ela nasce com prazo — 30, 90, 180 dias ou um ano — e não se renova sozinha.`
-    +`<br><br>Para voltar: gere uma chave nova nas configurações do Garmin Connect e substitua a antiga na instalação do coletor.`
-    +`<br><br>Outras causas: o relógio não sincronizou com o Garmin Connect nestes dias, ou o coletor foi desligado.`
-    +`<br><br>Nada se perdeu. Assim que a coleta voltar, os dias que faltam entram na série — a janela do coletor olha para trás.`)}
+    `O motivo mais comum é o <b>relógio não ter sincronizado</b> com o aplicativo Garmin Connect nestes dias. A Garmin só nos avisa do que ela já recebeu do seu relógio.`
+    +`<br><br>Abra o Garmin Connect no celular com o relógio por perto e espere a sincronização terminar. Os dias que faltam chegam em seguida.`
+    +`<br><br>Outra causa possível: a autorização foi <b>revogada</b> — por você, nas permissões da sua conta Garmin, ou por ficar três meses sem uso. Nesse caso basta <b>conectar de novo</b>: o cartão de conectar volta a aparecer sozinho.`
+    +`<br><br>Nada se perdeu em nenhum dos casos. O que já entrou na sua série fica, e o que a Garmin ainda não entregou ela entrega quando puder.`)}
   </div></div>`;
   return`<div class="note ok" style="margin:0 0 10px"><div class="xs">
-    <b>✓ Garmin conectado.</b> O app busca <b>VFC da noite, FC de repouso e sono</b>
-    sozinho, a cada 6 horas — você não precisa importar nada ${info('O que a conexão faz',
-    `A cada 6 horas um coletor pergunta à Garmin os seus dados do dia e os deixa no banco. Na próxima vez que você abrir o app, eles entram na sua série.`
+    <b>✓ Garmin conectado.</b> O app recebe <b>VFC da noite, FC de repouso e sono</b>
+    sozinho — você não precisa importar nada ${info('O que a conexão faz',
+    `Quem avisa é a Garmin: assim que o seu relógio sincroniza e ela fecha o resumo do dia, ela <b>envia</b> os números para o Meros360. Não há nada a pedir nem hora marcada.`
+    +`<br><br>Eles ficam guardados e entram na sua série na próxima vez que você abrir o app — costuma levar alguns minutos depois da sincronização do relógio, e muitas vezes chega de madrugada, antes de você acordar.`
     +`<br><br><b>O que ele traz:</b> VFC da noite, FC de repouso e horas de sono.`
     +`<br><br><b>O que ele não traz, e por isso o check-in continua:</b> dor, humor, estresse, energia e como VOCÊ sentiu a noite. Relógio nenhum mede isso.`
     +`<br><br>Nada é apagado: o número do relógio ocupa só o campo do relógio. O que você digitou fica.`)}
