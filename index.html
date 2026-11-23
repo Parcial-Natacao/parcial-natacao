@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.0"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.0"></script>
+<script src="./persistencia-segura.js?v=v2.19.1"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.1"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.0';
+const VER='v2.19.1';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2682,7 +2682,26 @@ function mesclarPacotesGarmin(serie,pacotes){
   if(mudou)serie.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   return mudou;
 }
-/* ── O QUE ESTÁ CONECTADO ────────────────────────────────────
+/* O que esta data JÁ tem de medida de corpo, em palavras. Pura, para o teste
+   alcançar: o formulário de lançamento à mão nascia vazio e calado mesmo
+   quando o relógio havia respondido horas antes, e a pessoa digitava de novo
+   um número que a sincronia seguinte ia substituir.
+
+   ⚠️ NÃO DIZ “VEIO DO RELÓGIO”. Só a VFC guarda procedência (`hrvF`); FC e
+   sono não guardam, então afirmar a origem deles seria invento. A frase diz
+   o que a data TEM — e quem tem relógio conectado recebe, além disso, o
+   aviso de que o digitado cede ao pacote. */
+function resumoDiaRelogio(rec){
+  const r=rec||{}, t=[];
+  if(r.hrv!=null)t.push('VFC <b>'+r.hrv+' ms</b>'+(r.hrvF==='semana'?' <span class="xs muted">(média semanal)</span>':''));
+  if(r.fc!=null)t.push('FC de repouso <b>'+r.fc+' bpm</b>');
+  /* vírgula, não ponto: quem lê escreve em português */
+  const v=x=>String(x).replace('.',',');
+  if(r.sono!=null)t.push('sono <b>'+v(r.sono)+' h</b>');
+  if(r.nado!=null)t.push('nado <b>'+v((r.nado/1000).toFixed(1))+' km</b>');
+  return t.join(' · ');
+}
+/* ── O QUE ESTÁ CONECTADO ───────────────────────
    `vinculo_<uid>_<provedor>` é escrito pelo Apps Script quando a autorização
    do fabricante volta. Não guarda segredo nenhum — os tokens moram em
    `conexao_`, que regra nenhuma deixa ninguém ler, nem o administrador.
@@ -7045,6 +7064,33 @@ teste('conexão','quem já conectou não vê o convite de conectar',a=>{
   S.vinculos=[{provedor:'garmin',em:1}];
   a.eq(cardConectarRelogio(),'','com vínculo, o cartão some');
   S.vinculos=antes;
+});
+teste('conexão','o app diz o que a data já tem antes de pedir de novo',a=>{
+  a.eq(resumoDiaRelogio(null),'','data vazia não anuncia nada');
+  const t=resumoDiaRelogio({data:'2026-11-23',hrv:41,hrvF:'noite',fc:57,sono:7.1});
+  a.ok(/41 ms/.test(t),'mostra a VFC');
+  a.ok(/57 bpm/.test(t),'mostra a FC');
+  a.ok(/7,1 h/.test(t),'mostra o sono, com vírgula');
+  a.ok(!/semanal/.test(t),'VFC da noite não leva rótulo de semanal');
+  a.ok(/semanal/.test(resumoDiaRelogio({hrv:43,hrvF:'semana'})),'VFC semanal vem rótulada');
+  a.ok(/2,5 km/.test(resumoDiaRelogio({nado:2500})),'nado em quilómetros');
+});
+teste('conexão','rascunho de check-in acolhe o pacote que chegou depois',a=>{
+  /* o caso real: app aberto de madrugada, rascunho criado antes de o
+     relógio responder — o formulário seguia pedindo o que já existia */
+  const antesP=S.pro, antesD=S.checkinDraft, antesU=S.u;
+  S.u=S.u||{id:'x',email:'a@b.c'};
+  S.pro={id:'x',garmin:[{data:hoje(),fc:57,sono:7.1}]};
+  S.checkinDraft={sonoQ:4,energia:null,dor:null,estresse:null,humor:null,sono:null,fc:null};
+  cardCheckin();
+  a.eq(S.checkinDraft.fc,57,'a FC do pacote entra no rascunho vazio');
+  a.eq(S.checkinDraft.sono,7.1,'o sono também');
+  a.eq(S.checkinDraft.sonoQ,4,'o que a pessoa respondeu fica');
+  S.checkinDraft={sonoQ:null,energia:null,dor:null,estresse:null,humor:null,sono:9,fc:48};
+  cardCheckin();
+  a.eq(S.checkinDraft.fc,48,'valor digitado não é sobrescrito pelo pacote');
+  a.eq(S.checkinDraft.sono,9,'nem o sono digitado');
+  S.pro=antesP; S.checkinDraft=antesD; S.u=antesU;
 });
 teste('conexão','o convite de conectar não depende de ser administrador',a=>{
   /* compara as duas visões em vez de afirmar que o cartão aparece: assim o
@@ -11463,6 +11509,11 @@ function telaGarmin(){
       ${g.slice(0,12).map(x=>`<tr><td class="small">${brCurta(x.data)}</td><td class="n">${x.fc??'—'}</td>
         <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?(x.nado/1000).toFixed(1)+'k':'—'}</td></tr>`).join('')}
       </tbody></table>`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
+  /* a data do lançamento à mão vive no estado para a nota poder segui-la:
+     trocar o dia troca o que o app diz que aquele dia já tem */
+  const gDia=S.gDia||hoje();
+  const reloDia=g.find(x=>x&&x.data===gDia)||{};
+  const jaTem=resumoDiaRelogio(reloDia);
   const cImportar=`
     <p class="small muted" style="margin-top:2px">Entregue o <b>export do Garmin Connect inteiro</b>${info('Importar do Garmin',
       `O app procura sozinho os arquivos que interessam — VFC, FC de repouso, sono e nados — e ignora o resto. Não é preciso separar nada antes.`
@@ -11482,21 +11533,35 @@ function telaGarmin(){
       <button class="full" onclick="importarGarmin(document.getElementById('txGar').value)">Importar texto colado</button>`:''}
     <div class="sep"></div>
     <div class="eyebrow">lançar à mão</div>
+    ${jaTem?`<div class="note ok" style="margin:8px 0 0"><div class="xs">
+      <b>${brData(gDia)} já tem:</b> ${jaTem}.
+      ${(S.garminAuto&&S.garminAuto.n)?`<div class="muted" style="margin-top:4px">Com o relógio conectado,
+        o que você digitar em VFC, FC e sono é <b>substituído pelo valor dele</b> na próxima sincronia
+        ${info('Por que o relógio vence',
+        `Os três campos que o relógio mede — VFC, FC de repouso e sono — passam a vir dele, porque foi digitando que nasceu o problema que originou tudo isto: a média semanal lançada no lugar da medida da noite.`
+        +`<br><br>Tudo o mais que você digita aqui <b>fica</b>: sensação, dor, humor, estresse, energia. Relógio nenhum mede isso.`
+        +`<br><br>Se o relógio errou a noite, corrija — mas saiba que no dia seguinte ele reescreve.`)}</div>`
+        :`<div class="muted" style="margin-top:4px">Preencha só o que falta — campo deixado em branco não apaga nada.</div>`}
+    </div></div>`:''}
     <div class="grid2" style="margin-top:8px">
-      <div><label>Data</label><input type="date" id="gD" value="${hoje()}"></div>
+      <div><label>Data</label><input type="date" id="gD" value="${gDia}" onchange="S.gDia=this.value;render()"></div>
       <div><label>Sensação <span class="xs muted">1-10</span></label><input id="gP" inputmode="numeric" placeholder="1-10"></div>
     </div>
     <div class="field" style="margin-top:8px"><label>Quanto dormiu</label>${botoesSono('gS')}</div>
     <div class="xs muted" style="margin-top:-2px">Faixa aproximada basta — ninguém cronometra o sono.</div>
     ${S.mostrarFC?'':`<button class="sm ghost full" style="margin-top:8px" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>`}
     ${S.mostrarFC?`<div class="grid2" style="margin-top:8px">
-      <div><label>FC repouso <span class="xs muted">bpm</span></label><input id="gFC" inputmode="numeric"></div>
+      <div><label>FC repouso <span class="xs muted">bpm</span></label><input id="gFC" inputmode="numeric" value="${reloDia.fc!=null?reloDia.fc:''}"></div>
       <div><label for="gH">VFC <span class="xs muted">ms · opcional</span>${info('Qual VFC digitar',
         `O relógio mostra <b>dois</b> números de VFC, e eles não são a mesma coisa.`
         +`<br><br><b>VFC da noite</b> — a média da última noite. É esta que o app quer: ela cai quando você dorme mal, treina demais ou está ficando doente.`
         +`<br><br><b>Média semanal</b> (ou "status de VFC") — a média dos últimos 7 dias. Ela foi feita para <b>não</b> reagir a uma noite ruim, então não serve para dizer como você está hoje. Costuma ser o número maior dos dois.`
         +`<br><br>Se você só tiver a semanal à mão, tudo bem: marque <b>média semanal</b> abaixo e o app lida com ela de outro jeito, sem misturar as duas na mesma série.`)}</label>
-        <input id="gH" inputmode="numeric" placeholder="da última noite">
+        ${/* ⚠️ NÃO preenche VFC marcada como média semanal: o campo grava com a
+             fonte do botão selecionado, e um valor semanal reaparecendo num
+             campo com "da noite" ligado trocaria a procedência em silêncio —
+             exatamente o erro que o `hrvF` existe para impedir. */''}
+        <input id="gH" inputmode="numeric" placeholder="da última noite" value="${(reloDia.hrv!=null&&reloDia.hrvF!=='semana')?reloDia.hrv:''}">
         <div class="opt" style="margin-top:6px">
           <button type="button" id="hfN" class="${HRV_FONTE==='noite'?'on':''}" onclick="selFonteHrv('noite')">da noite</button>
           <button type="button" id="hfS" class="${HRV_FONTE==='semana'?'on':''}" onclick="selFonteHrv('semana')">média semanal</button>
@@ -12054,6 +12119,13 @@ function cardCheckin(){
   if(S.checkinDraft==null){ const rec=(S.pro?.garmin||[]).find(x=>x.data===hoje())||{};
     S.checkinDraft={sonoQ:rec.sonoQ??null,energia:rec.energia??null,dor:rec.dor??null,estresse:rec.estresse??null,humor:rec.humor??null,sono:rec.sono??null,fc:rec.fc??null}; }
   const d=S.checkinDraft;
+  /* ⚠️ O RASCUNHO NASCE UMA VEZ, O PACOTE CHEGA QUANDO CHEGA. Quem deixa o
+     app aberto de madrugada tinha o rascunho criado antes de o relógio
+     responder, e o formulário seguia pedindo sono e FC que já estavam na
+     série. Só preenche o que ainda está vazio: o que a pessoa tocou é dela. */
+  {const r=(S.pro?.garmin||[]).find(x=>x.data===hoje())||{};
+   if(d.fc==null&&r.fc!=null)d.fc=r.fc;
+   if(d.sono==null&&r.sono!=null)d.sono=r.sono;}
   const feito=checkinScore((S.pro?.garmin||[]).find(x=>x.data===hoje()))!=null;
   const grp=([campo,tit,lo,hi])=>`<div class="field"><label>${tit}</label>
     <div class="opt">${[1,2,3,4,5].map(v=>`<button class="${d[campo]===v?'on':''}" onclick="setCheckin('${campo}',${v},true)">${v}</button>`).join('')}</div>
