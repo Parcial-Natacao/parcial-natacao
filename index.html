@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.17.2"></script>
-<script src="./inicio-e-grupos.js?v=v2.17.2"></script>
+<script src="./persistencia-segura.js?v=v2.18.0"></script>
+<script src="./inicio-e-grupos.js?v=v2.18.0"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.17.2';
+const VER='v2.18.0';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -802,7 +802,7 @@ const IA_URL='';
    funciona exatamente como antes — o caminho manual continua inteiro.
    Não é segredo: é endereço público, e sem um pedido válido no Firestore ele
    não faz nada. O segredo do cliente nunca sai das propriedades do script. */
-const URL_CONEXOES='';
+const URL_CONEXOES='https://script.google.com/macros/s/AKfycbwE-huJ0r1v-c2fLp3Ye8JuPK_29MQqBcGHCqkj7ATs58SMgnKQx8dfx13K76fZtHJu/exec';
 const temIA=()=>!!IA_URL;
 
 /* ─────────────────────────────────────────────────────────────
@@ -6996,9 +6996,14 @@ teste('garmin','valor improvavel entra na triagem',a=>{
     {data:'2026-10-02',nado:200,ativDur:380}]});
   a.eq(c.suspeitos.length,1,'so o de 380min e 20km');
   a.eq(c.suspeitos[0].data,'2026-10-02','o dia certo');});
+/* ⚠️ NÃO MONTE DATA DE TESTE COM `toISOString()`. Ele dá a data em UTC, e
+   `hoje()` dá a local: depois das 20h em UTC-4 as duas divergem, e um teste
+   que passava o dia inteiro começava a falhar à noite. Partir de `hoje()` e
+   andar para trás mantém os dois lados no mesmo calendário. */
+const diaRelativo=n=>new Date(Date.parse(hoje())-n*86400000).toISOString().slice(0,10);
 teste('pacotes','a faixa avisa quando o relógio parou de mandar',a=>{
-  const antes=S.garminAuto, d=new Date(); d.setDate(d.getDate()-9);
-  S.garminAuto={n:5,ate:d.toISOString().slice(0,10)};
+  const antes=S.garminAuto;
+  S.garminAuto={n:5,ate:diaRelativo(9)};
   const h=faixaGarminConectado();
   a.ok(/parou de mandar/.test(h),'troca a boa notícia pelo aviso');
   a.ok(/há 9 dias/.test(h),'conta os dias de atraso');
@@ -7007,8 +7012,8 @@ teste('pacotes','a faixa avisa quando o relógio parou de mandar',a=>{
 });
 teste('pacotes','dias de atraso: hoje é zero, ontem é um',a=>{
   a.eq(diasDesde(hoje()),0,'hoje');
-  const d=new Date(); d.setDate(d.getDate()-1);
-  a.eq(diasDesde(d.toISOString().slice(0,10)),1,'ontem');
+  a.eq(diasDesde(diaRelativo(1)),1,'ontem');
+  a.eq(diasDesde(diaRelativo(30)),30,'um mês atrás');
   a.eq(diasDesde(null),null,'sem data, sem conta');
 });
 teste('conexão','o pedido espelha o dono, que é o que a regra confere',a=>{
@@ -11546,6 +11551,13 @@ async function conectarRelogio(provedor){
 function cardConectarRelogio(){
   if(!URL_CONEXOES||S.laudoAtleta)return '';
   if((S.vinculos||[]).length)return '';
+  /* ⚠️ TRAVA TEMPORÁRIA — TIRAR DEPOIS DA PRIMEIRA CONEXÃO REAL.
+     O caminho inteiro (autorização, token, id do usuário, push, fila, pacote)
+     nunca rodou de ponta a ponta com uma autorização de verdade: o Data
+     Generator da Garmin recusa id inventado, então só dá para provar
+     conectando alguém. Que esse alguém seja quem escreveu o código, e não um
+     atleta que só queria ver a prontidão do dia. */
+  if(!ehAdmin())return '';
   return`<div class="card" style="margin:0 0 10px"><div class="eyebrow">conectar relógio</div>
     <p class="small muted" style="margin:6px 0 10px">Autorize uma vez e o app busca os seus dados sozinho — sem exportar ZIP, sem digitar nada${info('Como funciona',
       `Você autoriza na página do <b>próprio fabricante</b>. O Meros360 nunca vê a sua senha.`
