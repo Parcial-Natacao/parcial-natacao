@@ -62,17 +62,27 @@
    `credNoCorpo`: as credenciais vão no CORPO do POST de token, não no header
                  `Authorization: Basic`. Isto muda de fabricante para
                  fabricante e é a causa clássica de um 401 sem explicação.
+                 Na Garmin é `false`: a lista de parâmetros da spec cita
+                 client_id e client_secret, mas os exemplos de `curl` — tanto
+                 do token quanto do refresh — usam Basic e NÃO os repetem no
+                 corpo. Entre a lista e o exemplo que a própria Garmin mostra
+                 funcionando, segue-se o exemplo.
+
+   NÃO HÁ `escopo`: a requisição de autorização da Garmin não aceita `scope`.
+   O escopo concedido vem DE VOLTA na resposta do token, e é ele que a gente
+   guarda no vínculo.
    `prop*`     : nome da propriedade do script. Nenhum VALOR aparece aqui. */
 const PROVEDORES = {
   garmin: {
     nome: 'Garmin',
     pkce: true,
-    credNoCorpo: true,
+    credNoCorpo: false,
     propId: 'GARMIN_CLIENT_ID',
     propSegredo: 'GARMIN_CLIENT_SECRET',
     propAutorizar: 'GARMIN_URL_AUTORIZAR',
     propToken: 'GARMIN_URL_TOKEN',
-    propEscopo: 'GARMIN_ESCOPO'
+    propUserId: 'GARMIN_URL_USERID',
+    propRegistro: 'GARMIN_URL_REGISTRO'
   },
   polar: {
     nome: 'Polar',
@@ -82,7 +92,8 @@ const PROVEDORES = {
     propSegredo: 'POLAR_CLIENT_SECRET',
     propAutorizar: 'POLAR_URL_AUTORIZAR',
     propToken: 'POLAR_URL_TOKEN',
-    propEscopo: 'POLAR_ESCOPO'
+    propUserId: 'POLAR_URL_USERID',
+    propRegistro: 'POLAR_URL_REGISTRO'
   }
 };
 
@@ -131,7 +142,7 @@ function iniciar_(p) {
     'redirect_uri=' + encodeURIComponent(urlRetorno_()),
     'state=' + encodeURIComponent(estado)
   ];
-  if (prov.escopo) q.push('scope=' + encodeURIComponent(prov.escopo));
+  /* sem `scope`: a Garmin não aceita o parâmetro aqui (ver o catálogo) */
   if (prov.pkce) q.push('code_challenge=' + encodeURIComponent(desafio_(verificador)),
                         'code_challenge_method=S256');
 
@@ -165,8 +176,12 @@ function retorno_(p) {
     corpo.code_verifier = v;
   }
   const t = trocarToken_(prov, corpo);
+  /* o id na Garmin NÃO vem na resposta do token: é uma chamada à parte, e sem
+     ele o push chega sem dono — as notificações trazem o id do fabricante, e
+     é por ele que a gente descobre de quem são os dados. */
+  const idProv = buscarIdNoProvedor_(prov, t.access_token);
 
-  gravarConexao_(pedido.uid, pedido.provedor, t);
+  gravarConexao_(pedido.uid, pedido.provedor, t, idProv);
   apagarPedido_(p.state);
 
   return pagina_('Pronto, ' + prov.nome + ' conectado',
@@ -208,7 +223,23 @@ function trocarToken_(prov, corpo) {
    `vinculo_<uid>_<prov>` é o que o APP enxerga: provedor, desde quando, e a
    última coleta. Sem segredo nenhum. É com ele que a tela diz "conectado"
    sem nunca tocar no token. */
-function gravarConexao_(uid, provedor, t) {
+/* O id do usuário no fabricante. A spec diz que ele é estável: se a pessoa
+   desautorizar e autorizar de novo, volta o MESMO id. Por isso serve de
+   índice. Falhar aqui não derruba a conexão — dá para buscar depois. */
+function buscarIdNoProvedor_(prov, acesso) {
+  if (!prov.userid) return null;
+  try {
+    const r = UrlFetchApp.fetch(prov.userid, {
+      headers: { Authorization: 'Bearer ' + acesso }, muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) {
+      console.warn('id do usuário (' + r.getResponseCode() + ')'); return null;
+    }
+    const j = JSON.parse(r.getContentText() || '{}');
+    return j.userId || j.user_id || null;
+  } catch (e) { console.warn('id do usuário: ' + e.message); return null; }
+}
+
+function gravarConexao_(uid, provedor, t, idProv) {
   const agora = Date.now();
   const dados = {
     provedor: provedor,
@@ -217,7 +248,7 @@ function gravarConexao_(uid, provedor, t) {
     refresh: t.refresh_token || null,
     expiraEm: t.expires_in ? agora + (Number(t.expires_in) * 1000) : null,
     escopo: t.scope || null,
-    idNoProvedor: t.user_id || t.userId || null,
+    idNoProvedor: idProv || null,
     em: agora
   };
   /* uid ANTES do provedor: é o que deixa o app consultar `vinculo_<uid>_`
@@ -226,6 +257,34 @@ function gravarConexao_(uid, provedor, t) {
   escrever_('conexao_' + uid + '_' + provedor, dados, uid, 'conexao');
   escrever_('vinculo_' + uid + '_' + provedor,
     { provedor: provedor, em: agora, ultimaColeta: null, estado: 'ativo' }, uid, 'vinculo');
+  /* ÍNDICE AO CONTRÁRIO. O push chega identificado pelo id DO FABRICANTE, e a
+     gente precisa do uid. Sem este documento seria preciso varrer todas as
+     conexões a cada notificação. */
+  if (idProv) escrever_('idprov_' + provedor + '_' + idProv, { uid: uid, provedor: provedor },
+    uid, 'idprov');
+}
+
+/* ── RENOVAR ─────────────────────────────────────────────────
+   ⚠️ O REFRESH TOKEN GIRA. A spec: "We return a new refresh token every time
+   you get a new access token". E ele vence em TRÊS MESES. Guardar o antigo
+   depois de renovar é assinar a morte da conexão na próxima renovação — e o
+   sintoma apareceria meses depois, parecendo outra coisa. Por isso aqui se
+   regrava a conexão inteira, nunca só o access token. */
+function renovarToken_(conexao) {
+  const prov = provedor_(conexao.provedor);
+  if (!conexao.refresh) throw new Error('Conexão sem refresh token: refaça a autorização.');
+  const t = trocarToken_(prov, { grant_type: 'refresh_token', refresh_token: conexao.refresh });
+  gravarConexao_(conexao.uid, conexao.provedor, t, conexao.idNoProvedor);
+  return t.access_token;
+}
+
+/* devolve um access token válido, renovando quando falta pouco */
+function tokenValido_(conexao) {
+  const folga = 5 * 60 * 1000;
+  if (conexao.acesso && conexao.expiraEm && conexao.expiraEm - Date.now() > folga) {
+    return conexao.acesso;
+  }
+  return renovarToken_(conexao);
 }
 
 /* mesma forma dos campos espelhados do resto do banco: `dono` é o que a
@@ -241,6 +300,60 @@ function escrever_(chave, dados, uid, categoria) {
   fs_('/kv/' + encodeURIComponent(chave) + '?' + [
     'v', 'dono', 'categoria', 'equipe', 'perfil', 'aprovado', 'donoEmail'
   ].map(function (c) { return 'updateMask.fieldPaths=' + c; }).join('&'), 'patch', corpo);
+}
+
+/* ── 3.1) DESCONECTAR ─────────────────────────────────────────
+   ⚠️ ISTO É OBRIGAÇÃO, NÃO CORTESIA. A especificação diz, em negrito, que o
+   endpoint de remover registro **deve** ser chamado quando o aplicativo
+   oferece "Delete My Account" ou "Disconnect" fora do fluxo de consentimento
+   do próprio Garmin Connect. O Meros360 oferece as duas coisas — apagar a
+   conta está na tela de Conta desde sempre.
+
+   Esquecer isso deixaria a Garmin empurrando dados de uma pessoa que pediu
+   para sair, o que é o oposto do que ela pediu, e é descumprimento de
+   contrato. A ordem importa: avisa o fabricante PRIMEIRO; só depois apaga o
+   token, senão fica sem como avisar. */
+function desconectar_(uid, provedor) {
+  const conexao = lerConexao_(uid, provedor);
+  if (!conexao) return { ok: true, nota: 'não havia conexão' };
+  let avisou = false, erro = null;
+  try {
+    const prov = provedor_(provedor);
+    if (prov.registro) {
+      const r = UrlFetchApp.fetch(prov.registro, {
+        method: 'delete',
+        headers: { Authorization: 'Bearer ' + tokenValido_(conexao) },
+        muteHttpExceptions: true });
+      const c = r.getResponseCode();
+      /* 204 é o esperado; 401/404 significam que lá já não existe — nos dois
+         casos o objetivo (parar de receber) está cumprido */
+      avisou = (c >= 200 && c < 300) || c === 401 || c === 404;
+      if (!avisou) erro = 'remover registro devolveu ' + c;
+    }
+  } catch (e) { erro = e.message; }
+  /* o lado local sai de qualquer jeito: se o fabricante não respondeu, o
+     pior cenário é ele seguir empurrando para um endereço que vai descartar */
+  apagarChave_('conexao_' + uid + '_' + provedor);
+  apagarChave_('vinculo_' + uid + '_' + provedor);
+  if (conexao.idNoProvedor) apagarChave_('idprov_' + provedor + '_' + conexao.idNoProvedor);
+  return { ok: true, avisou: avisou, erro: erro };
+}
+
+function lerConexao_(uid, provedor) {
+  const d = fs_('/kv/' + encodeURIComponent('conexao_' + uid + '_' + provedor));
+  if (!d || !d.fields || !d.fields.v) return null;
+  try { return JSON.parse(d.fields.v.stringValue); } catch (e) { return null; }
+}
+/* do id do fabricante de volta para o nosso uid — o caminho que o push usa */
+function uidPeloIdDoProvedor_(provedor, idProv) {
+  const d = fs_('/kv/' + encodeURIComponent('idprov_' + provedor + '_' + idProv));
+  if (!d || !d.fields || !d.fields.v) return null;
+  try { return (JSON.parse(d.fields.v.stringValue) || {}).uid || null; } catch (e) { return null; }
+}
+function apagarChave_(chave) {
+  try { fs_('/kv/' + encodeURIComponent(chave), 'delete'); } catch (e) {
+    console.warn('apagar ' + chave + ': ' + e.message);
+  }
 }
 
 /* ── 4) O PEDIDO ───────────────────────────────────────────────────────────
@@ -292,8 +405,36 @@ function doPost(e) {
 }
 
 function receberPush_(corpo) {
-  throw new Error('receberPush_ ainda não sabe a forma do corpo. '
-    + 'Preencha com a documentação do portal (ver backend/CONEXOES.md).');
+  /* ⚠️ O MESMO ENDEREÇO RECEBE COISAS DIFERENTES. Além dos dados de saúde,
+     chega aqui a notificação de DESREGISTRO: a pessoa desconectou o Meros360
+     pelo Garmin Connect. Tratar tudo como dado de saúde faria o desregistro
+     virar erro no log e a conexão morta continuar viva do nosso lado. */
+  if (corpo && corpo.deregistrations) return desregistrar_(corpo.deregistrations);
+  if (corpo && corpo.userPermissionsChange) {
+    console.log('mudança de permissão recebida; ainda sem tratamento');
+    return 0;
+  }
+  throw new Error('receberPush_ ainda não sabe a forma dos dados de saúde. '
+    + 'Falta a seção 4.1 do Health API (ver backend/CONEXOES.md).');
+}
+
+/* A notificação traz o id DO FABRICANTE, nunca o nosso uid — por isso o
+   índice `idprov_`. Aqui não se chama o endpoint de remover registro: quem
+   desconectou foi a pessoa, do lado de lá; já está feito. */
+function desregistrar_(lista) {
+  let n = 0;
+  (lista || []).forEach(function (d) {
+    const idProv = d && (d.userId || d.user_id);
+    if (!idProv) return;
+    const uid = uidPeloIdDoProvedor_('garmin', idProv);
+    if (!uid) { console.warn('desregistro de id desconhecido'); return; }
+    apagarChave_('conexao_' + uid + '_garmin');
+    apagarChave_('vinculo_' + uid + '_garmin');
+    apagarChave_('idprov_garmin_' + idProv);
+    n++;
+  });
+  console.log('desregistros processados: ' + n);
+  return n;
 }
 
 /* ── 6) FERRAMENTAS DE CONFERÊNCIA ─────────────────────────────────────────
@@ -314,7 +455,8 @@ function conexoesConferir() {
   const faltas = [];
   Object.keys(PROVEDORES).forEach(function (k) {
     const p = PROVEDORES[k];
-    [p.propAutorizar, p.propToken, p.propEscopo, p.propId, p.propSegredo].forEach(function (nome) {
+    [p.propAutorizar, p.propToken, p.propUserId, p.propRegistro,
+     p.propId, p.propSegredo].forEach(function (nome) {
       if (!props_().getProperty(nome)) faltas.push(k + ': falta ' + nome);
     });
   });
@@ -338,7 +480,8 @@ function provedor_(id) {
   Object.keys(base).forEach(function (k) { p[k] = base[k]; });
   p.autorizar = props_().getProperty(base.propAutorizar) || '';
   p.token     = props_().getProperty(base.propToken) || '';
-  p.escopo    = props_().getProperty(base.propEscopo) || '';
+  p.userid    = props_().getProperty(base.propUserId) || '';
+  p.registro  = props_().getProperty(base.propRegistro) || '';
   if (!p.autorizar || !p.token) {
     throw new Error(p.nome + ' ainda não está configurado neste script. '
       + 'Veja backend/CONEXOES.md.');

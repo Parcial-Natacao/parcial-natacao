@@ -106,23 +106,48 @@ A Garmin entrega um **Consumer Key** e um **Consumer Secret**.
 
 ---
 
-## Passo 4 — os endereços da Garmin (é onde eu entro)
+## Passo 4 — os endereços da Garmin, nas Propriedades
 
-O `PROVEDORES` do `conexoes.gs` está com os endereços **em branco de
-propósito**: a documentação oficial fica atrás do login do portal, e
-preencher com URL de blog é construir a ponte com a planta errada.
+Os endereços não entram no código (ver o aviso de confidencialidade no
+topo do `conexoes.gs`). Eles são copiados do **OAuth2PKCE 2.0.pdf**, em
+Downloads do portal, direto para as Propriedades do script:
 
-Quando você estiver logado no portal, me mande — pode ser texto copiado:
+| propriedade | onde está no PDF |
+|---|---|
+| `GARMIN_URL_AUTORIZAR` | pág. 2, *STEP 1*, linha **URL(GET):** |
+| `GARMIN_URL_TOKEN` | pág. 3, *STEP 2*, linha **URL (POST):** — a mesma do refresh |
+| `GARMIN_URL_USERID` | pág. 5, seção 5 *User ID*, linha **GET** |
+| `GARMIN_URL_REGISTRO` | pág. 5, seção 6 *Delete User Registration*, linha **DELETE:** |
 
-1. a **URL de autorização** (a página de consentimento do usuário);
-2. a **URL de token** (troca do `code` e refresh);
-3. os **escopos** que a faixa Starter concede, com o nome exato;
-4. um **exemplo do corpo do push** — o JSON que a Garmin manda para o
-   webhook quando o relógio sincroniza;
-5. como se descobre o **id do usuário na Garmin** a partir do token.
+> ⚠️ **Copie pelo botão direito › "Copiar endereço do link".** Selecionar o
+> texto no leitor de PDF arrasta espaço e quebra de linha invisíveis. E
+> **nunca copie da barra de endereços**: clicar no link de autorização leva a
+> um redirecionamento que acrescenta `/partner/` ao caminho, e o valor
+> gravado ficaria diferente do documentado — falharia lá na frente, com um
+> erro que não explica nada. Abrir esse link direto, aliás, devolve
+> *"We could not give this application the permissions you requested"*: é o
+> esperado, porque nenhum aplicativo se identificou.
 
-Com isso eu preencho `PROVEDORES.garmin` e escrevo o `receberPush_`, que é a
-única função que precisa conhecer a forma dos dados do fabricante.
+**Não existe `GARMIN_ESCOPO`.** A requisição de autorização da Garmin não
+aceita `scope`; o escopo concedido vem na resposta do token.
+
+### O que a especificação obrigou a mudar no código
+
+- **Credenciais no header `Basic`**, não no corpo. A lista de parâmetros cita
+  `client_id` e `client_secret`, mas os exemplos de `curl` usam Basic e não
+  os repetem no corpo.
+- **O id do usuário é uma chamada à parte**, não vem na resposta do token. Sem
+  ele o push chega sem dono — as notificações identificam a pessoa pelo id do
+  fabricante, e o índice `idprov_<prov>_<id>` faz o caminho de volta.
+- **O refresh token gira e vence em três meses.** A Garmin devolve um refresh
+  novo a cada renovação; guardar o antigo mata a conexão na próxima vez.
+- **Remover o registro é obrigação**: a spec diz que o endpoint **deve** ser
+  chamado quando o app oferece "apagar conta" ou "desconectar". O Meros360
+  oferece os dois. E o mesmo endereço do push recebe as **notificações de
+  desregistro**, quando a pessoa desconecta pelo Garmin Connect.
+
+Falta, do lado da Garmin, só a **seção 4.1 do Health API** (o formato do
+corpo do push) e a configuração do endpoint nas **API Tools**.
 
 ---
 
