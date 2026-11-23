@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.5"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.5"></script>
+<script src="./persistencia-segura.js?v=v2.19.6"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.6"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.5';
+const VER='v2.19.6';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2678,6 +2678,24 @@ function mesclarPacotesGarmin(serie,pacotes){
     }
     /* a procedência só faz sentido junto do número que ela qualifica */
     if(p.hrv!=null&&p.hrvF&&g.hrvF!==p.hrvF){ g.hrvF=p.hrvF; mudou++; }
+    /* ⚠️ ATIVIDADE NÃO É CAMPO, É LISTA COM CHAVE. Se o pacote trouxesse
+       `nado` pronto e a mescla copiasse o número, duas coisas quebrariam: a
+       Garmin reenvia a mesma atividade (e o total dobraria), e um dia com dois
+       nados chegaria em dois pushes (e o segundo apagaria o primeiro). Foi
+       exatamente o erro da v166 com o ZIP, e o conserto é o mesmo: guardar
+       cada atividade pela CHAVE e derivar o total dela.
+       `derivarTotaisDoDia` é quem sabe o que é nado — ela filtra por tipo, e
+       é por isso que corrida e pedalada não viram metragem de piscina. Um
+       lugar só decide isso, aqui e na importação do export. */
+    if(Array.isArray(p.ativs)&&p.ativs.length){
+      const antes=JSON.stringify([g.ativs||[],g.nado,g.ativDur,g.ativFc]);
+      const m=new Map();
+      (g.ativs||[]).forEach(x=>{ if(x&&x.k!=null)m.set(String(x.k),x); });
+      p.ativs.forEach(x=>{ if(x&&x.k!=null)m.set(String(x.k),Object.assign({},m.get(String(x.k))||{},x)); });
+      g.ativs=[...m.values()];
+      derivarTotaisDoDia(g);
+      if(JSON.stringify([g.ativs,g.nado,g.ativDur,g.ativFc])!==antes)mudou++;
+    }
   }
   if(mudou)serie.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   return mudou;
@@ -7379,6 +7397,34 @@ teste('pacotes','o pacote do relógio sobrescreve a VFC digitada, com a procedê
   a.eq(serie[0].dor,3,'dor intocada');
   a.ok(m>0,'reporta que mudou');
 });
+teste('pacotes','o nado chega como ATIVIDADE e o total é derivado',a=>{
+  const serie=[];
+  const pacote={data:'2026-11-22',ativs:[{k:'A1',tipo:'LAP_SWIMMING',dist:3000,min:60,fc:140,origem:'garmin'}]};
+  a.ok(mesclarPacotesGarmin(serie,[pacote])>0,'a primeira vez grava');
+  a.eq(serie[0].nado,30,'3000 m viram 30 centenas, a escala da série');
+  a.eq(nadoKm(serie[0].nado),'3.0','e a tela mostra 3,0 km');
+  a.eq(serie[0].ativDur,60,'a duração entra na carga');
+  a.eq(serie[0].ativFc,140,'e a FC média da atividade');
+  a.eq(mesclarPacotesGarmin(serie,[pacote]),0,'a mesma atividade de novo não muda nada');
+  a.eq(serie[0].nado,30,'— e principalmente NÃO dobra o nado');});
+teste('pacotes','dois nados no mesmo dia somam; corrida não vira metragem',a=>{
+  /* o dia chega em dois pushes separados: a Garmin manda cada atividade
+     quando ela sincroniza, não o dia fechado */
+  const serie=[];
+  mesclarPacotesGarmin(serie,[{data:'2026-11-22',ativs:[{k:'A1',tipo:'LAP_SWIMMING',dist:3000,min:60,origem:'garmin'}]}]);
+  mesclarPacotesGarmin(serie,[{data:'2026-11-22',ativs:[{k:'A2',tipo:'OPEN_WATER_SWIMMING',dist:1500,min:30,origem:'garmin'}]}]);
+  a.eq(serie[0].nado,45,'4500 m no dia, vindos de dois pushes');
+  a.eq(serie[0].ativDur,90,'e 90 minutos de atividade');
+  mesclarPacotesGarmin(serie,[{data:'2026-11-22',ativs:[{k:'A3',tipo:'RUNNING',dist:8000,min:45,origem:'garmin'}]}]);
+  a.eq(serie[0].nado,45,'a corrida NÃO entra na metragem de piscina');
+  a.eq(serie[0].ativDur,135,'mas conta como carga, que é o que ela é');});
+teste('pacotes','a atividade do push não atropela o check-in nem os três números',a=>{
+  const serie=[{data:'2026-11-22',hrv:41,hrvF:'noite',fc:52,sono:7.5,sonoQ:4,dor:2}];
+  mesclarPacotesGarmin(serie,[{data:'2026-11-22',ativs:[{k:'A1',tipo:'LAP_SWIMMING',dist:2000,min:40,origem:'garmin'}]}]);
+  a.eq(serie[0].hrv,41,'a VFC da noite fica');
+  a.eq(serie[0].sonoQ,4,'o check-in fica');
+  a.eq(serie[0].nado,20,'e o nado entra ao lado');
+  a.eq(serie.length,1,'sem duplicar o dia');});
 teste('pacotes','incorporar o mesmo pacote duas vezes não muda nada',a=>{
   const serie=[];
   const p=[{data:'2026-11-20',hrv:35,hrvF:'noite',sono:7.1}];

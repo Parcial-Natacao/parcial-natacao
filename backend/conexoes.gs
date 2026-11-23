@@ -528,11 +528,21 @@ function processarCorpo_(corpo) {
     const regra = mapa[tipo]; if (!regra || !Array.isArray(corpo[tipo])) return;
     corpo[tipo].forEach(function (item) {
       const idProv = item && (item.userId || item.user_id); if (!idProv) return;
-      const dia = item[regra.data]; if (!dia) return;
+      const dia = diaDoItem_(item, regra); if (!dia) return;
       const uid = uidPeloIdDoProvedor_('garmin', idProv);
       if (!uid) { console.warn('push de id sem vínculo'); return; }
-      const alvo = porDia[uid + '|' + dia] || (porDia[uid + '|' + dia] = { uid: uid, dia: dia, campos: {} });
-      Object.keys(regra.campos).forEach(function (nosso) {
+      const alvo = porDia[uid + '|' + dia] || (porDia[uid + '|' + dia] = { uid: uid, dia: dia, campos: {}, ativs: [] });
+      /* ⚠️ ATIVIDADE NÃO É CAMPO DE DIA. Um item é UMA atividade, e um dia
+         pode ter duas; a Garmin reenvia a mesma quando ela é editada. Virar
+         campo (`nado: 3000`) dobraria o total num reenvio e perderia o
+         primeiro nado num dia de dois. Vai como lista com chave, e quem soma
+         é o app — que também é quem sabe o que é nado e o que é corrida. */
+      if (regra.atividade) {
+        const at = atividade_(item, regra.atividade);
+        if (at) alvo.ativs.push(at);
+        return;
+      }
+      Object.keys(regra.campos || {}).forEach(function (nosso) {
         const c = regra.campos[nosso];
         let v = item[c.de]; if (v == null) return;
         if (c.dividirPor) v = v / c.dividirPor;
@@ -544,9 +554,49 @@ function processarCorpo_(corpo) {
   let n = 0;
   Object.keys(porDia).forEach(function (k) {
     const a = porDia[k];
-    if (Object.keys(a.campos).length && gravarPacote_(a.uid, a.dia, a.campos)) n++;
+    if ((Object.keys(a.campos).length || a.ativs.length)
+        && gravarPacote_(a.uid, a.dia, a.campos, a.ativs)) n++;
   });
   return n;
+}
+
+/* A data do item. Os resumos diários trazem a data pronta; a atividade traz
+   SEGUNDOS DE ÉPOCA mais o deslocamento do fuso de quem nadou — e é o
+   deslocamento que faz o treino das 5h40 cair no dia certo em vez de na
+   véspera. Somar os dois e formatar em GMT dá o dia LOCAL da pessoa. */
+function diaDoItem_(item, regra) {
+  if (regra.data) {
+    const v = item[regra.data];
+    return v ? String(v).slice(0, 10) : null;
+  }
+  if (regra.dataEpoca) {
+    const seg = item[regra.dataEpoca.de];
+    if (seg == null) return null;
+    const desl = regra.dataEpoca.desloc ? (Number(item[regra.dataEpoca.desloc]) || 0) : 0;
+    const d = new Date((Number(seg) + desl) * 1000);
+    return Utilities.formatDate(d, 'GMT', 'yyyy-MM-dd');
+  }
+  return null;
+}
+
+/* Uma atividade, na MESMA forma que a importação do ZIP grava no app:
+   `{k, tipo, dist, min, fc, origem}`. A forma é do app, não da Garmin — por
+   isso os nomes de campo de origem vêm do mapa, e nenhum deles mora aqui.
+
+   ⚠️ A CHAVE É O QUE IMPEDE O DOBRO. Sem ela, a mesma atividade reenviada
+   entraria duas vezes e o dia apareceria com o dobro da metragem. */
+function atividade_(item, r) {
+  const k = item[r.chave];
+  if (k == null) return null;
+  const at = { k: String(k), origem: 'garmin' };
+  if (r.tipo && item[r.tipo] != null) at.tipo = String(item[r.tipo]);
+  if (r.dist && item[r.dist] != null) at.dist = Math.round(Number(item[r.dist]));
+  if (r.min && item[r.min.de] != null) {
+    const v = Number(item[r.min.de]) / (r.min.dividirPor || 1);
+    at.min = +v.toFixed(r.min.casas != null ? r.min.casas : 1);
+  }
+  if (r.fc && item[r.fc] != null) at.fc = Math.round(Number(item[r.fc]));
+  return at;
 }
 
 function mapaGarmin_() {
@@ -560,7 +610,7 @@ function mapaGarmin_() {
    e sleeps — chegam em notificações SEPARADAS, cada uma com um pedaço do
    mesmo dia. Gravar o pacote inteiro a cada uma apagaria o que a anterior
    trouxe, e o dia terminaria com só um dos três números. */
-function gravarPacote_(uid, dia, campos) {
+function gravarPacote_(uid, dia, campos, ativs) {
   const chave = 'garmin_' + uid + '_' + dia;
   let reg = { data: dia };
   const atual = fs_('/kv/' + encodeURIComponent(chave));
@@ -574,6 +624,25 @@ function gravarPacote_(uid, dia, campos) {
   /* a procedência acompanha o número: a VFC da Garmin é sempre da noite, e o
      app distingue isso da média semanal digitada à mão */
   if (campos.hrv != null && reg.hrvF !== 'noite') { reg.hrvF = 'noite'; mudou = true; }
+  /* ⚠️ ATIVIDADE SE UNE PELA CHAVE, NÃO SUBSTITUI A LISTA. Os nados de um
+     dia chegam em pushes separados, um por sincronia do relógio: trocar a
+     lista inteira deixaria só o último. E o total NÃO é calculado aqui de
+     propósito — quem deriva `nado`, `ativDur` e `ativFc` é o app, num lugar
+     só, que é também quem filtra o que é nado. Duas contas da mesma coisa
+     em dois lugares divergem, e foi assim que a coluna Nado já mostrou zero
+     num dia de 4,5 km. */
+  if (ativs && ativs.length) {
+    const por = {};
+    (reg.ativs || []).forEach(function (x) { if (x && x.k != null) por[String(x.k)] = x; });
+    ativs.forEach(function (x) {
+      const ch = String(x.k), velho = por[ch] || {}, novo = {};
+      Object.keys(velho).forEach(function (kk) { novo[kk] = velho[kk]; });
+      Object.keys(x).forEach(function (kk) { novo[kk] = x[kk]; });
+      if (JSON.stringify(velho) !== JSON.stringify(novo)) mudou = true;
+      por[ch] = novo;
+    });
+    reg.ativs = Object.keys(por).map(function (ch) { return por[ch]; });
+  }
   if (!mudou) return false;
   reg.data = dia;
   /* ⚠️ `gravarPacoteGarmin_` mora no `garmin.gs`, não aqui. Os dois arquivos
