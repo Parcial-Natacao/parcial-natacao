@@ -148,7 +148,7 @@ function iniciar_(p) {
 
   const destino = prov.autorizar + (prov.autorizar.indexOf('?') >= 0 ? '&' : '?') + q.join('&');
   return pagina_('Levando você ao ' + prov.nome + '…',
-    'Se nada acontecer, <a href="' + esc_(destino) + '" target="_top">toque aqui</a>.',
+    'Isto pode levar alguns segundos. Se a página não avançar sozinha, toque no botão.',
     destino);
 }
 
@@ -457,9 +457,55 @@ function drenarFila() {
       console.error('fila ' + chave + ': ' + (e && e.message || e));
     }
   });
+  /* as saídas pegam carona no mesmo gatilho: são raras e não merecem um
+     acionador próprio, mas não podem esperar um dia */
+  let saidas = 0;
+  try { saidas = processarSaidas_(); }
+  catch (e) { console.error('saídas: ' + (e && e.message || e)); }
   const msg = 'Fila: ' + feitos + ' processado(s), ' + pacotes + ' pacote(s), '
-    + erros + ' com erro.';
+    + erros + ' com erro. Saídas: ' + saidas + '.';
   Logger.log(msg); return msg;
+}
+
+/* ── PEDIDOS DE SAÍDA ────────────────────────────────────────
+   `desconectar_` existia e ninguém chamava. Chamar é obrigação: a spec diz
+   que o endpoint de remover registro **deve** ser acionado quando o app
+   oferece "apagar conta" ou "desconectar", e o Meros360 oferece os dois.
+
+   O app não fala com este script — e não deveria mesmo, porque revogar token
+   é operação de servidor. Ele deixa um documento `saida_<uid>_<provedor>`, do
+   mesmo jeito que já faz com `despedida_` para o e-mail de quem sai. Aqui a
+   gente recolhe.
+
+   ⚠️ ISTO PRECISA SOBREVIVER AO SUMIÇO DA CONTA. Quem apaga a conta some do
+   Firebase Auth, mas o `saida_` fica — e o token da conexão também, porque
+   quem o guarda é a conta de serviço. Por isso a ordem no app é: gravar a
+   saída ANTES de apagar o resto. */
+function processarSaidas_() {
+  const r = fs_(':runQuery', 'post', {
+    structuredQuery: {
+      from: [{ collectionId: 'kv' }],
+      where: { fieldFilter: { field: { fieldPath: 'categoria' },
+        op: 'EQUAL', value: { stringValue: 'saida' } } },
+      limit: 100
+    }
+  }) || [];
+  let n = 0, avisados = 0;
+  r.forEach(function (linha) {
+    const d = linha.document; if (!d || !d.name) return;
+    const chave = decodeURIComponent(d.name.split('/').pop());
+    try {
+      const p = JSON.parse(d.fields.v.stringValue) || {};
+      if (p.uid && p.provedor) {
+        const res = desconectar_(p.uid, p.provedor);
+        if (res && res.avisou) avisados++;
+      }
+      apagarChave_(chave);
+      n++;
+    } catch (e) { console.error('saída ' + chave + ': ' + (e && e.message || e)); }
+  });
+  if (n) console.log('saídas: ' + n + ' processada(s), ' + avisados + ' confirmada(s) no fabricante');
+  return n;
 }
 
 /* ── O QUE VEIO ────────────────────────────────────────────
@@ -666,14 +712,30 @@ function esc_(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 /* páginas do tamanho do recado: quem chega aqui está no meio de outra coisa */
+/* ⚠️ O DESVIO DEMORA, E NÃO TEM COMO NÃO DEMORAR. O HtmlService serve a
+   página dentro de um sandbox: o iframe carrega primeiro, e só então o
+   script roda. São um a três segundos de tela parada.
+
+   Meta refresh não resolve: ela desviaria o iframe INTERNO, e aí a página
+   da Garmin tentaria abrir emoldurada — que é justamente o que ela recusa.
+   Por isso o desvio tem de ser `window.top`.
+
+   Então o jeito honesto é avisar e dar um botão de verdade, não um link
+   discreto embaixo de "se nada acontecer". Quem esperar, avança sozinho;
+   quem não quiser esperar, toca. */
 function pagina_(titulo, html, irPara) {
   const corpo = '<!doctype html><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">'
     + (irPara ? '<script>window.top.location.replace(' + JSON.stringify(irPara) + ')</script>' : '')
     + '<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:40px 22px;'
     + 'color:#15171a;background:#f4f3f0}h1{font-size:21px;margin:0 0 12px}'
-    + 'div{max-width:460px;margin:0 auto}a{color:#c0392b}</style>'
-    + '<div><h1>' + esc_(titulo) + '</h1><p>' + html + '</p></div>';
+    + 'div{max-width:460px;margin:0 auto}a{color:#c0392b}'
+    + '.b{display:block;margin-top:18px;padding:14px 18px;border-radius:10px;'
+    + 'background:#15171a;color:#fff;text-align:center;text-decoration:none;'
+    + 'font-weight:600}</style>'
+    + '<div><h1>' + esc_(titulo) + '</h1><p>' + html + '</p>'
+    + (irPara ? '<a class="b" href="' + esc_(irPara) + '" target="_top">Continuar</a>' : '')
+    + '</div>';
   return HtmlService.createHtmlOutput(corpo)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }

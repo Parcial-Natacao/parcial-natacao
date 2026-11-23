@@ -274,9 +274,17 @@ service cloud.firestore {
       // gatilho processa e apaga. Mesmo tratamento da conexão — ninguém lê,
       // nem o administrador; só a conta de serviço, que não passa por aqui.
       function ehFila()      { return chave.matches('fila_.*'); }
+
+      // SAÍDA — o recado de "desconecte-me do fabricante". Só CRIAÇÃO, e só
+      // com o próprio uid: é o app pedindo ao Apps Script que revogue o token,
+      // porque revogar é operação de servidor. Sem leitura nem edição; quem
+      // apaga é o script, depois de cumprir.
+      function ehSaida()     { return chave.matches('saida_.*'); }
+      function ehMinhaSaida(){ return logado() && chave.matches('saida_' + meuUid() + '_.*')
+                                && request.resource.data.dono == meuUid(); }
       function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime()
         && !ehDespedida() && !ehGarmin() && !ehPedido() && !ehVinculo() && !ehConexao()
-        && !ehFila(); }
+        && !ehFila() && !ehSaida(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível
@@ -351,6 +359,8 @@ service cloud.firestore {
         // Pedido de conexão de relógio: nasce e morre em 10 minutos, e não
         // guarda nada além de uid, provedor e hora.
         || ( ehPedido() && ehMeuPedido() )
+        // Pedido de desconexão: o app não revoga token, deixa o recado.
+        || ( ehSaida() && ehMinhaSaida() )
         // O recado de despedida: quem está apagando a própria conta grava UM
         // documento, com o próprio uid na chave, para o Apps Script poder
         // mandar o e-mail de saída depois que o cadastro já não existe. Só
