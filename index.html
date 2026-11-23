@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.4"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.4"></script>
+<script src="./persistencia-segura.js?v=v2.19.5"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.5"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.4';
+const VER='v2.19.5';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2708,6 +2708,82 @@ function resumoDiaRelogio(rec){
   if(r.sono!=null)t.push('sono <b>'+v(r.sono)+' h</b>');
   if(r.nado!=null)t.push('nado <b>'+v(nadoKm(r.nado))+' km</b>');
   return t.join(' · ');
+}
+/* ── REMOVER AS MEDIDAS DO RELÓGIO DE UM DIA ──────────────────────
+   Não havia saída. Número errado que entrasse na série de Saúde ficava para
+   sempre: a importação corrige o que ela mesma trouxe, o pacote do relógio
+   sobrescreve campo a campo, e a digitação só escreve por cima. Nada apagava.
+   O caso que cobrou isto foi um pacote de TESTE com VFC de 73 ms: o app
+   absorveu o número, o pacote foi apagado do banco depois — e o 73 ficou na
+   série, encostado na linha de base de 28 dias que decide a prontidão do dia.
+
+   ⚠️ REMOVE SÓ O QUE O RELÓGIO MEDE. No mesmo registro diário moram o
+   check-in, a dor, os sintomas, o peso, o lactato — que a PESSOA digitou.
+   Apagar o dia inteiro para tirar uma VFC seria levar junto o que ninguém
+   pediu para tirar, e a folha de confirmação lista o que fica, item a item.
+
+   ⚠️ APAGA TAMBÉM O PACOTE DAQUELE DIA. Sem isso a remoção se desfaz
+   sozinha: a sincronia silenciosa roda a cada 12 s, `incorporarPacotesGarmin`
+   lê TODOS os pacotes de novo a cada carga e `mesclarPacotesGarmin` reescreve
+   os três campos. O usuário veria o número voltar sem ninguém digitar nada. */
+const CAMPOS_RELOGIO=['fc','hrv','hrvF','sono','ativs','nado','ativDur','ativFc','_fcMin','_min'];
+const FICA_NO_DIA=[['sonoQ','qualidade do sono'],['energia','energia'],['dor','dor muscular'],
+  ['estresse','estresse'],['humor','humor'],['pse','PSE do dia'],['sint','sintomas'],
+  ['peso','peso'],['lac','lactato'],['gli','glicemia'],['uDens','densidade urinária'],
+  ['hid','hidratação'],['ctx','marcadores de contexto']];
+/* o que a pessoa digitou naquele dia e vai continuar lá, em palavras */
+function oQueFicaNoDia(rec){
+  const r=rec||{};
+  return FICA_NO_DIA.filter(([k])=>{
+    const v=r[k]; return Array.isArray(v)?v.length>0:(v!=null);
+  }).map(([,rot])=>rot);
+}
+/* Pura de propósito: recebe a série e o dia, devolve a série nova e quantos
+   campos saíram. Não sabe de rede, de folha nem de render. */
+function removerMedidasDoDia(serie,data){
+  const fora=[]; let n=0;
+  for(const r of (serie||[])){
+    if(!r||r.data!==data){ fora.push(r); continue; }
+    const c=Object.assign({},r);
+    for(const k of CAMPOS_RELOGIO)if(k in c){ delete c[k]; n++; }
+    /* dia que ficou só com a data não é dia: deixado na série, ele aparece
+       como uma linha de travessões que não se pode remover de novo */
+    if(Object.keys(c).some(k=>k!=='data'))fora.push(c);
+  }
+  return {serie:fora,n};
+}
+function abrirRemoverDiaRelogio(data){
+  const r=(S.pro?.garmin||[]).find(x=>x.data===data);
+  if(!r)return toast('Dia não encontrado');
+  const tem=resumoDiaRelogio(r), fica=oQueFicaNoDia(r);
+  if(!tem)return toast('Este dia não tem medida de relógio para remover');
+  sheet(`<h2>Remover as medidas de ${brData(data)}</h2>
+    <div class="note warn" style="margin:10px 0"><b>Sai da sua série:</b> ${tem}.
+      <div class="xs" style="margin-top:5px">Mais a atividade daquele dia, se houver, e os totais tirados dela.
+      Não há como desfazer — mas a <b>versão do dia</b> guardada no banco ainda tem o estado anterior.</div></div>
+    ${fica.length?`<div class="note ok"><b>Fica:</b> ${fica.join(', ')}.
+      <div class="xs" style="margin-top:4px">O relógio não mede nada disso — é seu.</div></div>`
+      :`<div class="note"><b>Este dia não tem mais nada seu.</b> Sem as medidas, ele sai da série inteiro.</div>`}
+    <div class="xs muted" style="margin:10px 0">Se o relógio enviar este dia outra vez, ele volta — e isso é o certo:
+      o que você está removendo é o registro de agora, não a história do seu corpo.</div>
+    <button class="danger full" onclick="removerDiaRelogio('${data}')">Remover as medidas</button>
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
+}
+async function removerDiaRelogio(data){
+  if(!S.pro||!S.pro.garmin)return;
+  /* o pacote PRIMEIRO: se a remoção da série passasse e o pacote ficasse, a
+     sincronia seguinte traria o número de volta e o app pareceria enfeitiçado */
+  let pacote=true;
+  if(FB&&S.u&&S.u.id)pacote=await apagarChave('garmin_'+S.u.id+'_'+data);
+  const {serie,n}=removerMedidasDoDia(S.pro.garmin,data);
+  if(!n){ fecharSheet(); return toast('Este dia já não tinha medidas'); }
+  S.pro.garmin=serie;
+  /* apagamento pedido pelo dono: passa pela trava do censo com consentimento */
+  if(await salvarSaude({apagando:true})===false)return;
+  fecharSheet();
+  toast(pacote?'Medidas de '+brData(data)+' removidas'
+              :'Removidas aqui, mas o pacote do dia segue no banco — pode voltar na próxima sincronia');
+  render();
 }
 /* ── CREDITAR A GARMIN ONDE O DADO DELA APARECE ───────────────────
    ⚠️ ISTO É OBRIGAÇÃO DE CONTRATO, NÃO ENFEITE. O acordo do programa de
@@ -7203,6 +7279,54 @@ teste('versão','as tags <script> pedem a versão que o app diz ser',a=>{
 teste('versão','o formato é MAIOR.MENOR.CORREÇÃO',a=>{
   a.ok(/^v\d+\.\d+\.\d+$/.test(VER),'três números, como em '+VER);
 });
+teste('saúde','remover as medidas do dia não leva o que a pessoa digitou',a=>{
+  /* o caso real: um pacote de TESTE com VFC de 73 ms foi absorvido pela série
+     e o pacote apagado do banco depois. O 73 ficou, encostado na linha de base
+     de 28 dias que decide a prontidão do dia, e não havia saída no app. */
+  const serie=[
+    {data:'2026-01-10',hrv:73,hrvF:'noite',fc:52,sono:7.2,nado:45,
+     ativs:[{k:'x',tipo:'lap_swimming',min:60,origem:'garmin'}],
+     sonoQ:4,dor:2,humor:5,pse:7,peso:81.4},
+    {data:'2026-01-09',hrv:38,hrvF:'noite',fc:49}];
+  const {serie:nova,n}=removerMedidasDoDia(serie,'2026-01-10');
+  a.ok(n>0,'reporta que removeu');
+  a.eq(nova.length,2,'o dia continua na série, porque ainda tem coisa dele');
+  const d=nova.find(x=>x.data==='2026-01-10');
+  a.eq(d.hrv,undefined,'a VFC falsa saiu');
+  a.eq(d.hrvF,undefined,'e a procedência dela também');
+  a.eq(d.fc,undefined,'FC de repouso saiu');
+  a.eq(d.sono,undefined,'sono saiu');
+  a.eq(d.nado,undefined,'a metragem derivada saiu');
+  a.eq(d.ativs,undefined,'e a atividade de onde ela vinha');
+  a.eq(d.sonoQ,4,'a qualidade do sono que ela respondeu FICA');
+  a.eq(d.dor,2,'a dor fica');
+  a.eq(d.humor,5,'o humor fica');
+  a.eq(d.pse,7,'o PSE que ela digitou fica');
+  a.eq(d.peso,81.4,'o peso fica');
+  a.eq(nova.find(x=>x.data==='2026-01-09').hrv,38,'o dia vizinho não é tocado');
+  a.eq(serie[0].hrv,73,'a função é pura: a série original fica como estava');});
+teste('saúde','dia que era só relógio sai da série inteiro',a=>{
+  /* deixado lá sem campo nenhum, ele apareceria como uma linha de travessões
+     que não se pode remover de novo — nem dado nem saída */
+  const r=removerMedidasDoDia([{data:'2026-01-10',hrv:73,fc:52}],'2026-01-10');
+  a.eq(r.serie.length,0,'sem nada da pessoa, o dia vai embora');
+  const nada=removerMedidasDoDia([{data:'2026-01-09',hrv:38}],'2026-01-10');
+  a.eq(nada.n,0,'dia que não existe na série não muda nada');
+  a.eq(nada.serie.length,1,'e nada é perdido por tabela');});
+teste('saúde','a folha diz, item a item, o que fica no dia',a=>{
+  a.eq(oQueFicaNoDia({data:'x',hrv:73,fc:52}).length,0,'dia só de relógio não tem o que preservar');
+  const l=oQueFicaNoDia({data:'x',hrv:73,sonoQ:4,dor:2,sint:[{txt:'ombro'}],lac:[]});
+  a.ok(l.indexOf('qualidade do sono')>=0,'nomeia o check-in');
+  a.ok(l.indexOf('sintomas')>=0,'nomeia os sintomas');
+  a.ok(l.indexOf('lactato')<0,'lista vazia não conta como dado');
+  a.ok(l.indexOf('VFC')<0,'e o que vai sair não entra na lista do que fica');});
+teste('saúde','a tabela oferece a saída só nos dias que têm medida',a=>{
+  _atleta();
+  S.pro.garmin=[{data:'2026-01-10',hrv:73,hrvF:'noite',fc:52},{data:'2026-01-09',sonoQ:4,dor:2}];
+  S.acc={}; [...telaGarmin().matchAll(/toggleAcc\('([^']+)'\)/g)].forEach(m=>S.acc[m[1]]=true);
+  const h=telaGarmin();
+  a.ok(h.indexOf("abrirRemoverDiaRelogio('2026-01-10')")>=0,'o dia com VFC tem como sair');
+  a.ok(h.indexOf("abrirRemoverDiaRelogio('2026-01-09')")<0,'o dia que é só check-in não oferece remoção de medida');});
 teste('conexão','o crédito da Garmin aparece onde o dado dela aparece — e só lá',a=>{
   /* ⚠️ NÃO É ENFEITE: o acordo do programa de desenvolvedores exige creditar
      a Garmin onde o dado do aparelho é exibido. Quem apagar este crédito põe a
@@ -11580,9 +11704,11 @@ function telaGarmin(){
       <span class="grow"><b>${l.length} dia(s) de VFC sem fonte registrada.</b>
       <div class="xs" style="margin-top:3px">Lançados antes de o app perguntar de onde vinha o número.</div></span>
       <button class="sm" onclick="conferirProcedenciaVfc()">Resolver</button></div></div>`:''})()}
-    ${g.length?`<table style="margin-top:10px"><thead><tr><th>Data</th>${/* o cabeçalho de coluna numérica também leva `n`: `td.n` alinha à direita e o `th` sem a classe ficava à esquerda, com o rótulo fora de prumo com os números */''}<th class="n">FC rep</th><th class="n">VFC</th><th class="n">Sono</th><th class="n">Nado</th></tr></thead><tbody>
+    ${g.length?`<table style="margin-top:10px"><thead><tr><th>Data</th>${/* o cabeçalho de coluna numérica também leva `n`: `td.n` alinha à direita e o `th` sem a classe ficava à esquerda, com o rótulo fora de prumo com os números */''}<th class="n">FC rep</th><th class="n">VFC</th><th class="n">Sono</th><th class="n">Nado</th><th></th></tr></thead><tbody>
       ${g.slice(0,12).map(x=>`<tr><td class="small">${brCurta(x.data)}</td><td class="n">${x.fc??'—'}</td>
-        <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?nadoKm(x.nado)+'k':'—'}</td></tr>`).join('')}
+        <td class="n">${x.hrv??'—'}${x.hrv!=null&&x.hrvF==='semana'?' <span class="xs muted">sem</span>':''}</td><td class="n">${x.sono??'—'}</td><td class="n">${x.nado?nadoKm(x.nado)+'k':'—'}</td>
+        <td class="n">${resumoDiaRelogio(x)?`<button class="sm ghost" style="padding:1px 7px;line-height:1.3"
+          title="Remover as medidas deste dia" onclick="abrirRemoverDiaRelogio('${x.data}')">×</button>`:''}</td></tr>`).join('')}
       </tbody></table>${creditoGarmin(S.pro)}`:'<p class="small muted" style="margin-top:8px">Importe o Garmin ou lance à mão para ver a prontidão.</p>'}`;
   /* a data do lançamento à mão vive no estado para a nota poder segui-la:
      trocar o dia troca o que o app diz que aquele dia já tem */
