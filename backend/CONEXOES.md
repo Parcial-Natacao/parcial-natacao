@@ -106,23 +106,91 @@ A Garmin entrega um **Consumer Key** e um **Consumer Secret**.
 
 ---
 
-## Passo 4 — os endereços da Garmin (é onde eu entro)
+## Passo 4 — os endereços da Garmin, nas Propriedades
 
-O `PROVEDORES` do `conexoes.gs` está com os endereços **em branco de
-propósito**: a documentação oficial fica atrás do login do portal, e
-preencher com URL de blog é construir a ponte com a planta errada.
+Os endereços não entram no código (ver o aviso de confidencialidade no
+topo do `conexoes.gs`). Eles são copiados do **OAuth2PKCE 2.0.pdf**, em
+Downloads do portal, direto para as Propriedades do script:
 
-Quando você estiver logado no portal, me mande — pode ser texto copiado:
+| propriedade | onde está no PDF |
+|---|---|
+| `GARMIN_URL_AUTORIZAR` | pág. 2, *STEP 1*, linha **URL(GET):** |
+| `GARMIN_URL_TOKEN` | pág. 3, *STEP 2*, linha **URL (POST):** — a mesma do refresh |
+| `GARMIN_URL_USERID` | pág. 5, seção 5 *User ID*, linha **GET** |
+| `GARMIN_URL_REGISTRO` | pág. 5, seção 6 *Delete User Registration*, linha **DELETE:** |
 
-1. a **URL de autorização** (a página de consentimento do usuário);
-2. a **URL de token** (troca do `code` e refresh);
-3. os **escopos** que a faixa Starter concede, com o nome exato;
-4. um **exemplo do corpo do push** — o JSON que a Garmin manda para o
-   webhook quando o relógio sincroniza;
-5. como se descobre o **id do usuário na Garmin** a partir do token.
+> ⚠️ **Copie pelo botão direito › "Copiar endereço do link".** Selecionar o
+> texto no leitor de PDF arrasta espaço e quebra de linha invisíveis. E
+> **nunca copie da barra de endereços**: clicar no link de autorização leva a
+> um redirecionamento que acrescenta `/partner/` ao caminho, e o valor
+> gravado ficaria diferente do documentado — falharia lá na frente, com um
+> erro que não explica nada. Abrir esse link direto, aliás, devolve
+> *"We could not give this application the permissions you requested"*: é o
+> esperado, porque nenhum aplicativo se identificou.
 
-Com isso eu preencho `PROVEDORES.garmin` e escrevo o `receberPush_`, que é a
-única função que precisa conhecer a forma dos dados do fabricante.
+**Não existe `GARMIN_ESCOPO`.** A requisição de autorização da Garmin não
+aceita `scope`; o escopo concedido vem na resposta do token.
+
+### O que a especificação obrigou a mudar no código
+
+- **Credenciais no header `Basic`**, não no corpo. A lista de parâmetros cita
+  `client_id` e `client_secret`, mas os exemplos de `curl` usam Basic e não
+  os repetem no corpo.
+- **O id do usuário é uma chamada à parte**, não vem na resposta do token. Sem
+  ele o push chega sem dono — as notificações identificam a pessoa pelo id do
+  fabricante, e o índice `idprov_<prov>_<id>` faz o caminho de volta.
+- **O refresh token gira e vence em três meses.** A Garmin devolve um refresh
+  novo a cada renovação; guardar o antigo mata a conexão na próxima vez.
+- **Remover o registro é obrigação**: a spec diz que o endpoint **deve** ser
+  chamado quando o app oferece "apagar conta" ou "desconectar". O Meros360
+  oferece os dois. E o mesmo endereço do push recebe as **notificações de
+  desregistro**, quando a pessoa desconecta pelo Garmin Connect.
+
+## Passo 4b — o mapa dos campos e o endpoint do push
+
+O corpo do push é `{ "<tipo de resumo>": [ { "userId": …, … } ] }`. Os nomes
+dos campos de cada resumo também são material do programa, então também não
+entram no repositório: vão num JSON na propriedade **`GARMIN_MAPA`**, e o
+código lê o mapa de lá. A forma é:
+
+```
+{ "<tipo>": { "data": "<campo da data>",
+              "campos": { "<nosso campo>": { "de": "<campo da Garmin>",
+                                             "dividirPor": 3600, "casas": 1 } } } }
+```
+
+Os três que o Meros360 usa são `hrv`, `dailies` e `sleeps` — VFC da noite, FC
+de repouso e duração do sono. `dividirPor` e `casas` são opcionais (o sono vem
+em segundos).
+
+**Endpoints:** configure em `https://apis.garmin.com/tools/endpoints`, entrando
+com o client ID e o client secret. Cada tipo de resumo tem a sua URL e as
+caixas *Enabled* e *On Hold*. Habilite **apenas** `dailies`, `sleeps` e `hrv`,
+todos apontando para a URL `/exec` do Web App. Pedir tipo que não se usa é
+receber dado de saúde sem necessidade.
+
+**Gatilho:** rode `conexoesInstalarGatilho()` uma vez no editor. Ele cria o
+`drenarFila` a cada 10 minutos (e remove o anterior, se houver).
+
+## Passo 4c — por que existe uma fila
+
+A seção 4 do Health API exige responder **200 antes de processar**, com
+timeout de trinta segundos. O Apps Script só responde quando a função
+retorna, então o `doPost` faz uma gravação só — o corpo cru, num documento
+`fila_<hora>_<aleatório>` — e sai. O `drenarFila` transforma em pacotes
+depois.
+
+A latência de alguns minutos não custa nada: o app lê os pacotes quando abre,
+não em tempo real.
+
+> ⚠️ **A mescla é por campo, não por pacote.** `hrv`, `dailies` e `sleeps`
+> chegam em notificações **separadas**, cada uma com um pedaço do mesmo dia.
+> Gravar o pacote inteiro a cada notificação apagaria o que a anterior
+> trouxe, e o dia terminaria com um dos três números em vez de três.
+
+A regra do Firestore para `fila_` entra na **próxima publicação** das regras,
+junto com a do botão do app: ela tira a fila do alcance de `ehOutro()`, para
+que nem o administrador leia corpo cru de push de outra pessoa.
 
 ---
 
