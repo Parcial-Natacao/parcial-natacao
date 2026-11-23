@@ -268,8 +268,15 @@ service cloud.firestore {
       // nem o administrador. A única função dela aqui é sair do alcance de
       // `ehOutro()`, que de outro modo entregaria os tokens ao administrador.
       function ehConexao()   { return chave.matches('conexao_.*'); }
+
+      // FILA — o corpo cru do push, antes de ser separado por pessoa. Pode
+      // trazer várias de uma vez, então não tem dono. Vive minutos: o
+      // gatilho processa e apaga. Mesmo tratamento da conexão — ninguém lê,
+      // nem o administrador; só a conta de serviço, que não passa por aqui.
+      function ehFila()      { return chave.matches('fila_.*'); }
       function ehOutro() { return !ehPro() && !ehTreinoPessoal() && !ehU() && !ehEq() && !ehTime()
-        && !ehDespedida() && !ehGarmin() && !ehPedido() && !ehVinculo() && !ehConexao(); }
+        && !ehDespedida() && !ehGarmin() && !ehPedido() && !ehVinculo() && !ehConexao()
+        && !ehFila(); }
       function ehCatalogo() { return chave == 'dev_equipes'; }
 
       // Documento da equipe em si (eq_<slug>, um único "_"). Precisa ser legível

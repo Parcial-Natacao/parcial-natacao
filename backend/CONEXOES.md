@@ -146,8 +146,51 @@ aceita `scope`; o escopo concedido vem na resposta do token.
   oferece os dois. E o mesmo endereço do push recebe as **notificações de
   desregistro**, quando a pessoa desconecta pelo Garmin Connect.
 
-Falta, do lado da Garmin, só a **seção 4.1 do Health API** (o formato do
-corpo do push) e a configuração do endpoint nas **API Tools**.
+## Passo 4b — o mapa dos campos e o endpoint do push
+
+O corpo do push é `{ "<tipo de resumo>": [ { "userId": …, … } ] }`. Os nomes
+dos campos de cada resumo também são material do programa, então também não
+entram no repositório: vão num JSON na propriedade **`GARMIN_MAPA`**, e o
+código lê o mapa de lá. A forma é:
+
+```
+{ "<tipo>": { "data": "<campo da data>",
+              "campos": { "<nosso campo>": { "de": "<campo da Garmin>",
+                                             "dividirPor": 3600, "casas": 1 } } } }
+```
+
+Os três que o Meros360 usa são `hrv`, `dailies` e `sleeps` — VFC da noite, FC
+de repouso e duração do sono. `dividirPor` e `casas` são opcionais (o sono vem
+em segundos).
+
+**Endpoints:** configure em `https://apis.garmin.com/tools/endpoints`, entrando
+com o client ID e o client secret. Cada tipo de resumo tem a sua URL e as
+caixas *Enabled* e *On Hold*. Habilite **apenas** `dailies`, `sleeps` e `hrv`,
+todos apontando para a URL `/exec` do Web App. Pedir tipo que não se usa é
+receber dado de saúde sem necessidade.
+
+**Gatilho:** rode `conexoesInstalarGatilho()` uma vez no editor. Ele cria o
+`drenarFila` a cada 10 minutos (e remove o anterior, se houver).
+
+## Passo 4c — por que existe uma fila
+
+A seção 4 do Health API exige responder **200 antes de processar**, com
+timeout de trinta segundos. O Apps Script só responde quando a função
+retorna, então o `doPost` faz uma gravação só — o corpo cru, num documento
+`fila_<hora>_<aleatório>` — e sai. O `drenarFila` transforma em pacotes
+depois.
+
+A latência de alguns minutos não custa nada: o app lê os pacotes quando abre,
+não em tempo real.
+
+> ⚠️ **A mescla é por campo, não por pacote.** `hrv`, `dailies` e `sleeps`
+> chegam em notificações **separadas**, cada uma com um pedaço do mesmo dia.
+> Gravar o pacote inteiro a cada notificação apagaria o que a anterior
+> trouxe, e o dia terminaria com um dos três números em vez de três.
+
+A regra do Firestore para `fila_` entra na **próxima publicação** das regras,
+junto com a do botão do app: ela tira a fila do alcance de `ehOutro()`, para
+que nem o administrador leia corpo cru de push de outra pessoa.
 
 ---
 

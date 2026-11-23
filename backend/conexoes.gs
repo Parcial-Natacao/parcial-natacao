@@ -292,7 +292,9 @@ function tokenValido_(conexao) {
 function escrever_(chave, dados, uid, categoria) {
   const corpo = { fields: {
     v: { stringValue: JSON.stringify(dados) },
-    dono: { stringValue: uid },
+    /* a fila não tem dono: ela guarda o corpo cru, que pode trazer várias
+       pessoas de uma vez. Quem ganha dono é o pacote, depois de separado. */
+    dono: uid ? { stringValue: uid } : { nullValue: null },
     categoria: { stringValue: categoria },
     equipe: { nullValue: null }, perfil: { nullValue: null },
     aprovado: { nullValue: null }, donoEmail: { nullValue: null }
@@ -388,34 +390,162 @@ function apagarPedido_(id) {
 
    ⚠️ A FORMA DO CORPO VEM DA DOCUMENTAÇÃO DO PORTAL. `traduzir_` abaixo é o
    único lugar que precisa saber dela. */
+/* ⚠️ RESPONDER PRIMEIRO, PROCESSAR DEPOIS — É EXIGÊNCIA, NÃO ESCOLHA.
+   A seção 4 do Health API: timeout de trinta segundos, e é "required to
+   respond to each notification with an HTTP status code of 200 (OK) BEFORE
+   performing" o processamento. O Apps Script não sabe responder antes de
+   terminar: a resposta sai quando a função retorna.
+
+   Então o `doPost` virou porteiro. Ele faz uma gravação só — o corpo cru,
+   intacto — e sai. Quem transforma em pacote é `drenarFila()`, num gatilho.
+
+   O preço é latência de alguns minutos, e ela não custa nada aqui: o app lê
+   os pacotes quando abre, não em tempo real. O ganho é que um dia torto, um
+   Firestore lento ou um lote grande nunca mais põem o timeout em risco. */
 function doPost(e) {
   try {
-    const corpo = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    const n = receberPush_(corpo);
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, gravados: n }))
+    const cru = (e && e.postData && e.postData.contents) || '';
+    if (cru) enfileirar_(cru);
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, enfileirado: !!cru }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    /* responder 200 mesmo em erro é deliberado: o fabricante reenvia em caso
-       de falha, e uma fila de reenvio por causa de um dado torto só piora.
-       O erro fica no log de execuções. */
+    /* 200 mesmo em erro é deliberado: o fabricante reenvia, e uma fila de
+       reenvio por causa de um dado torto só piora. O erro fica no log. */
     console.error('push: ' + (err && err.message || err));
     return ContentService.createTextOutput(JSON.stringify({ ok: false }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
-function receberPush_(corpo) {
-  /* ⚠️ O MESMO ENDEREÇO RECEBE COISAS DIFERENTES. Além dos dados de saúde,
-     chega aqui a notificação de DESREGISTRO: a pessoa desconectou o Meros360
-     pelo Garmin Connect. Tratar tudo como dado de saúde faria o desregistro
-     virar erro no log e a conexão morta continuar viva do nosso lado. */
-  if (corpo && corpo.deregistrations) return desregistrar_(corpo.deregistrations);
-  if (corpo && corpo.userPermissionsChange) {
+/* O nome começa com a hora para a fila poder sair na ordem em que entrou
+   (quem pede a ordem é o `orderBy` do `drenarFila`). O sufixo aleatório
+   evita colisão entre dois pushes no mesmo milissegundo. */
+function enfileirar_(cru) {
+  const chave = 'fila_' + String(Date.now()) + '_' + aleatorio_(6);
+  escrever_(chave, { em: Date.now(), cru: cru }, null, 'fila');
+}
+
+/* ── DRENAR ──────────────────────────────────────────────────
+   Roda no gatilho. Cada item é processado e apagado; um item torto não pode
+   derrubar os outros, por isso o try por item. O documento só sai da fila
+   quando foi processado — em caso de erro ele fica, e o log diz qual. */
+function drenarFila() {
+  const r = fs_(':runQuery', 'post', {
+    structuredQuery: {
+      from: [{ collectionId: 'kv' }],
+      where: { fieldFilter: { field: { fieldPath: 'categoria' },
+        op: 'EQUAL', value: { stringValue: 'fila' } } },
+      /* ⚠️ A ORDEM PRECISA SER PEDIDA. Consulta por campo volta em ordem
+         indefinida, e a chave começa com a hora justamente para a fila sair
+         como entrou. Sem este `orderBy`, dois pushes do mesmo dia poderiam
+         ser aplicados ao contrário e o valor antigo venceria o novo. */
+      orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+      limit: 100
+    }
+  }) || [];
+  let feitos = 0, erros = 0, pacotes = 0;
+  r.forEach(function (linha) {
+    const d = linha.document; if (!d || !d.name) return;
+    const chave = d.name.split('/').pop();
+    try {
+      const env = JSON.parse(d.fields.v.stringValue);
+      pacotes += processarCorpo_(JSON.parse(env.cru || '{}'));
+      apagarChave_(decodeURIComponent(chave));
+      feitos++;
+    } catch (e) {
+      erros++;
+      console.error('fila ' + chave + ': ' + (e && e.message || e));
+    }
+  });
+  const msg = 'Fila: ' + feitos + ' processado(s), ' + pacotes + ' pacote(s), '
+    + erros + ' com erro.';
+  Logger.log(msg); return msg;
+}
+
+/* ── O QUE VEIO ────────────────────────────────────────────
+   O corpo do push é `{ "<tipo>": [ {...}, {...} ] }`. O mesmo endereço
+   também recebe desregistro. Daqui para baixo nada conhece os nomes dos
+   campos da Garmin: eles vivem na propriedade `GARMIN_MAPA`. */
+function processarCorpo_(corpo) {
+  if (!corpo || typeof corpo !== 'object') return 0;
+  if (corpo.deregistrations) return desregistrar_(corpo.deregistrations);
+  if (corpo.userPermissionsChange) {
     console.log('mudança de permissão recebida; ainda sem tratamento');
     return 0;
   }
-  throw new Error('receberPush_ ainda não sabe a forma dos dados de saúde. '
-    + 'Falta a seção 4.1 do Health API (ver backend/CONEXOES.md).');
+  const mapa = mapaGarmin_();
+  /* junta tudo por (uid, dia) ANTES de gravar: um push pode trazer vários
+     resumos do mesmo dia, e gravar um por vez custaria uma leitura e uma
+     escrita a mais por campo */
+  const porDia = {};
+  Object.keys(corpo).forEach(function (tipo) {
+    const regra = mapa[tipo]; if (!regra || !Array.isArray(corpo[tipo])) return;
+    corpo[tipo].forEach(function (item) {
+      const idProv = item && (item.userId || item.user_id); if (!idProv) return;
+      const dia = item[regra.data]; if (!dia) return;
+      const uid = uidPeloIdDoProvedor_('garmin', idProv);
+      if (!uid) { console.warn('push de id sem vínculo'); return; }
+      const alvo = porDia[uid + '|' + dia] || (porDia[uid + '|' + dia] = { uid: uid, dia: dia, campos: {} });
+      Object.keys(regra.campos).forEach(function (nosso) {
+        const c = regra.campos[nosso];
+        let v = item[c.de]; if (v == null) return;
+        if (c.dividirPor) v = v / c.dividirPor;
+        if (c.casas != null) v = +Number(v).toFixed(c.casas);
+        alvo.campos[nosso] = v;
+      });
+    });
+  });
+  let n = 0;
+  Object.keys(porDia).forEach(function (k) {
+    const a = porDia[k];
+    if (Object.keys(a.campos).length && gravarPacote_(a.uid, a.dia, a.campos)) n++;
+  });
+  return n;
+}
+
+function mapaGarmin_() {
+  const txt = props_().getProperty('GARMIN_MAPA');
+  if (!txt) throw new Error('Falta a propriedade GARMIN_MAPA. Veja backend/CONEXOES.md.');
+  try { return JSON.parse(txt); }
+  catch (e) { throw new Error('GARMIN_MAPA não é JSON válido: ' + e.message); }
+}
+
+/* ⚠️ MESCLA, NÃO SOBRESCREVE. Os três resumos que interessam — hrv, dailies
+   e sleeps — chegam em notificações SEPARADAS, cada uma com um pedaço do
+   mesmo dia. Gravar o pacote inteiro a cada uma apagaria o que a anterior
+   trouxe, e o dia terminaria com só um dos três números. */
+function gravarPacote_(uid, dia, campos) {
+  const chave = 'garmin_' + uid + '_' + dia;
+  let reg = { data: dia };
+  const atual = fs_('/kv/' + encodeURIComponent(chave));
+  if (atual && atual.fields && atual.fields.v) {
+    try { reg = JSON.parse(atual.fields.v.stringValue) || reg; } catch (e) {}
+  }
+  let mudou = false;
+  Object.keys(campos).forEach(function (k) {
+    if (reg[k] !== campos[k]) { reg[k] = campos[k]; mudou = true; }
+  });
+  /* a procedência acompanha o número: a VFC da Garmin é sempre da noite, e o
+     app distingue isso da média semanal digitada à mão */
+  if (campos.hrv != null && reg.hrvF !== 'noite') { reg.hrvF = 'noite'; mudou = true; }
+  if (!mudou) return false;
+  reg.data = dia;
+  /* ⚠️ `gravarPacoteGarmin_` mora no `garmin.gs`, não aqui. Os dois arquivos
+     precisam estar no MESMO projeto do Apps Script — e precisam mesmo, porque
+     este também reusa `fs_`, `props_` e `tokenAcesso_` do `notificacoes.gs`.
+     Reescrever a gravação aqui criaria duas verdades sobre a forma do pacote. */
+  gravarPacoteGarmin_(uid, dia, reg);
+  return true;
+}
+
+/* gatilho da fila: separado do gatilho do coletor antigo, de propósito */
+function conexoesInstalarGatilho() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'drenarFila') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('drenarFila').timeBased().everyMinutes(10).create();
+  const msg = 'Gatilho instalado: drenarFila a cada 10 minutos.';
+  Logger.log(msg); return msg;
 }
 
 /* A notificação traz o id DO FABRICANTE, nunca o nosso uid — por isso o
@@ -452,13 +582,24 @@ function conexoesUrl() {
 }
 
 function conexoesConferir() {
-  const faltas = [];
+  const faltas = [], naoIniciados = [];
   Object.keys(PROVEDORES).forEach(function (k) {
     const p = PROVEDORES[k];
-    [p.propAutorizar, p.propToken, p.propUserId, p.propRegistro,
-     p.propId, p.propSegredo].forEach(function (nome) {
+    const nomes = [p.propAutorizar, p.propToken, p.propUserId, p.propRegistro,
+                   p.propId, p.propSegredo];
+    /* só cobra provedor que alguém começou a configurar. Listar as seis
+       pendências do Polar para sempre treinaria a gente a ignorar o
+       relatório — e o dia em que faltasse algo do Garmin passaria batido. */
+    if (!nomes.some(function (nome) { return !!props_().getProperty(nome); })) {
+      naoIniciados.push(k);
+      return;
+    }
+    nomes.forEach(function (nome) {
       if (!props_().getProperty(nome)) faltas.push(k + ': falta ' + nome);
     });
+    if (k === 'garmin' && !props_().getProperty('GARMIN_MAPA')) {
+      faltas.push('garmin: falta GARMIN_MAPA');
+    }
   });
   if (!props_().getProperty('URL_WEBAPP')) faltas.push('URL_WEBAPP (a URL /exec da implantação)');
   let fire = 'Firestore: ';
@@ -467,7 +608,9 @@ function conexoesConferir() {
 
   const msg = [conexoesUrl(), '', fire, '',
     faltas.length ? 'Pendências:\n- ' + faltas.join('\n- ')
-                  : 'Nenhuma pendência: todos os provedores estão preenchidos.'].join('\n');
+                  : 'Nenhuma pendência nos provedores configurados.',
+    naoIniciados.length ? '\nAinda não configurados (esperado): ' + naoIniciados.join(', ') : ''
+  ].join('\n');
   Logger.log(msg); return msg;
 }
 
