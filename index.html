@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.6"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.6"></script>
+<script src="./persistencia-segura.js?v=v2.19.7"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.7"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.6';
+const VER='v2.19.7';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7383,8 +7383,30 @@ teste('pacotes','a faixa de conectado só aparece quando há pacote no banco',a=
   S.garminAuto={n:3,ate:hoje()};
   const h=faixaGarminConectado();
   a.ok(/Garmin conectado/.test(h),'anuncia a conexão');
-  a.ok(h.indexOf(brData(hoje()))>=0,'diz até que dia recebeu');
+  /* ⚠️ A FAIXA É UMA LINHA, E O DADO NÃO PODE SUMIR COM O TEXTO. O último dia
+     recebido e a explicação saíram da faixa para o “i” na v2.19.7. Este teste
+     exige as duas metades: fora da faixa E dentro do “i”. Só a primeira
+     passaria também se alguém simplesmente apagasse a informação. */
+  a.eq(h.indexOf(brData(hoje())),-1,'a faixa não carrega mais a data');
+  const txt=(_INFO[slug('O que a conexão faz')]||{}).texto||'';
+  a.ok(txt.indexOf(brData(hoje()))>=0,'o “i” diz até que dia recebeu');
+  a.ok(/VFC da noite/.test(txt),'e é lá que mora a explicação');
   S.garminAuto=antes;
+});
+teste('pacotes','desconectar fica no fim da página, nos dois estados da faixa',a=>{
+  const antes=S.vinculos, bk=S.garminAuto;
+  S.vinculos=null;  a.eq(rodapeDesconectarRelogio(),'','sem relógio conectado, sem botão');
+  S.vinculos=[{provedor:'Garmin'}];
+  const r=rodapeDesconectarRelogio();
+  a.ok(/Desconectar Garmin/.test(r),'com relógio, o botão existe');
+  a.ok(/desconectarRelogio\('Garmin'\)/.test(r),'e chama o provedor certo');
+  /* ⚠️ O MOTIVO DE ELE TER SAÍDO DA FAIXA. Dentro dela só havia botão no ramo
+     “em dia”: quando a entrega parava, a faixa virava aviso e o botão sumia —
+     exatamente a hora em que alguem quer desconectar e reconectar. */
+  S.garminAuto={n:3,ate:'2020-01-01'};
+  a.ok(/parou de mandar/.test(faixaGarminConectado()),'faixa atrasada é aviso, não “conectado”');
+  a.ok(/Desconectar Garmin/.test(rodapeDesconectarRelogio()),'e o botão continua lá');
+  S.garminAuto=bk; S.vinculos=antes;
 });
 teste('pacotes','o pacote do relógio sobrescreve a VFC digitada, com a procedência',a=>{
   /* o caso real: 19/11/2026, média semanal 42 digitada à mão, noite de 32 no relógio */
@@ -11865,6 +11887,7 @@ function telaGarmin(){
   ${acc('sa_imp','Importar / lançar à mão',(S.garminAuto&&S.garminAuto.n)?'só para corrigir ou completar o passado':'do Garmin ou manual',cImportar)}
   ${acc('sa_ex','Exames laboratoriais',nEx?`${nEx} exame(s)`:'nenhum ainda',cExames)}
   ${acc('sa_bio','Bioimpedância',nBio?`${nBio} medição(ões)`:'nenhuma ainda',cBio)}
+  ${rodapeDesconectarRelogio()}
   <div style="height:20px"></div>`;
 }
 /* ── “O SEU GARMIN ESTÁ CONECTADO” ─────────────────────────────
@@ -11982,18 +12005,40 @@ function faixaGarminConectado(){
     +`<br><br>Outra causa possível: a autorização foi <b>revogada</b> — por você, nas permissões da sua conta Garmin, ou por ficar três meses sem uso. Nesse caso basta <b>conectar de novo</b>: o cartão de conectar volta a aparecer sozinho.`
     +`<br><br>Nada se perdeu em nenhum dos casos. O que já entrou na sua série fica, e o que a Garmin ainda não entregou ela entrega quando puder.`)}
   </div></div>`;
+  /* ⚠️ A FAIXA DIZ UMA COISA SÓ: QUE ESTÁ CONECTADO. O resto — o que chega, o
+     que não chega e qual foi o último dia recebido — mora no “i”. Era um
+     parágrafo fixo em cima justamente do que a pessoa abre a tela para ver, e
+     ela lê o mesmo texto todo dia. Explicação que nunca muda não precisa estar
+     sempre visível; o estado de FALHA acima continua escrito na tela, porque
+     ali o texto é a notícia, não a explicação. */
   return`<div class="note ok" style="margin:0 0 10px"><div class="xs">
-    <b>✓ Garmin conectado.</b> O app recebe <b>VFC da noite, FC de repouso e sono</b>
-    sozinho — você não precisa importar nada ${info('O que a conexão faz',
-    `Quem avisa é a Garmin: assim que o seu relógio sincroniza e ela fecha o resumo do dia, ela <b>envia</b> os números para o Meros360. Não há nada a pedir nem hora marcada.`
+    <b>✓ Garmin conectado.</b> ${info('O que a conexão faz',
+    `O app recebe <b>VFC da noite, FC de repouso e sono</b> sozinho — você não precisa importar nada.`
+    +(a.ate?`<br><br><b>Último dia recebido:</b> ${brData(a.ate)}.`:'')
+    +`<br><br>Quem avisa é a Garmin: assim que o seu relógio sincroniza e ela fecha o resumo do dia, ela <b>envia</b> os números para o Meros360. Não há nada a pedir nem hora marcada.`
     +`<br><br>Eles ficam guardados e entram na sua série na próxima vez que você abrir o app — costuma levar alguns minutos depois da sincronização do relógio, e muitas vezes chega de madrugada, antes de você acordar.`
     +`<br><br><b>O que ele traz:</b> VFC da noite, FC de repouso e horas de sono.`
     +`<br><br><b>O que ele não traz, e por isso o check-in continua:</b> dor, humor, estresse, energia e como VOCÊ sentiu a noite. Relógio nenhum mede isso.`
-    +`<br><br>Nada é apagado: o número do relógio ocupa só o campo do relógio. O que você digitou fica.`)}
-    ${a.ate?`<div class="muted" style="margin-top:3px">Último dia recebido: <b>${brData(a.ate)}</b>.</div>`:''}
-    ${(S.vinculos||[]).filter(v=>v&&v.provedor).map(v=>`<div class="row noprint" style="margin-top:8px">
-      <div class="grow"></div><button class="sm ghost" onclick="desconectarRelogio('${esc(v.provedor)}')">Desconectar ${esc(v.provedor)}</button></div>`).join('')}
+    +`<br><br>Nada é apagado: o número do relógio ocupa só o campo do relógio. O que você digitou fica.`
+    +`<br><br>Para desconectar, o botão está no fim desta página.`)}
   </div></div>`;
+}
+/* O botão de desconectar sai da faixa e vai para o fim da página. É ação rara
+   e difícil de desfazer (a reconexão passa pelo consentimento da Garmin de
+   novo), e estava a um toque de distância de quem só queria ver a VFC do dia.
+   No fim da página continua achável por quem o procura e para de ser oferecido
+   a quem não procura — e o “i” da faixa diz onde ele está.
+
+   ⚠️ FORA DA FAIXA, ELE PASSA A VALER NOS DOIS ESTADOS. Dentro dela só
+   aparecia no ramo “em dia”: quando a entrega parava, a faixa virava aviso e
+   o botão desaparecia — exatamente a hora em que alguém quer desconectar e
+   reconectar. */
+function rodapeDesconectarRelogio(){
+  const v=(S.vinculos||[]).filter(x=>x&&x.provedor);
+  if(!v.length)return '';
+  return`<div class="sep" style="margin-top:18px"></div>
+  <div class="noprint">${v.map(x=>`<button class="sm ghost full" style="margin-bottom:6px"
+    onclick="desconectarRelogio('${esc(x.provedor)}')">Desconectar ${esc(x.provedor)}</button>`).join('')}</div>`;
 }
 function prontidao(){
   const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
