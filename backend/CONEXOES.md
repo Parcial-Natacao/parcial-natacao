@@ -163,11 +163,45 @@ Os três que o Meros360 usa são `hrv`, `dailies` e `sleeps` — VFC da noite, F
 de repouso e duração do sono. `dividirPor` e `casas` são opcionais (o sono vem
 em segundos).
 
+### Atividade é outra forma de regra
+
+Resumo diário e atividade não têm a mesma natureza, e a regra reflete isso.
+
+```
+{ "<tipo>": { "dataEpoca": { "de": "<campo>", "desloc": "<campo>" },
+              "atividade": { "chave": "<campo>", "tipo": "<campo>",
+                             "dist": "<campo>",
+                             "min": { "de": "<campo>", "dividirPor": 60, "casas": 1 },
+                             "fc": "<campo>" } } }
+```
+
+Três cuidados, cada um por um motivo concreto:
+
+- **A data vem em segundos de época, não pronta.** `dataEpoca` soma o
+  deslocamento do fuso de quem nadou antes de formatar. Sem o deslocamento, o
+  treino das 5h40 cairia na véspera — e a série inteira andaria um dia.
+- **A chave é o que impede o dobro.** A mesma atividade é reenviada quando a
+  pessoa a edita no aplicativo do fabricante; sem `chave`, cada reenvio somaria
+  de novo. As atividades se unem pela chave dentro do pacote do dia, e um dia
+  com dois nados recebe os dois, mesmo chegando em pushes separados.
+- **O total NÃO é calculado no Apps Script.** Quem deriva metragem, duração e
+  FC média do dia é o app, em `derivarTotaisDoDia` — que é também quem decide
+  o que conta como nado. É o mesmo caminho da importação do ZIP, e por isso
+  nado do relógio e nado do export nunca podem divergir. Duas contas da mesma
+  coisa em dois lugares divergem: foi assim que a coluna Nado chegou a mostrar
+  zero num dia de 4,5 km.
+
 **Endpoints:** configure em `https://apis.garmin.com/tools/endpoints`, entrando
 com o client ID e o client secret. Cada tipo de resumo tem a sua URL e as
-caixas *Enabled* e *On Hold*. Habilite **apenas** `dailies`, `sleeps` e `hrv`,
-todos apontando para a URL `/exec` do Web App. Pedir tipo que não se usa é
-receber dado de saúde sem necessidade.
+caixas *Enabled* e *On Hold*. Habilite **apenas** o que o app usa, todos
+apontando para a URL `/exec` do Web App: os três resumos diários e, para o nado
+entrar sozinho, o resumo de **atividade** (o de resumo, não o detalhado — o
+detalhado traz série ponto a ponto, que o app não usa). Pedir tipo que não se
+usa é receber dado de saúde sem necessidade.
+
+⚠️ Habilitar o tipo no portal **e** acrescentar a regra no `GARMIN_MAPA` são
+dois passos, e falta um deles não dá erro nenhum: o push chega, o
+`processarCorpo_` não acha regra para o tipo e devolve zero, em silêncio.
 
 **Gatilho:** rode `conexoesInstalarGatilho()` uma vez no editor. Ele cria o
 `drenarFila` a cada 10 minutos (e remove o anterior, se houver).
