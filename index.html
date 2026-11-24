@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.8"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.8"></script>
+<script src="./persistencia-segura.js?v=v2.19.9"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.9"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.8';
+const VER='v2.19.9';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3746,7 +3746,12 @@ function linhaParaItem(l,tit){
   if(mr){ rodadas=Math.min(rodadas*(+mr[1]||1),12); obs=''; }
   return{id:uid(),rodadas,reps,dist,estilo,tags,intervalo,pausa:parsePausa(l),parcial,forte,obs,texto:l,vol:rodadas*reps*dist};
 }
-const volTreino=t=>(t.blocos||[]).reduce((a,b)=>a+b.itens.reduce((x,i)=>x+i.vol,0),0);
+/* ⚠️ `b.itens` SEM GUARDA DERRUBAVA O TREINO INTEIRO. Isto roda dentro do
+   try/catch da consolidação: um bloco gravado sem `itens` — por versão antiga,
+   por importação malformada — lançava, o catch anotava o id em `falhas` e o
+   treino sumia do relatório sem que ninguém visse. Um bloco vazio vale zero;
+   não vale perder o treino. */
+const volTreino=t=>((t&&t.blocos)||[]).reduce((a,b)=>a+((b&&b.itens)||[]).reduce((x,i)=>x+((i&&i.vol)||0),0),0);
 const piscinaLabel=p=>p==='AA'?'águas abertas':p==='LC50'?'piscina 50m':'piscina 25m';
 /* aplica as regras de parcial de 25m conforme o tipo de treino:
    - águas abertas: sem parcial (usa ritmo /100m);
@@ -7324,6 +7329,50 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
      existe mais. É o mesmo motivo por que `hrvF` está na lista. */
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
+});
+teste('carga','bloco sem itens não derruba o treino inteiro',a=>{
+  /* ⚠️ ISTO RODA DENTRO DO try/catch DA CONSOLIDAÇÃO. Antes da guarda, um
+     bloco gravado sem `itens` lançava, o catch anotava o id em `falhas` e o
+     treino inteiro — tiros, carga, metragem — sumia do relatório em silêncio. */
+  a.eq(volTreino({blocos:[{titulo:'A'},{titulo:'B',itens:[{vol:400}]}]}),400,
+    'o bloco vazio vale zero e o outro continua contando');
+  a.eq(volTreino({blocos:[{titulo:'A',itens:[{},{vol:200}]}]}),200,'item sem vol também não explode');
+  a.eq(volTreino(null),0,'e nem a ausência do treino');
+});
+teste('carga','o app diz ONDE a carga parou, em vez de culpar o RPE',a=>{
+  const bkD=ESF_DIAG, bkP=S.pro, bkS=SESSOES;
+  try{
+    ESF_DIAG=null;
+    a.eq(diagnosticoCarga(),null,'sem consolidação não há diagnóstico');
+    _atleta(); SESSOES=[];
+    /* ⚠️ O CASO QUE ORIGINOU ISTO: tudo preenchido, carga vazia. O cartão
+       dizia “preencha RPE e duração” a quem tinha preenchido os dois — a
+       consolidação havia descartado os treinos antes, por não estarem
+       marcados como feitos. */
+    ESF_DIAG={janela:120,noIndice:40,semData:0,naoFeitos:40,feitos:0,comSessao:0,
+      semSessao:0,tiros:0,naoLidos:0};
+    let d=diagnosticoCarga();
+    a.eq(d.causa.q,'feito','a causa é o treino não marcado como feito');
+    a.ok(!/Preencha RPE/.test(d.causa.t),'e o app NÃO acusa o RPE que estava lá');
+    ESF_DIAG={janela:120,noIndice:0,semData:0,naoFeitos:0,feitos:0,comSessao:0,
+      semSessao:0,tiros:0,naoLidos:0};
+    a.eq(diagnosticoCarga().causa.q,'índice','sem treino no índice, a causa é anterior a tudo');
+    ESF_DIAG={janela:120,noIndice:12,semData:0,naoFeitos:0,feitos:0,comSessao:0,
+      semSessao:0,tiros:0,naoLidos:12};
+    a.eq(diagnosticoCarga().causa.q,'leitura','nenhum documento lido é problema de leitura');
+    ESF_DIAG={janela:120,noIndice:12,semData:0,naoFeitos:0,feitos:12,comSessao:0,
+      semSessao:12,tiros:30,naoLidos:0};
+    a.eq(diagnosticoCarga().causa.q,'sessao','aí sim: feitos, mas sem RPE e duração');
+    /* com sessões contadas mas pouca história, a razão se recusa a existir —
+       e agora ela diz quantos dias faltam, não “preencha RPE” */
+    ESF_DIAG={janela:120,noIndice:12,semData:0,naoFeitos:0,feitos:12,comSessao:12,
+      semSessao:0,tiros:30,naoLidos:0};
+    SESSOES=[{data:hoje(),tipo:'natação',load:400}];
+    d=diagnosticoCarga();
+    a.eq(d.causa.q,'base','falta histórico nas semanas anteriores');
+    a.eq(d.diasBase,0,'zero dias com carga entre 7 e 28 dias atrás');
+    a.eq(d.baseMin,ACWR_DIAS_BASE_MIN,'e o mínimo exibido é o que o código usa');
+  } finally { ESF_DIAG=bkD; S.pro=bkP; SESSOES=bkS; }
 });
 teste('conexão','o app diz o que a data já tem antes de pedir de novo',a=>{
   a.eq(resumoDiaRelogio(null),'','data vazia não anuncia nada');
@@ -13637,8 +13686,17 @@ async function abrirPendencias(){
 /* =====================================================================
    PRO — RELATÓRIO DE PERFORMANCE
    ===================================================================== */
+/* ⚠️ O QUE A CONSOLIDAÇÃO DESCARTA PRECISA SER CONTÁVEL. Ela pula treino em
+   quatro pontos — fora do índice, documento que não veio, não marcado como
+   feito, sem RPE e duração — e até aqui pulava calada. O resultado na tela era
+   “Ainda sem carga habitual suficiente para comparar. Preencha RPE e duração”
+   dito a quem preencheu RPE e duração em todos os treinos: o app culpava o
+   usuário por um dado que ele mesmo tinha jogado fora em outro ponto.
+   `ESF_DIAG` guarda onde cada treino parou. Não muda nenhuma conta. */
 async function coletarEsforcos(opts){
   const out=[]; const ses=[]; const vol={};
+  const diag={janela:(opts&&opts.dias)||null,noIndice:0,semData:0,naoFeitos:0,
+    feitos:0,comSessao:0,semSessao:0,tiros:0,naoLidos:0,quandoM:0};
   /* janela TEMPORAL opcional: coletarEsforcos({dias:56}). Sem argumento mantém o
      comportamento antigo (os 25 treinos mais recentes) por compatibilidade. */
   const dias=opts&&opts.dias, h0=new Date(hoje()+'T00:00:00');
@@ -13646,6 +13704,7 @@ async function coletarEsforcos(opts){
   const alvo=_alvoId();
   const metas=S.tridx.filter(t=>(t.para||[]).includes(alvo)&&noPrazo(t.data));
   const lista=dias?metas:metas.slice(0,25);
+  diag.noIndice=lista.length;
   const falhas=[];
   for(const meta of lista){
     /* Um treino problemático não pode zerar a consolidação dos outros 60. A
@@ -13661,9 +13720,10 @@ async function coletarEsforcos(opts){
     catch(e){ falhas.push(meta.id); continue; }
     if(!t)continue;
     if(!t.data&&meta.data)t.data=meta.data;      /* sem data o esforço quebra a ordenação */
-    if(!t.data)continue;
+    if(!t.data){ diag.semData++; continue; }
     try{
-    if(!treinoFeito(t,alvo))continue;   /* só consolida treino marcado como feito */
+    if(!treinoFeito(t,alvo)){ diag.naoFeitos++; continue; }   /* só consolida treino marcado como feito */
+    diag.feitos++;
     /* ⚠️ METRAGEM DO QUE FOI FEITO, não do que foi prescrito. O `continue`
        acima é quem garante isso: treino não marcado como feito não chega aqui,
        e sem essa linha a coluna Nado mostraria volume em dia de treino
@@ -13671,8 +13731,9 @@ async function coletarEsforcos(opts){
        mesma fonte; o que nunca se soma é fonte com fonte. */
     if(t.data){ const vt=volTreino(t); if(vt>0)vol[t.data]=(vol[t.data]||0)+vt; }
     const sj=t.sessao&&t.sessao[alvo];
-    if(sj&&sj.rpe!=null&&sj.dur)ses.push({data:t.data||meta.data,tipo:'natação',load:sj.rpe*sj.dur});
-    for(const b of t.blocos||[])for(const i of b.itens){
+    if(sj&&sj.rpe!=null&&sj.dur){ diag.comSessao++; ses.push({data:t.data||meta.data,tipo:'natação',load:sj.rpe*sj.dur}); }
+    else diag.semSessao++;
+    for(const b of t.blocos||[])for(const i of ((b&&b.itens)||[])){
       const r=t.registros?.[alvo]?.[i.id]; if(!r)continue;
       const series=r.rd?r.rd:[r];   /* achata rodadas (do interpretador OU manuais) */
       /* BROKEN: os tempos são TRECHOS, não repetições. Entra UM esforço, a soma,
@@ -13702,11 +13763,12 @@ async function coletarEsforcos(opts){
     }catch(e){ falhas.push(meta.id); try{console.warn('[consolidação] treino',meta.id,e)}catch(_){} }
   }
   SESSOES=ses; VOLDIA=vol;
+  diag.naoLidos=falhas.length; diag.tiros=out.length; ESF_DIAG=diag;
   if(falhas.length)try{console.warn('[consolidação]',falhas.length,'treino(s) ignorado(s):',falhas)}catch(_){}
   ESF_FALHAS=falhas;
   return out.sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
 }
-let ESF_FALHAS=[];
+let ESF_FALHAS=[], ESF_DIAG=null;
 let ESF=null, ESF_ERRO=null, SESSOES=[];
 /* Carga total (session-RPE = duração × RPE) por modalidade, últimos N dias */
 function cargaTotal(dias,ate){
@@ -13863,6 +13925,57 @@ function acwrComBase(dia,aguda,cron){
   const base=diasComCargaEntre(dia,7,28);
   return {acwr:(cron>0&&base>=ACWR_DIAS_BASE_MIN)?aguda/cron:null, baseDias:base};
 }
+/* ⚠️ O VEREDITO VEM DOS NÚMEROS, NÃO DE UMA FRASE FIXA. O cartão dizia sempre
+   a mesma coisa — “preencha RPE e duração” — para quatro causas diferentes, e
+   três delas não têm nada a ver com RPE. Esta função olha onde a consolidação
+   parou e devolve a causa de verdade, na ordem em que ela bloqueia. */
+function diagnosticoCarga(){
+  const d=ESF_DIAG; if(!d)return null;
+  const dia=loadDiario(42);
+  const r={...d,diasSemana:diasComCargaEntre(dia,0,7),
+    diasBase:diasComCargaEntre(dia,7,28),baseMin:ACWR_DIAS_BASE_MIN,
+    nSeco:(((S.pro&&S.pro.seco)||[]).filter(x=>x&&x.rpe!=null&&x.dur)).length};
+  if(!d.noIndice)r.causa={q:'índice',t:`Nenhum treino seu aparece no índice dos últimos ${d.janela||120} dias.`,
+    f:'É anterior a qualquer conta de carga: o relatório nem chegou a ler treino nenhum. Se você tem treinos nesse período, eles não estão chegando ao índice — vale conferir se estão listados em Treinos.'};
+  else if(d.naoLidos>=d.noIndice)r.causa={q:'leitura',t:`Nenhum dos ${d.noIndice} treinos pôde ser lido.`,
+    f:'Os documentos estão no índice mas não abriram. Costuma ser sincronia incompleta ou permissão — abrir um treino na aba Treinos e voltar aqui normalmente resolve.'};
+  else if(!d.feitos&&d.naoFeitos)r.causa={q:'feito',t:`${d.naoFeitos} treino(s) lidos, nenhum marcado como feito.`,
+    f:'A consolidação só conta treino FEITO — marcado no botão, ou com algum tempo lançado. RPE e duração sozinhos não marcam. É por isso que a carga sai vazia mesmo com tudo preenchido.'};
+  else if(d.feitos&&!d.comSessao)r.causa={q:'sessao',t:`${d.feitos} treino(s) feitos, nenhum com RPE E duração.`,
+    f:'Carga de sessão é duração × RPE. Falta um dos dois e a sessão não entra — nem com o outro preenchido.'};
+  else if(r.diasBase<r.baseMin)r.causa={q:'base',t:`${r.diasBase} dia(s) com carga entre 7 e 28 dias atrás — a razão precisa de ${r.baseMin}.`,
+    f:'A razão compara a semana atual com as 4 anteriores. Sem histórico nas semanas anteriores ela compararia a semana consigo mesma, e o primeiro treino da vida viraria alarme de excesso. Por isso ela se recusa a existir, em vez de inventar um número.'};
+  else r.causa={q:'ok',t:'A carga tem base suficiente.',f:'Se ainda assim o cartão aparece vazio, me mostre estes números.'};
+  return r;
+}
+async function abrirDiagnosticoCarga(){
+  const desenha=()=>{
+    const d=diagnosticoCarga();
+    if(!d)return sheet('<h2>De onde vem a carga</h2><div class="small muted">Consolidando os treinos…</div>');
+    const l=(rot,v,obs)=>`<div class="row xs" style="padding:4px 0;border-top:1px solid var(--line)">`
+      +`<span class="grow">${rot}</span><b>${v}</b>${obs?`<span class="muted" style="margin-left:8px">${obs}</span>`:''}</div>`;
+    sheet(`<h2>De onde vem a carga</h2>
+      <div class="note ${d.causa.q==='ok'?'ok':'warn'}" style="margin:8px 0 12px">
+        <b>${d.causa.t}</b><div class="xs" style="margin-top:4px">${d.causa.f}</div></div>
+      <div class="eyebrow">o que a consolidação achou · últimos ${d.janela||120} dias</div>
+      ${l('treinos seus no índice',d.noIndice)}
+      ${l('não púde ler',d.naoLidos,d.naoLidos?'conferir sincronia':'')}
+      ${l('sem data',d.semData)}
+      ${l('não marcados como feito',d.naoFeitos,d.naoFeitos?'não entram':'')}
+      ${l('marcados como feito',d.feitos)}
+      ${l('└ com RPE e duração',d.comSessao,'entram na carga')}
+      ${l('└ sem RPE ou duração',d.semSessao,d.semSessao?'só estimativa':'')}
+      ${l('tiros com tempo registrado',d.tiros)}
+      ${l('sessões fora d\'água com RPE e duração',d.nSeco)}
+      <div class="eyebrow" style="margin-top:14px">dias com carga</div>
+      ${l('últimos 7 dias',d.diasSemana)}
+      ${l('de 7 a 28 dias atrás',d.diasBase,`mínimo ${d.baseMin}`)}
+      <div class="xs muted" style="margin-top:12px">Estes números são da última consolidação. Nenhuma conta do relatório usa este painel — ele só mostra onde cada treino parou.</div>
+      <button class="ghost full" style="margin-top:14px" onclick="fecharSheet()">Fechar</button>`);
+  };
+  desenha();
+  if(!ESF_DIAG){ ESF=await coletarEsforcos({dias:120}); desenha(); }
+}
 /* fadiga: carga aguda (7d) / carga habitual (28d/sem), em UA de duração × RPE. NAO e a mesma conta de cargaACWR(), que usa METROS NADADOS. monotonia = média/desvio (7d) */
 function fadigaCarga(){
   const dia=loadDiario(42), soma=(a,b)=>{let t=0;for(let i=a;i<b;i++)t+=dia[i]||0;return t;};
@@ -13883,7 +13996,14 @@ function fadigaCarga(){
 function cardFadiga(){
   const f=fadigaCarga(); if(!f)return'';
   const a=f.acwr; let nivel,cor,txt;
-  if(a==null){nivel='dados iniciais';cor='var(--ink-2)';txt='Ainda sem carga habitual suficiente para comparar. Preencha RPE e duração nos treinos.';}
+  /* ⚠️ NÃO ACUSAR O USUÁRIO DE NÃO TER PREENCHIDO O QUE ELE PREENCHEU. A frase
+     fixa culpava o RPE em quatro situações diferentes, e em três delas o RPE
+     estava lá. Agora quem diz a causa é `diagnosticoCarga`, que olhou onde a
+     consolidação parou — e o botão abre a conta inteira. */
+  if(a==null){nivel='dados iniciais';cor='var(--ink-2)';
+    const dg=diagnosticoCarga();
+    txt=(dg&&dg.causa&&dg.causa.q!=='ok'?dg.causa.t:'Ainda sem carga habitual suficiente para comparar.')
+      +' <button class="sm ghost" style="margin-top:6px" onclick="abrirDiagnosticoCarga()">Ver onde a carga parou</button>';}
   else if(a>1.5||f.monotonia>2.2){nivel='carga recente elevada';cor='var(--clock)';txt='Carga dos últimos 7 dias acima da sua referência das 4 semanas anteriores'+(f.monotonia>2.2?', com baixa variação entre os dias':'')+'. É uma leitura de carga, não um diagnóstico: razão alta isolada não caracteriza overtraining. <i>Interpretar junto com prontidão e sintomas — decisão do técnico.</i>';}
   else if(a>=0.8){nivel='carga sustentável';cor='var(--ok)';txt='Carga em faixa saudável, compatível com manter ou progredir.';}
   else {nivel='carga baixa';cor='';txt='Carga abaixo da habitual — há margem em relação ao que o seu corpo já tolerou.';}
