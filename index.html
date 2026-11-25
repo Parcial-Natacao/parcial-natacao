@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.9"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.9"></script>
+<script src="./persistencia-segura.js?v=v2.19.10"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.10"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.9';
+const VER='v2.19.10';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2893,12 +2893,22 @@ function temDadoGarmin(pro){
   if(p.garminFonte)return true;
   return (p.garmin||[]).some(d=>d&&(d.ativs||[]).some(a=>a&&a.origem==='garmin'));
 }
+/* ⚠️ UMA VEZ POR TELA, E NO FIM DELA. Isto é obrigação do contrato de
+   desenvolvedor da Garmin: a atribuição tem de estar ONDE o dado do relógio
+   aparece. Por isso ela não pode ir para dentro de um “i” — atrás do ícone ela
+   não está sendo exibida junto com o dado.
+
+   O que dá para consertar é o excesso: na tela de Saúde ela saía DUAS vezes,
+   uma dentro do medidor e outra depois da tabela, e a de cima ficava logo
+   abaixo do aviso de corpo × percepção — no meio do caminho de quem foi ler o
+   número do dia. Agora sai uma vez, no fim do bloco, como nota de rodapé:
+   filete em cima, sem negrito, opacidade baixa. Visível, e fora do caminho. */
 function creditoGarmin(pro){
   if(!temDadoGarmin(pro))return '';
-  return `<div class="xs muted" style="margin-top:10px;line-height:1.45">
-    VFC, FC de repouso e sono medidos pelo relógio vêm do <b>Garmin Connect</b>™.
-    <span style="opacity:.8">Garmin® e Garmin Connect™ são marcas comerciais da Garmin Ltd.
-    ou de suas subsidiárias, registradas nos EUA e em outros países.</span></div>`;
+  return `<div class="xs muted" style="margin-top:14px;padding-top:7px;border-top:1px solid var(--line);opacity:.62;line-height:1.35">
+    VFC, FC de repouso e sono do relógio vêm do Garmin Connect™. Garmin® e Garmin Connect™
+    são marcas comerciais da Garmin Ltd. ou de suas subsidiárias, registradas nos EUA
+    e em outros países.</div>`;
 }
 /* ── O QUE ESTÁ CONECTADO ───────────────────────
    `vinculo_<uid>_<provedor>` é escrito pelo Apps Script quando a autorização
@@ -7329,6 +7339,47 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
      existe mais. É o mesmo motivo por que `hrvF` está na lista. */
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
+});
+teste('garmin','o crédito da Garmin sai UMA vez por tela, e continua na tela',a=>{
+  /* ⚠️ ESTE TESTE GUARDA UMA OBRIGAÇÃO DE CONTRATO, NÃO UM GOSTO. O contrato de
+     desenvolvedor da Garmin exige a atribuição ONDE o dado do relógio aparece.
+     Mover o texto para dentro de um “i”, ou apagar o rodapé numa limpeza futura,
+     quebra isso — e é o tipo de limpeza que parece inofensiva. */
+  const bk=[S.pro,S.acc,ESF,S.garminAuto,VOLDIA];
+  try{
+    _atleta({garminFonte:true,garmin:[{data:hoje(),hrv:41,hrvF:'noite',fc:52,sono:7}]});
+    ESF=[]; VOLDIA={}; S.acc={sa_pr:true}; S.garminAuto={n:5,ate:hoje()};
+    const h=telaGarmin();
+    a.eq((h.match(/marcas comerciais da Garmin/g)||[]).length,1,
+      'uma vez na tela de Saúde — saíam duas, medidor e tabela');
+    /* fora do medidor porque o medidor também é desenhado no Relatório: dentro
+       dele, a Saúde duplicava; o Relatório agora tem o seu próprio, no fim */
+    a.ok(!/marcas comerciais da Garmin/.test(prontidao()),'e não de dentro do medidor');
+    const c=creditoGarmin(S.pro);
+    a.ok(/Garmin Connect/.test(c)&&/marcas comerciais/.test(c),'o texto exigido continua inteiro');
+    a.ok(!/<b>Garmin Connect<\/b>/.test(c),'sem negrito: é rodapé, não chamada');
+    /* com o push vivo o crédito aparece mesmo sem série — o dado vem chegando.
+       Só sem push E sem atividade do relógio é que não há o que atribuir. */
+    S.garminAuto=null;
+    a.eq(creditoGarmin({garmin:[]}),'','sem push e sem dado, não há o que atribuir');
+  } finally { S.pro=bk[0];S.acc=bk[1];ESF=bk[2];S.garminAuto=bk[3];VOLDIA=bk[4]; }
+});
+teste('relatório','glossário da assinatura vai para o “i”; a procedência fica',a=>{
+  const m={fingerprint:[
+    {eixo:'Velocidade',score:91,txt:'91% do PB (melhores 20% das provas-alvo)'},
+    {eixo:'Manutenção',score:79,txt:'variação 1.7% (ótima)'},
+    {eixo:'Recuperação',score:53,txt:'prontidão 53'},
+    {eixo:'Especificidade',score:92,txt:'3 tiro(s) de 50m + 4 de distância vizinha'},
+    {eixo:'Tendência',score:90,txt:'capacidade ↑ (+2.0% em prova)'}]};
+  const h=cardFingerprint(m);
+  a.ok(!/=%PB dos melhores|direção da capacidade/.test(h),'as definições saem da tela');
+  /* ⚠️ O QUE MUDA COM O DADO NÃO PODE IR JUNTO. A linha de cada eixo é a
+     procedência do escore, não explicação: sem ela, 92 vira número sem lastro. */
+  a.ok(/3 tiro\(s\) de 50m/.test(h),'a procedência de cada eixo fica');
+  a.ok(/variação 1.7%/.test(h),'toda ela');
+  const txt=(_INFO[slug('Assinatura de sprint')]||{}).texto||'';
+  a.ok(/%PB dos melhores 20%/.test(txt),'e o glossário está no “i”');
+  a.ok(/sai<\/b> do gráfico/.test(txt),'inteiro, até a regra do eixo sem dado');
 });
 teste('carga','bloco sem itens não derruba o treino inteiro',a=>{
   /* ⚠️ ISTO RODA DENTRO DO try/catch DA CONSOLIDAÇÃO. Antes da guarda, um
@@ -12577,7 +12628,6 @@ function cardMedidorProntidao(){
     <div style="display:flex;justify-content:center;margin:2px 0 2px">${svgMedidorProntidao(p.score)}</div>
     ${vivo?'':`<div class="xs muted" style="margin-top:10px;text-align:center">${p.falta.join(' e ')}.</div>`}
     ${disc?`<div class="note warn" style="margin-top:10px"><b>Corpo e percepção discordam em ${Math.abs(p.delta)} pontos.</b> ${p.delta<0?'Você está se sentindo pior do que o relógio indica.':'Você está se sentindo melhor do que os sinais do corpo.'} É o sinal mais útil do dia — vale olhar antes de mexer na carga.</div>`:''}
-    ${creditoGarmin(S.pro)}
   </div>`;
 }
 function cardProntidaoSubj(){
@@ -12632,11 +12682,15 @@ function cardCheckin(){
     <div class="opt">${[1,2,3,4,5].map(v=>`<button class="${d[campo]===v?'on':''}" onclick="setCheckin('${campo}',${v},true)">${v}</button>`).join('')}</div>
     <div class="xs muted" style="margin-top:2px">1 ${lo} · 5 ${hi}</div></div>`;
   return`
-    ${(S.garminAuto&&S.garminAuto.n)?`<p class="xs muted" style="margin:2px 0 10px">
-      <b>O relógio mede o corpo; estas cinco perguntas medem você.</b> Não se repetem — e quando as duas
-      leituras discordam, é justamente aí que mora a informação (veja <i>Corpo × percepção</i>, na Prontidão).</p>`:''}
+    ${/* ⚠️ ISTO ENSINA NA PRIMEIRA SEMANA E VIRA RUÍDO NA QUARTA. Eram três linhas
+         fixas em cima de um formulário que se preenche todo dia, explicando pela
+         enésima vez por que ele existe. O texto não se perdeu: foi para o “i” que
+         já estava na linha de baixo. */''}
     <p class="xs muted" style="margin:2px 0 10px">Como você se sente hoje${info('Check-in do dia',
-      `Para quem não usa relógio: estas respostas viram a sua <b>prontidão</b> no relatório, no lugar da VFC.`
+      ((S.garminAuto&&S.garminAuto.n)
+        ? `<b>O relógio mede o corpo; estas cinco perguntas medem você.</b> Não se repetem — e quando as duas leituras discordam, é justamente aí que mora a informação (veja <i>Corpo × percepção</i>, na Prontidão).<br><br>`
+        : '')
+      +`Para quem não usa relógio: estas respostas viram a sua <b>prontidão</b> no relatório, no lugar da VFC.`
       +`<br><br>Quem tem relógio também ganha com o check-in — dor e humor o relógio não mede.`)}</p>
     ${CK_PERG.map(grp).join('')}
     <div class="field" style="margin-top:4px"><label>Quanto dormiu</label>
@@ -15788,7 +15842,11 @@ function cardProntidaoComp(pro,motor,comPct){
   const topo=r.score!=null
     ? `<div class="row" style="align-items:baseline;gap:9px;margin-top:8px">
         <div class="v t" style="font-size:38px;font-weight:800;line-height:1;color:${cor(r.score)}">${r.score}</div>
-        <div><b>${r.rotulo}</b><div class="xs muted">${r.ok} de 5 componentes${r.ok<5?` (${5-r.ok} sem dado)`:''} · <b>${r.confiabilidade}%</b> do peso total disponível</div></div></div>`
+        <div><b>${r.rotulo}</b><div class="xs muted">${r.ok} de 5 componentes${r.ok<5?` (${5-r.ok} sem dado)`:''} · <b>${r.confiabilidade}%</b> do peso total disponível${conta?info('A conta deste score',
+          `Média dos componentes disponíveis, ponderada pelo peso de cada um. Escrita por extenso para você poder conferir à mão:`
+          +`<br><br><span style="word-break:break-word">${conta}</span>`
+          +(renorm?`<br><br><b>Um componente saiu da conta.</b> Peso disponível: ${pesoOk} de 100, renormalizado sobre o que sobrou.`:``)
+          +`<br><br>${r.confiabilidade}% do peso total estava disponível aqui.`):''}</div></div></div>`
     : `<div class="note warn" style="margin-top:8px"><b>Ainda não dá para calcular.</b> ${esc(r.motivo)}. Um score com metade das peças seria inventar um número.</div>`;
   const prox=ops.filter(o=>o.origem==='comp');
   /* ⚠️ O "i" PRECISA DE UM TEXTO AO LADO, OU VIRA ÓRFÃO.
@@ -15811,10 +15869,11 @@ function cardProntidaoComp(pro,motor,comPct){
     ${topo}
     <table style="margin-top:10px"><tbody>${linhas}</tbody></table>
     ${r.direcao?`<div class="note ${r.direcao==='REDUZIR'?'warn':r.direcao==='AUMENTAR'?'ok':''}" style="margin-top:10px"><b>Direção da carga: ${r.direcao}.</b></div>`:''}
-    ${conta?`<div class="xs muted t" style="margin-top:8px;word-break:break-word">${conta}${info('A conta deste score',
-      `Média dos componentes disponíveis, ponderada pelo peso de cada um — escrita assim para você poder conferir à mão.`
-      +(renorm?`<br><br><b>Um componente saiu da conta.</b> Peso disponível: ${pesoOk} de 100, renormalizado sobre o que sobrou.`:``)
-      +`<br><br>${r.confiabilidade}% do peso total estava disponível aqui.`)}</div>`:''}
+    ${/* ⚠️ A CONTA É AUDITORIA, NÃO LEITURA. Ela precisa existir — é o que permite
+         conferir o 87 à mão — mas ninguém confere todo dia. Mudou-se para o “i”
+         da linha que diz quantos componentes entraram, que é justamente o número
+         que a conta explica. O “i” precisa de âncora visível, e aquela linha
+         sempre existe quando há score. */''}
   </div>`;
 }
 /* ── TREINO → PROVA ────────────────────────────────────────────────────────
@@ -16509,12 +16568,22 @@ function cardFingerprint(m){
     const yy=y+(Math.abs(dy)<8?(dy<0?-6:12):dy<0?-4:11);
     return`<text x="${x.toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="${an}" font-size="9.5" font-family="Barlow,sans-serif" fill="var(--ink-2)">${d.eixo}</text>`;}).join('');
   const legenda=dims.map(d=>`<tr><td>${d.eixo}</td><td class="n" style="font-weight:700">${d.score!=null?d.score:'—'}</td><td class="xs muted" style="padding-left:8px">${d.txt}</td></tr>`).join('');
+  /* ⚠️ GLOSSÁRIO NÃO MORA NA TELA. As sete definições dos eixos são as MESMAS
+     todo dia, para todo atleta, e ocupavam mais altura do que o próprio gráfico
+     — que se lê em dois segundos. O que muda com o dado é a tabela de escores
+     acima, e ela fica. */
   return`<div class="card" data-dom="perf"><div class="eyebrow">assinatura de sprint${info('Assinatura de sprint',
       `Perfil só com dimensões que você mede — nada de estimativa de tabela.`
-      +`<br><br>Cada eixo vai de 0 a 100: <b>mais longe do centro = melhor</b>.`)}</div>
+      +`<br><br>Cada eixo vai de 0 a 100: <b>mais longe do centro = melhor</b>.`
+      +`<br><br><b>Velocidade</b> = %PB dos melhores 20% dos tiros das provas-alvo (PB ÷ tempo × 100: mais rápido = maior).`
+      +`<br><br><b>Manutenção</b> = constância dos tempos numa série (menor variação = melhor).`
+      +`<br><br><b>Recuperação</b> = a prontidão do dia.`
+      +`<br><br><b>Especificidade</b> = exposição a ritmo de prova nos últimos 28 dias (tiros ≥92% do PB, com peso para a recência).`
+      +(dims.some(d=>d.eixo==='Composição')?`<br><br><b>Composição</b> = %gordura medida.`:'')
+      +`<br><br><b>Tendência</b> = direção da capacidade.`
+      +`<br><br>Eixo sem dado confiável <b>sai</b> do gráfico; eixo sem medida fica no centro.`)}</div>
     <div style="display:flex;justify-content:center"><svg viewBox="0 0 250 196" style="width:100%;max-width:290px">${rings}${axes}${dataPoly}${dots}${labels}</svg></div>
     <table style="margin-top:6px"><tbody>${legenda}</tbody></table>
-    <div class="xs muted" style="margin-top:6px"><b>Velocidade</b>=%PB dos melhores 20% dos tiros das provas-alvo (PB ÷ tempo × 100: mais rápido = maior) · <b>Manutenção</b>=constância dos tempos numa série (menor variação = melhor) · <b>Recuperação</b>=prontidão · <b>Especificidade</b>=exposição a ritmo de prova nos últimos 28 dias (tiros ≥92% do PB, com peso para a recência)${dims.some(d=>d.eixo==='Composição')?' · <b>Composição</b>=%gordura medida':''} · <b>Tendência</b>=direção da capacidade. Eixo sem dado confiável <b>sai</b> do gráfico; eixo sem medida fica no centro.</div>
   </div>`;
 }
 /* ── MOTOR DE PERFORMANCE: consolida os indicadores num objeto único ────────
@@ -16882,7 +16951,17 @@ function cardPrioridadeSemana(pro,motor,diag){
       const rot=q=>q>=60?'boa':q>=35?'moderada':'baixa';
       return`<div class="report-meta"><div><b>${motor.cobertura}%</b><span>cobertura dos dados</span></div>
       ${p?`<div><b>${p.qual}%</b><span>confiabilidade da projeção (${rot(p.qual)})</span></div>`:''}
-      <small>Janela: últimos 120 dias. Cobertura = quanto dos dados esperados existe; confiabilidade = quanto o modelo já aprendeu sobre a sua prova-alvo. Nenhum dos dois é probabilidade.</small></div></div>`;})()}`;
+      ${/* A JANELA FICA, AS DEFINIÇÕES VÃO. “Últimos 120 dias” é o alcance de tudo
+           o que está acima e precisa ser lido junto; o resto é dicionário, igual
+           todo dia. A ressalva de que nenhum dos dois é probabilidade continua
+           escrita na tela no topo do Quadro de Indicadores, que é onde ela tem
+           de estar — ressalva atrás de ícone é ressalva que ninguém lê. */''}
+      <small>Janela: últimos 120 dias${info('Cobertura e confiabilidade',
+        `São dois números diferentes, e já foram a mesma palavra — um dizia 100% enquanto o outro dizia 67%.`
+        +`<br><br><b>Cobertura</b> = quanto dos dados esperados existe. É sobre o seu registro.`
+        +`<br><br><b>Confiabilidade</b> = quanto o modelo já aprendeu sobre a sua prova-alvo. É sobre a previsão.`
+        +`<br><br><b>Nenhum dos dois é probabilidade</b> de nadar bem, vencer ou bater recorde.`
+        +`<br><br>A janela de análise é de 120 dias.`)}</small></div></div>`;})()}`;
 }
 /* ── PLANO DE AÇÃO: intensidade + ajustes de treino e foco para a competição ── */
 function cardPlanoAcao(pro,motor,diag,comPct){
@@ -17099,7 +17178,7 @@ function telaRelatorio(){
   ${sc('check-in',()=>cardProntidaoSubj())}
   ${sem.length>1?`<div class="card"><div class="eyebrow">volume por semana</div>
     ${graficoBarras(sem.map(s=>({rot:s.rot,v:s.m})),true)}</div>`:''}
-  ${pro.garmin?.length?`<div class="card" data-dom="corpo" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}</div>`:''}`)}
+  ${pro.garmin?.length?`<div class="card" data-dom="corpo" id="c-prontidao"><div class="eyebrow">prontidão</div>${prontidao()}${creditoGarmin(pro)}</div>`:''}`)}
   ${acc('rel_corpo',_N_APOIO+'.4 Corpo, força e histórico','exames, composição e evolução em competições',`
   ${sc('força',()=>cardEvolucaoForca(pro))}
   ${pro.exames?.length?(()=>{const ex=[...pro.exames].sort((a,b)=>b.data.localeCompare(a.data))[0];
