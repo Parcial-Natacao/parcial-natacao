@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.10"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.10"></script>
+<script src="./persistencia-segura.js?v=v2.19.11"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.11"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.10';
+const VER='v2.19.11';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7340,6 +7340,41 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
 });
+teste('competição','as abas de ano cobrem o que existe e o ano corrente',a=>{
+  const bk=S.compAno;
+  try{
+    const h=hoje().slice(0,4);
+    const anos=anosDeCompeticao([[{data:'2024-03-10'},{data:'2026-11-07'}],[{data:'2026-02-01'}]]);
+    a.ok(anos.indexOf('2024')>=0&&anos.indexOf('2026')>=0,'os anos com prova entram');
+    a.ok(anos.indexOf(h)>=0,'e o ano corrente entra mesmo sem prova nenhuma');
+    a.eq(anos.slice().sort().join(','),anos.join(','),'em ordem crescente, como aba de planilha');
+    /* ⚠️ O ANO CORRENTE É O PADRÃO. Abrir na última competição feita manda o
+       atleta para o passado quando o que ele quer é a prova de sábado. */
+    S.compAno=null;
+    a.eq(anoCompAtivo(anos),h,'sem escolha, abre no ano corrente');
+    S.compAno='2024';
+    a.eq(anoCompAtivo(anos),'2024','a escolha do atleta manda');
+    S.compAno='2019';
+    a.eq(anoCompAtivo(anos),h,'escolha de ano inexistente não deixa a tela vazia');
+    a.eq(anoCompAtivo(['2024','2025']),'2025','sem o ano corrente, abre no mais recente');
+    a.eq(abasAnoComp(['2026'],'2026',{}),'','uma aba só não é navegação');
+    const html=abasAnoComp(['2026','2027'],'2027',{'2026':3,'2027':1});
+    a.ok(/S\.compAno='2026'/.test(html),'cada aba troca o ano');
+    a.ok(/primary[^>]*>2027/.test(html),'e a ativa vem marcada');
+  } finally { S.compAno=bk; }
+});
+teste('relatório','o foco fala do presente com número do presente',a=>{
+  /* ⚠️ ERAM TRÊS PORCENTAGENS NO MESMO RELATÓRIO. 82% aqui, 87% na leitura de
+     7 dias e 89% no KPI — e esta, a única que não declarava janela, era a média
+     dos 120 dias inteiros, usada para afirmar “baixa exposição RECENTE”. */
+  const velho=Array.from({length:40},(_,i)=>({pct:70,data:'2026-08-'+String((i%28)+1).padStart(2,'0')}));
+  const novo=Array.from({length:15},(_,i)=>({pct:95,data:'2026-11-'+String(i+1).padStart(2,'0')}));
+  const d=diagnostico([...velho,...novo],[],[],{garmin:[]});
+  const t=(d.foco||[]).map(x=>x.txt).join(' | ');
+  a.ok(/95%/.test(t),'usa a média dos últimos 15 tiros');
+  a.ok(!/\b76%|\b77%|\b78%/.test(t),'e não a média dos 120 dias');
+  a.ok(/últimos <b>15<\/b> tiros/.test(t),'e diz sobre quantos tiros está falando');
+});
 teste('garmin','o crédito da Garmin sai UMA vez por tela, e continua na tela',a=>{
   /* ⚠️ ESTE TESTE GUARDA UMA OBRIGAÇÃO DE CONTRATO, NÃO UM GOSTO. O contrato de
      desenvolvedor da Garmin exige a atribuição ONDE o dado do relógio aparece.
@@ -10655,6 +10690,30 @@ function compartilharTreino(){
 }
 
 /* ---------- competição na visão do atleta ---------- */
+/* ⚠️ UMA LISTA ÚNICA DE COMPETIÇÕES NÃO ESCALA. Cada temporada acrescenta
+   linhas e nunca tira: no terceiro ano o atleta rola meia tela de 2026 para
+   achar a prova de sábado. As abas por ano dão ao tempo a forma que ele já
+   tem na cabeça — temporada — e deixam o ano corrente a um toque.
+
+   Em ordem CRESCENTE, como aba de planilha: a posição de cada ano fica fixa,
+   e o ano novo entra no fim sem empurrar os outros de lugar. */
+function anosDeCompeticao(listas){
+  const a=new Set();
+  for(const l of listas)for(const c of (l||[]))if(c&&/^\d{4}/.test(c.data||''))a.add(c.data.slice(0,4));
+  a.add(hoje().slice(0,4));          /* o ano corrente existe mesmo vazio */
+  return [...a].sort();
+}
+function anoCompAtivo(anos){
+  if(S.compAno&&anos.indexOf(S.compAno)>=0)return S.compAno;
+  const h=hoje().slice(0,4);
+  return anos.indexOf(h)>=0?h:anos[anos.length-1];
+}
+function abasAnoComp(anos,ativo,conta){
+  if(anos.length<2)return '';      /* uma aba só não é navegação, é enfeite */
+  return`<div class="row wrap" style="gap:6px;margin:12px 0 2px">${anos.map(y=>
+    `<button class="sm ${y===ativo?'primary':'ghost'}" onclick="S.compAno='${y}';render()">${y}${
+      conta[y]?` <span class="xs" style="opacity:.7">${conta[y]}</span>`:''}</button>`).join('')}</div>`;
+}
 function telaCompAtleta(){
   if(!S.comp){
     if(S.minhaComp)return telaMinhaComp();
@@ -10663,14 +10722,29 @@ function telaCompAtleta(){
     ${(ehGestor()&&S.compAtletaMode)?`<div class="row" style="margin:12px 0 0"><button class="sm ghost" onclick="S.compAtletaMode=false;render()">‹ Gestão</button></div>`:''}
     <div class="row" style="margin:16px 0 6px"><h2>Competições</h2><div class="grow"></div>
       <button class="sm primary" onclick="abrirNovaCompeticaoAtleta()">+ Competição</button></div>
-    ${minhas.length?`<div class="card"><div class="eyebrow">minhas competições</div>
-      ${[...minhas].sort((a,b)=>b.data.localeCompare(a.data)).map(mc=>`<button class="lst" onclick="S.minhaComp='${mc.id}';render()">
-        <span class="av">★</span><span class="grow"><b>${esc(mc.nome)}</b><span class="xs muted" style="display:block">${brData(mc.data)} · ${mc.piscina} · ${(mc.provas||[]).length} prova(s)</span></span><span class="tag o">›</span></button>`).join('')}
-      </div>`:''}
-    ${S.cidx.length?`<div class="card"><div class="eyebrow">competições da equipe</div>
-      ${S.cidx.map(c=>`<button class="lst" onclick="abrirComp('${c.id}')"><span class="av">▲</span><span class="grow"><b>${esc(c.nome)}</b><span class="xs muted" style="display:block">${brData(c.data)} · ${c.piscina}</span></span><span class="tag o">›</span></button>`).join('')}
-      </div>`:''}
-    ${!minhas.length&&!S.cidx.length?`<div class="empty"><div class="big">Nenhuma competição</div><p class="small">Toque em <b>+ Competição</b> para registrar a sua — ou aguarde o técnico.</p></div>`:''}`;
+    ${(()=>{
+      const eq=S.cidx||[];
+      if(!minhas.length&&!eq.length)return`<div class="empty"><div class="big">Nenhuma competição</div><p class="small">Toque em <b>+ Competição</b> para registrar a sua — ou aguarde o técnico.</p></div>`;
+      const anos=anosDeCompeticao([minhas,eq]), ativo=anoCompAtivo(anos);
+      const doAno=l=>l.filter(c=>c&&(c.data||'').slice(0,4)===ativo);
+      const conta={};
+      for(const y of anos)conta[y]=[...minhas,...eq].filter(c=>c&&(c.data||'').slice(0,4)===y).length;
+      const mAno=[...doAno(minhas)].sort((a,b)=>b.data.localeCompare(a.data));
+      const eAno=[...doAno(eq)].sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+      return abasAnoComp(anos,ativo,conta)
+      +(mAno.length?`<div class="card"><div class="eyebrow">minhas competições</div>
+        ${mAno.map(mc=>`<button class="lst" onclick="S.minhaComp='${mc.id}';render()">
+          <span class="av">★</span><span class="grow"><b>${esc(mc.nome)}</b><span class="xs muted" style="display:block">${brData(mc.data)} · ${mc.piscina} · ${(mc.provas||[]).length} prova(s)</span></span><span class="tag o">›</span></button>`).join('')}
+        </div>`:'')
+      +(eAno.length?`<div class="card"><div class="eyebrow">competições da equipe</div>
+        ${eAno.map(c=>`<button class="lst" onclick="abrirComp('${c.id}')"><span class="av">▲</span><span class="grow"><b>${esc(c.nome)}</b><span class="xs muted" style="display:block">${brData(c.data)} · ${c.piscina}</span></span><span class="tag o">›</span></button>`).join('')}
+        </div>`:'')
+      /* ⚠️ ANO VAZIO PRECISA DIZER QUE ESTÁ VAZIO. Sem isto a aba selecionada
+         mostraria só o botão “+ Competição” solto, e quem clicou em 2027 por
+         engano concluiria que o app perdeu as competições dele. */
+      +((!mAno.length&&!eAno.length)?`<div class="empty" style="padding:26px 0"><div class="big">Nada em ${ativo}</div>
+        <p class="small">Toque em outro ano acima, ou em <b>+ Competição</b> para registrar uma.</p></div>`:'');
+    })()}`;
   }
   const c=S.comp;
   const minhas=[]; const meuNome=(S.u.nome||'').toLowerCase();
@@ -11261,7 +11335,14 @@ function pbsTabela(pbs,pis){
       ${temAT?`<td class="n" style="text-align:right;color:var(--ink-2)">${lado!=null?fmt(lado,true)+'<b style="color:var(--rope-ink)">*</b>':''}</td>`:''}
       <td style="width:34px;text-align:right"><button class="sm ghost" onclick="apagarPB('${k}')">✕</button></td></tr>`}).join('')}</tbody></table>
     <div class="xs muted" style="margin-top:7px">${vida
-      ? 'Mostrando o melhor tempo da <b>vida inteira</b>, com a faixa etária e a data em que foi feito. Ele <b>não entra</b> em projeção, %PB nem prontidão — quem alimenta essas contas é o da faixa de hoje, com <b>*</b> ao lado.'
+      ? (temAT
+        ? 'Mostrando o melhor tempo da <b>vida inteira</b>, com a faixa etária e a data em que foi feito. Ele <b>não entra</b> em projeção, %PB nem prontidão — quem alimenta essas contas é o da faixa de hoje, com <b>*</b> ao lado.'
+        /* ⚠️ NÃO PROMETER O QUE NÃO ESTÁ NA TELA. Sem nada no `pbAllTime`, esta
+           aba mostrava exatamente os mesmos tempos da outra e dizia por baixo
+           “com a faixa etária e a data em que foi feito” — que não aparecem em
+           lugar nenhum. O botão fica (a funcionalidade existe e tem de ser
+           descobrível); o que muda é o app admitir que não tem o dado. */
+        : 'Nenhuma marca de faixa anterior está registrada, então estes são os mesmos tempos da faixa de hoje. O histórico de vida inteira vem do seu <b>currículo da ABMN</b> — o botão de importar está no fim desta tela.')
       : 'Mostrando o melhor da sua <b>faixa de hoje</b>'+(S.pro&&S.pro.faixa?' ('+S.pro.faixa+'+)':'')+', que é contra quem você compete e o que alimenta projeção, %PB e prontidão.'
         +(temAT?' Com <b>*</b>, o melhor da vida inteira, feito em outra faixa.':'')}</div>`;
 }
@@ -17221,7 +17302,22 @@ function volumePorSemana(){
 }
 function diagnostico(comPct,brk,sem,pro){
   const foco=[];
-  const md=comPct.length?comPct.reduce((t,e)=>t+e.pct,0)/comPct.length:null;
+  /* ⚠️ ESTE BLOCO FALA DO PRESENTE, ENTÃO A MÉDIA TEM DE SER DO PRESENTE.
+     Era a média de TODOS os tiros da janela de 120 dias, e com ela o app
+     escrevia “baixa exposição RECENTE a esforços curtos” — uma afirmação sobre
+     o agora feita com o número menos recente da tela.
+
+     O resultado era três porcentagens diferentes no mesmo relatório: 82% aqui,
+     87% na leitura curta de 7 dias e 89% no KPI de velocidade média. As três
+     estavam certas na sua própria conta e nenhuma dizia que eram contas
+     diferentes — esta não declarava janela nenhuma.
+
+     Agora usa o MESMO recorte do KPI (últimos 15 tiros), que é o que o app já
+     chama de “velocidade média”, e os textos dizem sobre quantos tiros falam.
+     Mesma fórmula e mesmo recorte = um número só na tela. */
+  const ultimos=comPct.slice(-15);
+  const md=ultimos.length?ultimos.reduce((t,e)=>t+e.pct,0)/ultimos.length:null;
+  const nMd=ultimos.length;
   const deltaMd=brk.length?brk.slice(-10).reduce((t,e)=>t+e.delta,0)/Math.min(brk.length,10):null;
   const g=[...(pro.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
   const h=g.filter(x=>x.hrv!=null);
@@ -17241,9 +17337,9 @@ function diagnostico(comPct,brk,sem,pro){
     else foco.push({t:'ok',txt:`Diferencial médio de <b>+${fmt(deltaMd,true)}</b> entre os 25. A manutenção do segundo 25 está estável, e o primeiro 25 mostra margem de velocidade relativa.`});
   }
   if(md!=null){
-    if(md<90)foco.push({t:'',txt:`Os tiros estão saindo a <b>${md.toFixed(0)}%</b> da sua melhor marca. Baixa exposição recente a esforços curtos em intensidade específica de prova. <i>Leitura para o técnico: avaliar se a preparação traz estímulo específico suficiente.</i>`});
-    else if(md>=95)foco.push({t:'ok',txt:`Média de <b>${md.toFixed(0)}%</b> do seu melhor tempo nos tiros. Você está treinando perto do ritmo de prova; o ganho agora vem de frescor, não de mais carga.`});
-    else foco.push({t:'',txt:`Média de <b>${md.toFixed(0)}%</b> do melhor tempo. Faixa saudável de treino. <i>Leitura para o técnico: a intensidade específica aparece em volume adequado.</i>`});
+    if(md<90)foco.push({t:'',txt:`Os últimos <b>${nMd}</b> tiros saíram a <b>${md.toFixed(0)}%</b> da sua melhor marca. Baixa exposição recente a esforços curtos em intensidade específica de prova. <i>Leitura para o técnico: avaliar se a preparação traz estímulo específico suficiente.</i>`});
+    else if(md>=95)foco.push({t:'ok',txt:`Média de <b>${md.toFixed(0)}%</b> do seu melhor tempo nos últimos <b>${nMd}</b> tiros. Você está treinando perto do ritmo de prova; o ganho agora vem de frescor, não de mais carga.`});
+    else foco.push({t:'',txt:`Média de <b>${md.toFixed(0)}%</b> do melhor tempo nos últimos <b>${nMd}</b> tiros. Faixa saudável de treino. <i>Leitura para o técnico: a intensidade específica aparece em volume adequado.</i>`});
   }
   if(hrvBaixa)foco.push({t:'warn',txt:'A VFC está abaixo da sua linha de base. Historicamente, esforços de alta demanda nessa condição rendem menos. <i>Leitura para o técnico.</i>'});
   if(subindo)foco.push({t:'warn',txt:'O volume subiu mais de 25% em relação à semana anterior. Salto de volume acima do habitual. <i>Leitura para o técnico sobre a progressão.</i>'});
