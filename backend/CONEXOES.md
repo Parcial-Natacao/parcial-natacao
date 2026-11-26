@@ -204,7 +204,12 @@ dois passos, e falta um deles não dá erro nenhum: o push chega, o
 `processarCorpo_` não acha regra para o tipo e devolve zero, em silêncio.
 
 **Gatilho:** rode `conexoesInstalarGatilho()` uma vez no editor. Ele cria o
-`drenarFila` a cada 10 minutos (e remove o anterior, se houver).
+`drenarFila` a cada 5 minutos (e remove o anterior, se houver).
+
+> **Trocar o intervalo não basta editar o arquivo.** O gatilho vive no
+> projeto do Apps Script, não no código: depois de colar a versão nova é
+> preciso rodar `conexoesInstalarGatilho` de novo, que apaga o antigo e
+> cria o novo. Sem isso o gatilho velho continua rodando no ritmo velho.
 
 ## Passo 4c — por que existe uma fila
 

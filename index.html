@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.13"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.13"></script>
+<script src="./persistencia-segura.js?v=v2.19.14"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.14"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.13';
+const VER='v2.19.14';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7355,6 +7355,46 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
 });
+teste('pacotes','a correção do atleta sobrevive ao reenvio da Garmin',a=>{
+  /* ⚠️ O CASO QUE OBRIGA O DESENHO. A Garmin reenvia a atividade quando a
+     pessoa a edita no aplicativo dela. Se a correção tivesse sido gravada por
+     cima da medida, o reenvio a apagaria em silêncio — e o atleta veria o
+     número errado voltar sem ninguém ter digitado nada. */
+  const serie=[{data:'2026-11-24',ativs:[{k:'A1',tipo:'natacao_piscina',dist:425,min:40,fc:128,origem:'garmin'}]}];
+  derivarTotaisDoDia(serie[0]);
+  a.eq(serie[0].nado,4,'425 m medidos viram 4 centenas');
+  serie[0].ativs[0].fix={dist:2500,em:Date.now()};
+  derivarTotaisDoDia(serie[0]);
+  a.eq(serie[0].nado,25,'a distância corrigida manda na metragem do dia');
+  a.eq(serie[0].ativs[0].dist,425,'e o número do relógio continua guardado');
+  mesclarPacotesGarmin(serie,[{data:'2026-11-24',
+    ativs:[{k:'A1',tipo:'natacao_piscina',dist:425,min:41,fc:130,origem:'garmin'}]}]);
+  a.ok(!!serie[0].ativs[0].fix,'o reenvio NÃO apaga a correção');
+  a.eq(serie[0].nado,25,'e a metragem segue a correção');
+  a.eq(serie[0].ativs[0].min,41,'o que o relógio atualizou e você não corrigiu entra');
+  a.eq(serie[0].ativDur,41,'inclusive na duração do dia');
+});
+teste('pacotes','atividade marcada fora sai da metragem e da carga',a=>{
+  const g={data:'2026-11-24',ativs:[
+    {k:'A1',tipo:'natacao_piscina',dist:3000,min:60,fc:140},
+    {k:'A2',tipo:'corrida',dist:5000,min:30,fc:150}]};
+  derivarTotaisDoDia(g);
+  a.eq(g.nado,30,'os dois contam');
+  a.eq(g.ativDur,90,'e a duração soma os dois');
+  g.ativs[1].fix={fora:true};
+  derivarTotaisDoDia(g);
+  a.eq(g.nado,30,'tirar a corrida não mexe no nado');
+  a.eq(g.ativDur,60,'mas tira a duração dela da carga');
+  a.eq(g.ativFc,140,'e a FC média do dia deixa de considerar a corrida');
+  /* ⚠️ TUDO FORA É ZERO, NÃO É “MANTÉM O QUE TINHA”. O `return` antecipado da
+     versão antiga saltava quando a lista efetiva ficava vazia, e o dia
+     guardaria para sempre o total de atividades que o atleta descartou. */
+  g.ativs[0].fix={fora:true};
+  derivarTotaisDoDia(g);
+  a.eq(g.nado,undefined,'sem atividade válida, não há metragem');
+  a.eq(g.ativDur,undefined,'nem duração');
+  a.eq(g.ativs.length,2,'e as duas continuam listadas, para o atleta saber que existem');
+});
 teste('saúde','o rótulo da atividade sai de padrão, não de tabela de tipos',a=>{
   /* ⚠️ A LISTA DE TIPOS DA GARMIN NÃO ENTRA NO REPOSITÓRIO. Casando por padrão
      em palavras comuns, o app traduz o que reconhece e mostra legivelmente o
@@ -12224,14 +12264,78 @@ function detalhesDoDia(ds,opt){
     `<tr><td class="small">${r[0]}</td><td class="n" style="text-align:right;font-weight:700">${r[1]}</td>`
     +`<td class="xs muted" style="padding-left:10px">${r[2]||''}</td></tr>`).join('')}</tbody></table>`:'';
   const cards=ativs.length?`<div class="eyebrow" style="margin-top:12px">atividades do relógio</div>
-    ${ativs.map(x=>{const det=[x.min?Math.round(x.min)+' min':'',x.dist?Math.round(x.dist)+' m':'',x.fc?x.fc+' bpm':'']
+    ${ativs.map(x0=>{const x=atividadeEfetiva(x0), mex=!!x0.fix;
+      const det=[x.min?Math.round(x.min)+' min':'',x.dist?Math.round(x.dist)+' m':'',x.fc?x.fc+' bpm':'']
       .filter(Boolean).join(' · ');
-      return`<div class="row" style="gap:8px;padding:7px 0;border-top:1px solid var(--line)">
-        <span class="grow"><b>${esc(rotuloAtividade(x.tipo))}</b>${det?`<span class="xs muted" style="display:block">${det}</span>`:''}</span></div>`;}).join('')}`:'';
+      return`<div class="row" style="gap:8px;padding:7px 0;border-top:1px solid var(--line);${x.fora?'opacity:.55':''}">
+        <span class="grow"><b>${esc(rotuloAtividade(x.tipo))}</b>${x.fora?' <span class="xs" style="color:var(--clock)">fora da conta</span>':''}
+        ${det?`<span class="xs muted" style="display:block">${det}${mex?' · <b>corrigido por você</b>':''}</span>`:''}</span>
+        <button class="sm ghost noprint" onclick="abrirEditarAtividade('${ds}','${esc(String(x0.k))}')">editar</button></div>`;}).join('')}`:'';
   if(!tabela&&!cards)return soExtra?'':`<div class="small muted" style="margin:10px 0;text-align:center">Nada registrado nesse dia.</div>`;
   return soExtra
     ? `<div class="card" style="margin-top:10px"><div class="eyebrow">o que o relógio mediu</div>${tabela}${cards}</div>`
     : tabela+cards;
+}
+function acharAtividade(ds,k){
+  const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===ds)||null;
+  const x0=rec?((rec.ativs||[]).find(y=>y&&String(y.k)===String(k))):null;
+  return x0?{rec:rec,x0:x0}:null;
+}
+async function gravarFixAtividade(rec,x0,fix,msg){
+  const ch=Object.keys(fix).filter(c=>c!=='em');
+  if(!ch.length)delete x0.fix; else { fix.em=Date.now(); x0.fix=fix; }
+  derivarTotaisDoDia(rec);
+  if(await salvarSaude()===false)return;
+  fecharSheet(); toast(msg); render();
+}
+function abrirEditarAtividade(ds,k){
+  const r=acharAtividade(ds,k); if(!r)return;
+  const x0=r.x0, x=atividadeEfetiva(x0), tem=!!x0.fix;
+  const cru=[x0.min?Math.round(x0.min)+' min':'',x0.dist?Math.round(x0.dist)+' m':'',x0.fc?x0.fc+' bpm':'']
+    .filter(Boolean).join(' · ')||'sem números';
+  sheet(`<h2>${esc(rotuloAtividade(x.tipo))}</h2>
+    <div class="small muted" style="text-transform:capitalize">${brData(ds)}</div>
+    <div class="note" style="margin:10px 0"><div class="xs"><b>O relógio mediu:</b> ${cru}.${info('Corrigir uma atividade',
+      `O número do relógio <b>não é apagado</b>. A sua correção fica ao lado dele, e a tela passa a mostrar a sua — marcada como <i>corrigido por você</i>.`
+      +`<br><br>Isso importa porque a Garmin <b>reenvia</b> a atividade quando você a edita no aplicativo dela. Se a correção tivesse sido gravada por cima da medida, o reenvio a apagaria sem avisar.`
+      +`<br><br>A distância corrigida entra na <b>metragem do dia</b>; a duração e a FC média entram na <b>carga estimada</b>.`
+      +`<br><br><b>Não contar</b> serve para a atividade que o relógio inventou — ela sai da metragem e da carga, mas continua listada, para você saber que existe.`)}</div></div>
+    <div class="grid2">
+      <div class="field" style="margin:0"><label>Distância <span class="xs muted">metros</span></label>
+        <input id="eaD" inputmode="numeric" placeholder="—" value="${x.dist!=null?Math.round(x.dist):''}"></div>
+      <div class="field" style="margin:0"><label>Duração <span class="xs muted">minutos</span></label>
+        <input id="eaM" inputmode="numeric" placeholder="—" value="${x.min!=null?Math.round(x.min):''}"></div></div>
+    <div class="field" style="margin-top:8px"><label>FC média <span class="xs muted">bpm</span></label>
+      <input id="eaF" inputmode="numeric" placeholder="—" value="${x.fc!=null?x.fc:''}"></div>
+    <button class="primary full" style="margin-top:12px" onclick="salvarAtividadeEditada('${ds}','${esc(String(k))}')">Salvar correção</button>
+    <button class="ghost full" style="margin-top:8px" onclick="ignorarAtividade('${ds}','${esc(String(k))}',${x.fora?'false':'true'})">${x.fora?'Voltar a contar esta atividade':'Não contar esta atividade'}</button>
+    ${tem?`<button class="sm ghost full" style="margin-top:8px" onclick="limparFixAtividade('${ds}','${esc(String(k))}')">Voltar ao que o relógio mediu</button>`:''}
+    <button class="ghost full" style="margin-top:8px" onclick="fecharSheet()">Cancelar</button>`);
+}
+async function salvarAtividadeEditada(ds,k){
+  const r=acharAtividade(ds,k); if(!r)return;
+  const x0=r.x0, fix=Object.assign({},x0.fix||{});
+  const ler=id=>{const el=document.getElementById(id); if(!el)return undefined;
+    const v=String(el.value||'').trim(); if(!v)return null;
+    const f=parseFloat(v.replace(',','.')); return isNaN(f)?undefined:f;};
+  /* ⚠️ DIGITAR O MESMO NÚMERO DO RELÓGIO NÃO É CORRIGIR. Sem esta comparação,
+     abrir a folha e salvar sem mexer em nada carimbaria a atividade inteira
+     como “corrigida por você” — e a partir daí o reenvio da Garmin deixaria de
+     atualizar aquele campo, calado. */
+  const por=(campo,val)=>{ if(val===undefined)return;
+    if(val===null||val===x0[campo])delete fix[campo]; else fix[campo]=val; };
+  por('dist',ler('eaD')); por('min',ler('eaM')); por('fc',ler('eaF'));
+  await gravarFixAtividade(r.rec,x0,fix,'Correção salva ✓');
+}
+async function ignorarAtividade(ds,k,fora){
+  const r=acharAtividade(ds,k); if(!r)return;
+  const fix=Object.assign({},r.x0.fix||{});
+  if(fora)fix.fora=true; else delete fix.fora;
+  await gravarFixAtividade(r.rec,r.x0,fix,fora?'Fora da conta':'De volta à conta');
+}
+async function limparFixAtividade(ds,k){
+  const r=acharAtividade(ds,k); if(!r)return;
+  await gravarFixAtividade(r.rec,r.x0,{},'De volta ao que o relógio mediu');
 }
 function telaGarmin(){
   const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
@@ -13524,9 +13628,31 @@ function cardConferirGarmin(){
    que só tem os totais somados, continua valendo como está até receber a
    primeira atividade com chave — aí o cálculo assume e, de quebra, corrige o
    número inflado por reimportações anteriores. */
+/* ⚠️ A CORREÇÃO MORA DENTRO DA ATIVIDADE, E É POR ISSO QUE ELA SOBREVIVE.
+   A Garmin REENVIA a atividade quando a pessoa a edita no aplicativo dela, e a
+   mescla é por chave: `Object.assign({}, oque_ja_tinha, oque_chegou)`. Um
+   campo que o pacote não traz não é sobrescrito — e `fix` nunca vem no pacote,
+   porque quem monta o pacote é o nosso Apps Script, a partir do mapa. Então o
+   número do relógio fica intacto no seu campo, a correção fica ao lado, e o
+   reenvio atualiza um sem apagar o outro.
+
+   Guardar só o valor corrigido, por cima, destruiria a medida — e a
+   distinção entre medido e informado é metade do que este app faz. */
+function atividadeEfetiva(x){
+  if(!x||!x.fix)return x;
+  const o=Object.assign({},x);
+  for(const c of ['tipo','dist','min','fc'])if(x.fix[c]!=null)o[c]=x.fix[c];
+  if(x.fix.fora)o.fora=true;
+  return o;
+}
 function derivarTotaisDoDia(g){
-  const a=(g&&g.ativs)||[];
-  if(!a.length)return g;
+  const todas=(g&&g.ativs)||[];
+  if(!todas.length)return g;
+  /* ⚠️ A DERIVAÇÃO LÊ O EFETIVO, NÃO O CRU. Sem isto, corrigir a distância
+     mudaria a linha na tela e deixaria a metragem do dia com o número errado
+     — duas verdades sobre o mesmo nado. Atividade marcada `fora` sai de tudo:
+     metragem, duração e FC média. */
+  const a=todas.map(atividadeEfetiva).filter(x=>x&&!x.fora);
   const nado=a.filter(x=>/swim|nata/i.test(x.tipo||'')).reduce((t,x)=>t+(x.dist||0),0);
   if(nado)g.nado=Math.round(nado/100); else delete g.nado;
   const min=a.reduce((t,x)=>t+(x.min||0),0);

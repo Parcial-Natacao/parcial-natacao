@@ -658,8 +658,15 @@ function conexoesInstalarGatilho() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'drenarFila') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('drenarFila').timeBased().everyMinutes(10).create();
-  const msg = 'Gatilho instalado: drenarFila a cada 10 minutos.';
+  /* ⚠️ 5 MINUTOS É ONDE A CONTA FECHA. A cota diária de execução do Apps
+     Script é de 90 minutos; cada drenagem em vazio leva ~1,5 s. A cada 5
+     minutos são 288 execuções por dia, ~7 minutos de cota. A cada 1 minuto
+     seriam 1.440 e ~36 minutos — 40% da cota gasta girando em vazio, para
+     ganhar 4 minutos num caminho que já depende da sincronia do relógio com
+     o celular, que costuma levar mais do que isso e não está sob nosso
+     controle. */
+  ScriptApp.newTrigger('drenarFila').timeBased().everyMinutes(5).create();
+  const msg = 'Gatilho instalado: drenarFila a cada 5 minutos.';
   Logger.log(msg); return msg;
 }
 
