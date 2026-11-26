@@ -117,7 +117,7 @@ números. Com RPE já digitado, `sessao.rpe` não muda.
 ### B — Atividade sem treino: vira cartão próprio na aba Treinos
 
 Atividade cuja data não tem treino correspondente — nado extra, águas abertas,
-o `INDOOR_CARDIO` de sábado.
+a esteira de sábado.
 
 - **nado com distância** → forma nova, "nado do relógio": carrega metragem e
   conta como volume. É o caso de águas abertas, e é o que o desenho atual não
@@ -133,8 +133,8 @@ Não deve: entrar em `S.tridx`; aparecer como pendência de RPE/duração (o
 relógio já trouxe os dois).
 
 Prova: a mesma atividade processada duas vezes produz um cartão, não dois. Uma
-atividade `OPEN_WATER_SWIMMING` de 5.000 m sem treino no dia produz 5,0 km de
-volume. Um `INDOOR_CARDIO` não produz metragem nenhuma.
+atividade de águas abertas de 5.000 m sem treino no dia produz 5,0 km de
+volume. Uma atividade que não é nado não produz metragem nenhuma.
 
 ### C — Metragem com precedência única
 
