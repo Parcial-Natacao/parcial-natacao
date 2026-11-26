@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.12"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.12"></script>
+<script src="./persistencia-segura.js?v=v2.19.13"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.13"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.12';
+const VER='v2.19.13';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3865,7 +3865,17 @@ function grupoTreinos(lista,cardFn){
 }
 /* Calendário mês a mês (visão do técnico): marca os dias com treino; tocar no dia
    abre os treinos daquele dia. Mais organizado que a lista longa. */
-function calendarioTreinos(lista,cardFn,criarFn){
+/* ⚠️ UM CALENDÁRIO SÓ. A v2.19.12 criou um segundo, na Saúde, para abrir o dia
+   do relógio — e eram dois calendários do mesmo mês, com o mesmo gesto, em duas
+   abas. Quem treinou e quer ver o dia não devia ter de escolher em qual dos
+   dois procurar. O dia agora abre aqui, inteiro: o que foi prescrito, o que o
+   relógio mediu, e as atividades que ele registrou.
+
+   ⚠️ `saude` SÓ VEM VERDADEIRO NA VISTA DO PRÓPRIO ATLETA. VFC, FC de repouso e
+   sono são dele; esta mesma função também desenha a tela do técnico, e lá o
+   bloco do corpo não entra. */
+const podeVerSaude=()=>!!(S.u&&(S.u.perfil==='pro'||S.u.podeSaude)&&!S.laudoAtleta&&!ehGestor());
+function calendarioTreinos(lista,cardFn,criarFn,saude){
   const porDia={}; for(const t of lista){const d=t.data||''; if(d)(porDia[d]=porDia[d]||[]).push(t);}
   if(!S.calYM){S.calYM=(lista.length?[...lista].sort((a,b)=>(b.data||'').localeCompare(a.data||''))[0].data:hoje()).slice(0,7);}
   const Y=+S.calYM.slice(0,4), M=+S.calYM.slice(5,7);
@@ -3900,8 +3910,9 @@ function calendarioTreinos(lista,cardFn,criarFn){
        lista primeiro e ele ficou invisivel para quem nunca troca de vista. */''}
   ${botaoExtrato(S.calYM)}
   ${S.calDia?`<div class="blk" style="margin-top:12px"><h3 style="text-transform:capitalize">${brData(S.calDia)}</h3><div class="ln"></div></div>
-    ${doDia.length?doDia.map(cardFn).join(''):`<div class="small muted" style="margin:10px 0;text-align:center">Nenhum treino nesse dia.${criarFn?`<br><button class="sm ghost" style="margin-top:6px" onclick="${criarFn}('${S.calDia}')">+ Adicionar treino nesse dia</button>`:''}</div>`}`
-    :`<div class="small muted" style="margin-top:12px;text-align:center">Toque num dia para ver os treinos.</div>`}`;
+    ${doDia.length?doDia.map(cardFn).join(''):`<div class="small muted" style="margin:10px 0;text-align:center">Nenhum treino nesse dia.${criarFn?`<br><button class="sm ghost" style="margin-top:6px" onclick="${criarFn}('${S.calDia}')">+ Adicionar treino nesse dia</button>`:''}</div>`}
+    ${saude?detalhesDoDia(S.calDia,{soExtra:true}):''}`
+    :`<div class="small muted" style="margin-top:12px;text-align:center">Toque num dia para ver o treino e o que o relógio mediu.</div>`}`;
 }
 function novoTreinoDia(ds){ push(); S.sub='novo'; S.editando=false; S.treino=null; S.selMulti=[]; TREINOPDF=null;
   S.rascunho={data:ds,nivel:'',piscina:'SC25',parcial25:'1',titulo:'',texto:''}; render(); }
@@ -5018,11 +5029,15 @@ function telaTreinosAtleta(){
        'como eu estou hoje'. No relatorio ele seria achado so por quem ja
        foi procurar. */''}
   ${cardMedidorProntidao()}
-  ${lista.length?`<div class="row" style="gap:6px;margin-bottom:8px">
+  ${/* ⚠️ O CALENDÁRIO DEIXOU DE SER SÓ DOS TREINOS. Desde que o dia do relógio
+       abre aqui dentro, esconder a grade por falta de treino ESCRITO esconde
+       junto a única porta para ver o que o relógio mediu — e quem acabou de
+       conectar o Garmin ainda não tem treino nenhum lançado. */''}
+  ${(lista.length||(podeVerSaude()&&((S.pro&&S.pro.garmin)||[]).length))?`<div class="row" style="gap:6px;margin-bottom:8px">
     <button class="sm ${S.treinoView!=='lista'?'primary':'ghost'}" onclick="S.treinoView='cal';render()">📅 Calendário</button>
     <button class="sm ${S.treinoView==='lista'?'primary':'ghost'}" onclick="S.treinoView='lista';render()">☰ Lista</button>
   </div>
-  ${S.treinoView==='lista'?grupoTreinos(lista,cardFn):calendarioTreinos(lista,cardFn,'abrirTreinoExtra')}`:
+  ${S.treinoView==='lista'?grupoTreinos(lista,cardFn):calendarioTreinos(lista,cardFn,'abrirTreinoExtra',podeVerSaude())}`:
     ''}
   ${/* ⚠️ BOTÃO DE BLOCO NÃO TEM LINHA DE TEXTO PARA O "i" SE ALINHAR.
        Pendurado solto depois do </button>, ele cai sozinho na linha de baixo,
@@ -7386,8 +7401,12 @@ teste('marcas','o interruptor de PB fica na tela, fora das sanfonas',a=>{
       pbAllTime:{'50 peito SC25':{tempo:parseTempo('29.80'),faixa:'30+',data:'2016-05-02'}}});
     S.pbVida=false;
     const sw=switchPbVida(S.pro);
-    a.ok(/Minha categoria/.test(sw)&&/PB da vida/.test(sw),'as duas posições existem');
-    a.ok(/40\+/.test(sw),'e a categoria de hoje vem escrita no botão');
+    /* ⚠️ “PB DA VIDA” É REDUNDÂNCIA: PB já é o da vida. Os rótulos são curtos
+       porque o interruptor é uma linha discreta, não um cartão. */
+    a.ok(/>40\+</.test(sw),'de um lado, a categoria de hoje');
+    a.ok(/>PB</.test(sw),'do outro, PB');
+    a.ok(!/PB da vida/.test(sw),'sem “PB da vida”, que repete a mesma coisa');
+    a.ok(/setPbVida\(true\)/.test(sw),'e o toque alterna');
     a.ok(!/setPbVida/.test(pbsTabela(S.pro.pbs,'SC25')),'e NÃO há mais cópia dentro da tabela');
     /* os cartões grandes do topo têm de obedecer, senão a tela diz duas coisas */
     a.ok(/32\.83/.test(destaquesMarcas(S.pro)),'na categoria, o tempo é o da faixa');
@@ -11377,21 +11396,31 @@ function setPbVida(v){ S.pbVida=!!v; render(); }
 
    Agora é UM interruptor, no topo, antes dos cartões de destaque — e vale
    para eles também, senão metade da tela ignoraria a escolha. */
+/* ⚠️ UM INTERRUPTOR, NÃO UM CARTÃO. A primeira versão virou um bloco com
+   título e dois botões grandes, do tamanho de uma seção — peso demais para uma
+   escolha que a maioria faz uma vez e esquece. Agora é uma linha discreta
+   acima dos cartões, com os dois rótulos curtos: a categoria de hoje (40+) e
+   PB. “PB da vida” era redundante: PB JÁ é o da vida. */
 function switchPbVida(pro){
   const pbs=(pro&&pro.pbs)||{}, at=(pro&&pro.pbAllTime)||{};
   if(!Object.keys(pbs).length)return '';
   const temAT=Object.keys(pbs).some(k=>at[k]&&at[k].tempo<pbs[k]);
   const vida=!!S.pbVida, fx=pro&&pro.faixa;
-  return`<div class="card tight" style="margin-bottom:10px">
-    <div class="eyebrow" style="margin:0">qual tempo mostrar${info('PB da vida × categoria',
-      `<b>Minha categoria</b> mostra o melhor tempo da faixa etária em que você compete hoje. É esse que alimenta <b>projeção, %PB e prontidão</b>, porque é contra essa faixa que você nada.`
-      +`<br><br><b>PB da vida</b> mostra o melhor de todos os tempos, em qualquer idade, com a faixa e a data em que foi feito. Ele não entra em conta nenhuma — é histórico.`
+  const rotCat=fx?fx+'+':'categoria';
+  return`<div class="row noprint" style="gap:7px;align-items:center;justify-content:flex-end;margin:0 0 8px">
+    <span class="xs" style="font-weight:${vida?400:800};opacity:${vida?.55:1}">${rotCat}</span>
+    <button onclick="setPbVida(${!vida})" aria-label="alternar entre ${rotCat} e PB"
+      title="${vida?'mostrando o PB de toda a vida':'mostrando o melhor da sua categoria'}"
+      style="width:40px;min-width:40px;height:23px;min-height:23px;padding:0;border-radius:999px;position:relative;
+        border:1px solid var(--line);background:${vida?'var(--water)':'var(--line)'};cursor:pointer">
+      <span style="position:absolute;top:2px;left:${vida?'19px':'2px'};width:17px;height:17px;border-radius:50%;
+        background:var(--deck);transition:left .15s"></span></button>
+    <span class="xs" style="font-weight:${vida?800:400};opacity:${vida?1:.55}">PB</span>
+    ${info('Categoria × PB',
+      `<b>${rotCat}</b> mostra o melhor tempo da faixa etária em que você compete hoje. É esse que alimenta <b>projeção, %PB e prontidão</b>, porque é contra essa faixa que você nada.`
+      +`<br><br><b>PB</b> mostra o melhor de todos os tempos, em qualquer idade, com a faixa e a data em que foi feito. Ele não entra em conta nenhuma — é histórico.`
       +`<br><br><b>Ao mudar de categoria</b>, por exemplo do 40+ para o 45+, o tempo da categoria continua sendo o do 40+ até você competir na nova. O app usa a maior faixa que <b>tem resultado</b>, em vez de te deixar sem referência no dia do aniversário.`
-      +(temAT?'':`<br><br>Hoje não há marca de faixa anterior registrada, então as duas opções mostram os mesmos tempos. O histórico por faixa vem do <b>currículo da ABMN</b>, que se importa nesta mesma tela.`))}</div>
-    <div class="opt" style="margin-top:8px">
-      <button class="${vida?'':'on'}" onclick="setPbVida(false)">Minha categoria${fx?` · ${fx}+`:''}</button>
-      <button class="${vida?'on':''}" onclick="setPbVida(true)">PB da vida</button></div>
-    ${(vida&&!temAT)?`<div class="xs muted" style="margin-top:6px">Sem marca de faixa anterior registrada — estes são os mesmos tempos da sua categoria.</div>`:''}
+      +(temAT?'':`<br><br>Hoje não há marca de faixa anterior registrada, então as duas posições mostram os mesmos tempos. O histórico por faixa vem do <b>currículo da ABMN</b>, que se importa nesta mesma tela.`))}
   </div>`;
 }
 function pbsTabela(pbs,pis){
@@ -12172,7 +12201,11 @@ const horasBr=h=>(h==null?'—':String(h.toFixed(1)).replace('.',',')+' h');
    FC média — e a única coisa que o app fazia com elas era derivar a metragem
    de nado. Corrida, pedalada e musculação entravam na carga estimada e sumiam
    da vista. Aqui elas finalmente se mostram, no dia em que aconteceram. */
-function detalhesDoDia(ds){
+/* `soExtra` é o modo calendário dos Treinos: ali o treino já foi desenhado
+   acima, então o bloco entra com título próprio e cala quando não tem nada —
+   um “nada registrado” embaixo de um treino que está ali seria mentira. */
+function detalhesDoDia(ds,opt){
+  const soExtra=!!(opt&&opt.soExtra);
   const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===ds)||null;
   const lin=[];
   if(rec){
@@ -12195,42 +12228,10 @@ function detalhesDoDia(ds){
       .filter(Boolean).join(' · ');
       return`<div class="row" style="gap:8px;padding:7px 0;border-top:1px solid var(--line)">
         <span class="grow"><b>${esc(rotuloAtividade(x.tipo))}</b>${det?`<span class="xs muted" style="display:block">${det}</span>`:''}</span></div>`;}).join('')}`:'';
-  if(!tabela&&!cards)return`<div class="small muted" style="margin:10px 0;text-align:center">Nada registrado nesse dia.</div>`;
-  return tabela+cards;
-}
-/* O calendário da Saúde é irmão do dos Treinos, de propósito: mesma grade,
-   mesma navegação, mesmo gesto. O que muda é o que marca o dia e o que abre
-   embaixo. A tabela de 12 dias da Prontidão continua onde estava — ela serve
-   para comparar dias em coluna, e isto aqui serve para abrir UM dia. */
-function calendarioSaude(){
-  const g=((S.pro&&S.pro.garmin)||[]).filter(x=>x&&x.data);
-  const porDia={}; for(const x of g)porDia[x.data]=x;
-  if(!S.calSaudeYM)S.calSaudeYM=hoje().slice(0,7);
-  const Y=+S.calSaudeYM.slice(0,4),M=+S.calSaudeYM.slice(5,7);
-  const ini=new Date(Y,M-1,1).getDay(), nd=new Date(Y,M,0).getDate(), hj=hoje();
-  const nav=dl=>{let y=Y,m=M+dl; if(m<1){m=12;y--} if(m>12){m=1;y++} return y+'-'+String(m).padStart(2,'0');};
-  const temCorpo=r=>!!(r&&(r.hrv!=null||r.fc!=null||r.sono!=null));
-  const nAtiv=r=>(((r&&r.ativs)||[]).length);
-  const cell=d=>{
-    const ds=`${Y}-${String(M).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const r=porDia[ds], sel=S.calSaudeDia===ds, eHoje=ds===hj;
-    const corpo=temCorpo(r), na=nAtiv(r), tem=corpo||na>0;
-    const bg=sel?'var(--ink)':tem?'var(--deck)':'transparent';
-    const cor=sel?'var(--deck)':'inherit';
-    return`<button class="cal-d" onclick="S.calSaudeDia='${ds}';render()" style="border-color:${eHoje?'var(--water)':'var(--line)'};background:${bg};color:${cor}">
-      <span style="font-size:13px;font-weight:${tem?'800':'400'}">${d}</span>
-      ${tem?`<span style="font-size:8px;line-height:1;color:${sel?'var(--deck)':'var(--water)'}">${corpo?'●':''}${na?'▴'+(na>1?na:''):''}</span>`:''}</button>`;};
-  let cells=''; for(let i=0;i<ini;i++)cells+='<div></div>'; for(let d=1;d<=nd;d++)cells+=cell(d);
-  return`<div class="row" style="align-items:center;margin-bottom:10px">
-      <button class="sm ghost" onclick="S.calSaudeYM='${nav(-1)}';S.calSaudeDia=null;render()">‹</button>
-      <div class="grow" style="text-align:center;font-weight:800;text-transform:capitalize">${MESES[M-1]} ${Y}</div>
-      <button class="sm ghost" onclick="S.calSaudeYM='${nav(1)}';S.calSaudeDia=null;render()">›</button></div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:10px;color:var(--ink-2);margin-bottom:5px">${['dom','seg','ter','qua','qui','sex','sáb'].map(n=>`<div>${n}</div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
-    <div class="xs muted" style="margin-top:8px"><b>●</b> medida do corpo (VFC, FC, sono) · <b>▴</b> atividade do relógio</div>
-    ${S.calSaudeDia?`<div class="blk" style="margin-top:12px"><h3 style="text-transform:capitalize">${brData(S.calSaudeDia)}</h3><div class="ln"></div></div>
-      ${detalhesDoDia(S.calSaudeDia)}`
-      :`<div class="small muted" style="margin-top:12px;text-align:center">Toque num dia para ver o que o app tem dele.</div>`}`;
+  if(!tabela&&!cards)return soExtra?'':`<div class="small muted" style="margin:10px 0;text-align:center">Nada registrado nesse dia.</div>`;
+  return soExtra
+    ? `<div class="card" style="margin-top:10px"><div class="eyebrow">o que o relógio mediu</div>${tabela}${cards}</div>`
+    : tabela+cards;
 }
 function telaGarmin(){
   const g=[...(S.pro?.garmin||[])].sort((a,b)=>b.data.localeCompare(a.data));
@@ -12370,8 +12371,6 @@ function telaGarmin(){
   ${cardConectarRelogio()}
   ${acc('sa_ck','Check-in diário',checkinSub(),cardCheckin())}
   ${acc('sa_med','Medições do dia',medicoesSub(),cardMedicoes())}
-  ${acc('sa_cal','Calendário',(()=>{const n=((S.pro&&S.pro.garmin)||[]).length;
-    return n?`${n} dia(s) com registro`:'nenhum dia ainda';})(),calendarioSaude())}
   ${/* ⚠️ O SUBTÍTULO É O QUE SE LÊ ANTES DE ABRIR. Dizia “sem dados ainda”
        com a tabela cheia de metragem de treino escrito — e quem leu isso não
        abre. Dado de saúde e metragem não se misturam na contagem: ou diz
