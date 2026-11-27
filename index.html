@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.17"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.17"></script>
+<script src="./persistencia-segura.js?v=v2.19.18"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.18"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.17';
+const VER='v2.19.18';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5657,7 +5657,7 @@ function cardExtrato(ym){
     '<span class="grow">'+e.dist+'m '+esc(e.estilo||'')+' <span class="muted">'+(e.pis==='LC50'?'50m':'25m')+'</span></span>'+
     '<b style="margin-right:8px">'+fmt(e.tempo,true)+'</b>'+
     '<span style="width:46px;text-align:right">'+(e.pct!=null?'<b>'+e.pct.toFixed(0)+'%</b>':'—')+'</span></div>';
-  return '<div class="card" style="margin-bottom:10px">'+
+  return '<div class="card" id="extrato-'+ym+'" style="margin-bottom:10px">'+
     '<div class="eyebrow">extrato · '+(MESES[+ym.slice(5,7)-1]||ym)+' '+ym.slice(0,4)+'</div>'+
     '<div class="note '+cor+'" style="margin:8px 0">'+leitura.txt+'</div>'+
     '<div class="grid3" style="margin:10px 0">'+
@@ -5679,9 +5679,40 @@ function cardExtrato(ym){
     '<div class="xs muted" style="margin-top:10px">Descritivo'+info('O que o extrato é',
       'Ele <b>descreve</b> e aponta padrões a partir dos seus dados — não recomenda nem prescreve.'
       +'<br><br>Decisão de carga é sua e do seu técnico.')+'</div>'+
+    '<button class="ghost full noprint" style="margin-top:12px" onclick="imprimirExtrato(\''+ym+'\')">Salvar em PDF</button>'+
   '</div>';
 }
 
+/* ⚠️ A SANFONA DOS TIROS NÃO EXISTE NO DOM QUANDO ESTÁ FECHADA. Imprimir sem
+   abri-la sairia um extrato que fala de 40 tiros e não lista nenhum. Abrimos,
+   clonamos e devolvemos o estado em que o atleta estava.
+
+   ⚠️ E O RODAPÉ NÃO É ENFEITE. Um PDF de extrato circula entre atleta e
+   técnico, e uma folha solta precisa dizer de quem é, de que mês e de onde
+   veio — senão vira número sem dono em cima de uma mesa. */
+function imprimirExtrato(ym){
+  const antes=JSON.stringify(S.acc||{});
+  S.acc=S.acc||{}; S.acc['ex_t_'+ym]=true; render();
+  const el=document.getElementById('extrato-'+ym);
+  if(!el){ S.acc=JSON.parse(antes); render(); return toast('Abra o extrato do mês primeiro.'); }
+  const clone=el.cloneNode(true);
+  clone.querySelectorAll('.noprint').forEach(n=>n.remove());
+  /* handler herdado do clone vira ReferenceError na janela nova, e botão em
+     papel não serve para nada */
+  clone.querySelectorAll('[onclick],[oninput],[ontoggle],[onchange]').forEach(n=>{
+    n.removeAttribute('onclick');n.removeAttribute('oninput');
+    n.removeAttribute('ontoggle');n.removeAttribute('onchange');});
+  clone.querySelectorAll('details').forEach(d=>d.setAttribute('open',''));
+  const mes=(MESES[+ym.slice(5,7)-1]||ym)+' '+ym.slice(0,4);
+  const rod=document.createElement('div'); rod.className='doc-rodape';
+  rod.innerHTML=`<span class="rod-marca"><img src="./icone-m360-512.png" alt="" width="512" height="512"><b>${esc(APP_NOME)}</b><span class="rod-url">meros360.com</span></span>`
+    +`<span class="rod-quem">${esc(nomeLaudo())} — extrato de ${esc(mes)} · emitido em ${brData(hoje())}</span>`
+    +`<span class="rod-ver">${VER}</span>`;
+  const folha=document.createElement('div');
+  folha.appendChild(clone); folha.appendChild(rod);
+  setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
+  enviarParaImpressao(folha.innerHTML,nomeLaudo()+' — extrato de '+mes);
+}
 /* ── O PLACAR DE SINAIS ─────────────────────────────────────────────────────
    Cada sinal é uma frase verificável com o dado que a sustenta. Nenhum vira
    nota; o extrato diz quantos apontam para cada lado — e quando estão
@@ -7391,6 +7422,36 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
      existe mais. É o mesmo motivo por que `hrvF` está na lista. */
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
+});
+teste('extrato','o PDF do mês sai inteiro, assinado e sem botão',a=>{
+  const ym='2026-11';
+  const bk=[S.extratoCalc,S.acc,S.u,window.enviarParaImpressao,window.render];
+  try{
+    _atleta(); S.u.nome='Teste da Silva';
+    S.extratoCalc={[ym]:{pct:87,pctAnt:85,nAnt:12,cargaSem:1840,deltaCarga:12,porSemAnt:1640,
+      cobertura:0.93,nSeco:4,hrv:{delta:-3,fonte:'noite'},sono:{media:7.2,ref:6.5},acwr:null,
+      diasMes:{'2026-11-03':1},porSemana:[{sem:1,pct:85},{sem:2,pct:88}],
+      faixa:{de:34,ate:46,media:40,n:21},ctx:{lista:[],dias:0},
+      tiros:[{data:'2026-11-26',dist:50,estilo:'peito',pis:'SC25',tempo:32830,pct:92}]}};
+    S.acc={};
+    let doc=null;
+    window.enviarParaImpressao=(corpo,titulo)=>{doc={corpo,titulo}};
+    window.render=()=>{ document.getElementById('app').innerHTML='<div>'+cardExtrato(ym)+'</div>'; };
+    window.render();
+    imprimirExtrato(ym);
+    a.ok(!!doc,'a impressão foi disparada');
+    /* ⚠️ A SANFONA DOS TIROS NÃO EXISTE NO DOM QUANDO FECHADA. Sem forçá-la
+       antes de clonar, o PDF falaria de N tiros e não listaria nenhum. */
+    a.ok(/peito/.test(doc.corpo),'os tiros do mês estão na folha');
+    /* uma folha solta precisa dizer de quem é e de que mês */
+    a.ok(/doc-rodape/.test(doc.corpo),'tem rodapé');
+    a.ok(/Teste da Silva/.test(doc.corpo)&&/novembro/.test(doc.corpo),'que nomeia o atleta e o mês');
+    a.ok(/novembro 2026/.test(doc.titulo),'e o título do documento também');
+    /* botão em papel não serve para nada, e handler herdado vira erro lá */
+    a.ok(!/Salvar em PDF/.test(doc.corpo),'o próprio botão de PDF não entra no PDF');
+    a.ok(!/onclick=/.test(doc.corpo),'nenhum handler sobrevive ao clone');
+  } finally { S.extratoCalc=bk[0];S.acc=bk[1];S.u=bk[2];
+    window.enviarParaImpressao=bk[3]; window.render=bk[4]; }
 });
 teste('saúde','atividade adotada vira treino e para de contar duas vezes',a=>{
   const bk=[S.pro,VOLDIA];
@@ -18063,14 +18124,21 @@ function imprimirRelatorio(modo){
     +`<span class="rod-ver">${VER}</span>`;
   clone.appendChild(rod);
   setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
+  enviarParaImpressao(clone.innerHTML,nomeLaudo()+' — relatório');
+}
+/* ⚠️ A JANELA DE IMPRESSÃO É OUTRO DOCUMENTO, E LÁ NÃO EXISTE NADA DO APP.
+   Nem função, nem folha de estilo, nem endereço base — por isso os três vão
+   escritos junto. Isto era o final de `imprimirRelatorio`; virou função quando
+   o extrato do mês passou a imprimir também, para não haver duas máquinas de
+   impressão divergindo em silêncio. */
+function enviarParaImpressao(corpo,titulo){
   const estilos=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('');
-  const nome=nomeLaudo();
-  const corpo=clone.innerHTML;
+  const nome=titulo||APP_NOME;
   /* A janela de impressão nasce em about:blank, onde "./logo-m360-*.png" não
      resolve — a logo sairia quebrada no PDF. O <base> amarra os caminhos
      relativos ao endereço de onde o app está servido. */
   const base=`<base href="${location.href.replace(/[^/]*$/,'')}">`;
-  const cabeca=base+`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)} — relatório</title>${estilos}<style>body{padding:14px;background:#fff}@media print{body{padding:0}}</style>`;
+  const cabeca=base+`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)}</title>${estilos}<style>body{padding:14px;background:#fff}@media print{body{padding:0}}</style>`;
   const script='<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},500);};window.onafterprint=function(){setTimeout(function(){try{window.close();}catch(e){}},300);};</scr'+'ipt>';
   const doc='<!doctype html><html lang="pt-BR"><head>'+cabeca+'</head><body>'+corpo+script+'</body></html>';
   let w=null; try{ w=window.open('','_blank'); }catch(e){}
