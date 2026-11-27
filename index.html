@@ -429,14 +429,29 @@ nav button b{display:block;font-size:19px;line-height:1.2;font-weight:700}
    tela de aplicativo que se rola. */
 .doc-cap{margin:14px 0 6px}
 .doc-cap h1{font-size:27px;line-height:1.05;letter-spacing:-.01em}
-/* rastreabilidade recolhida: o gatilho é discreto, o número é que manda */
-.ficha-det>summary{cursor:pointer;font-size:11.5px;color:var(--ink-3);
-  margin-top:4px;list-style:none;display:inline-flex;align-items:center;gap:4px}
-.ficha-det>summary::-webkit-details-marker{display:none}
-.ficha-det>summary::before{content:'▸';font-size:9px;transition:transform .12s}
-.ficha-det[open]>summary::before{transform:rotate(90deg)}
-.ficha-det>summary:hover{color:var(--ink-2)}
-.ficha-det table{margin-top:4px}
+/* ⚠️ A LINHA DE MÉTRICA É A UNIDADE DO RELATÓRIO, E A RASTREABILIDADE MORA
+   DENTRO DELA. Cada indicador gastava duas linhas: a do número e uma segunda,
+   em cinza, escrita “como este número é apurado”. Num bloco de cinco
+   indicadores a mesma frase aparecia cinco vezes e somava mais altura que os
+   próprios números — e era sempre a mesma frase, que é a definição de ruído.
+
+   Agora a linha inteira é o gatilho: tocar em qualquer ponto dela abre a
+   procedência. Nada foi escondido; o que sumiu foi a repetição.
+
+   ⚠️ O RÓTULO RECUA E O NÚMERO AVANÇA. O nome do indicador era `<b>`,
+   competindo em peso com o próprio valor. Num relatório que se lê em pé, quem
+   tem de saltar é o número. */
+.ficha{border-top:1px solid var(--line);padding:9px 0}
+.ficha>summary{cursor:pointer;list-style:none}
+.ficha>summary::-webkit-details-marker{display:none}
+.ficha-linha{display:flex;align-items:baseline;gap:8px}
+.ficha-nome{flex:1;min-width:0;color:var(--ink-2)}
+.ficha-v{font-size:22px;font-weight:800;line-height:1.05}
+.ficha-un{white-space:nowrap;color:var(--ink-3)}
+.ficha-seta{color:var(--ink-3);font-size:10px;transition:transform .12s;flex:0 0 auto}
+.ficha[open] .ficha-seta{transform:rotate(90deg)}
+.ficha>summary:hover .ficha-nome{color:var(--ink)}
+.ficha table{margin-top:6px}
 /* assinatura do documento: logo + nome, acima do título */
 .doc-logo{display:flex;align-items:center;gap:11px;margin:0 0 12px;
   padding-bottom:11px;border-bottom:1px solid var(--line)}
@@ -681,8 +696,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.21"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.21"></script>
+<script src="./persistencia-segura.js?v=v2.19.22"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.22"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -703,7 +718,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.21';
+const VER='v2.19.22';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -17613,26 +17628,30 @@ function avisoCoerencia(pro,motor){
    um número que o leitor tem de aceitar por confiança; com ficha, ele pode
    discordar com base. Campo sem dado aparece como "—", nunca como zero. */
 function fichaIndicador(f){
-  const v=f.valor==null?'<span class="muted">indisponível</span>':f.valor;
+  const v=f.valor==null?'<span class="muted" style="font-size:var(--t-small)">indisponível</span>':f.valor;
   const li=(r,x)=>x?`<tr><td class="muted" style="width:34%">${r}</td><td>${x}</td></tr>`:'';
-  return`<div style="border-top:1px solid var(--line);padding:10px 0">
-    <div class="row" style="align-items:baseline;gap:8px">
-      <b class="grow">${esc(f.nome)}</b>
-      <span class="t" style="font-size:20px;font-weight:800;${f.cor?`color:${f.cor}`:''}">${v}</span>
-      ${f.unidade?`<span class="xs muted">${esc(f.unidade)}</span>`:''}
-    </div>
-    ${f.valor==null?`<div class="xs muted" style="margin-top:3px"><b>Indisponível</b> — ${esc(f.porqueIndisponivel||'falta dado para este indicador')}. Não é zero, e nada foi substituído por outra prova.</div>`:''}
+  /* a ausência fica DENTRO do gatilho, e não escondida atrás dele: `<summary>`
+     aceita conteúdo de bloco, então a explicação continua visível com a ficha
+     fechada — é informação sobre o que falta, não material de auditoria */
+  return`<details class="ficha"><summary>
+    <span class="ficha-linha">
+      <span class="ficha-nome">${esc(f.nome)}</span>
+      <span class="ficha-v t" style="${f.cor?`color:${f.cor}`:''}">${v}</span>
+      ${f.unidade?`<span class="ficha-un xs">${esc(f.unidade)}</span>`:''}
+      <span class="ficha-seta" aria-hidden="true">▸</span>
+    </span>
+    ${f.valor==null?`<span class="xs muted" style="display:block;margin-top:4px"><b>Indisponível</b> — ${esc(f.porqueIndisponivel||'falta dado para este indicador')}. Não é zero, e nada foi substituído por outra prova.</span>`:''}
+  </summary>
     ${/* A rastreabilidade RECOLHE na tela e ABRE no papel. Na tela, quem lê
          quer o número; os oito campos de procedência empilhados em cinco
          indicadores viravam uma parede. No PDF eles reaparecem inteiros,
          porque lá o documento precisa se sustentar sozinho numa auditoria —
          o bloco @media print já força todo <details> aberto. */''}
-    <details class="ficha-det"><summary>como este número é apurado</summary>
-      <table class="xs"><tbody>
-        ${li('Período',f.periodo)}${li('Fonte',f.fonte)}${li('Atualizado',f.atualizado)}
-        ${li('Observações',f.n==null?null:(typeof f.n==='number'?`n = ${f.n}`:f.n))}${li('Interpretação',f.interpretacao)}
-        ${li('Limitação',f.limitacao)}
-      </tbody></table></details></div>`;
+    <table class="xs"><tbody>
+      ${li('Período',f.periodo)}${li('Fonte',f.fonte)}${li('Atualizado',f.atualizado)}
+      ${li('Observações',f.n==null?null:(typeof f.n==='number'?`n = ${f.n}`:f.n))}${li('Interpretação',f.interpretacao)}
+      ${li('Limitação',f.limitacao)}
+    </tbody></table></details>`;
 }
 /* ── P3-A — PÁGINA 1 DO RESUMO ─────────────────────────────────────────────
    Cinco perguntas, nesta ordem, cada uma com a sua ficha. É a folha que o
