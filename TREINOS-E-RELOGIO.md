@@ -1,6 +1,20 @@
 # Desenho — o relógio entra pela porta do treino
 
-**Status: E1 entregue na v2.19.8 (23/11/2026). E2 e E3 continuam no papel.**
+**Status: E1 na v2.19.8, E2 e E3 na v2.19.17 (27/11/2026). Desenho cumprido.**
+
+> **A forma final diferiu do desenho em um ponto, e para melhor.** O mecanismo
+> B previa um “cartão próprio” para a atividade sem treino. Na implementação
+> ficou claro que isso seria uma segunda tela de lançamento fazendo o trabalho
+> da primeira: o formulário de treino fora d'água já tem tipo, data, RPE,
+> duração, FC, calorias, observação, anexo e transcrição. A atividade passou a
+> abrir ESSE formulário, pré-preenchido com o que o relógio mediu, e o que sai
+> dali é um treino como qualquer outro — ligado à atividade pela chave, que é o
+> que impede a mesma sessão de contar duas vezes.
+>
+> E o mecanismo A ficou mais simples do que o previsto: em vez de a atividade
+> “preencher” `t.sessao`, uma função devolve a sessão EFETIVA — digitado onde
+> há, relógio onde faltava. Nada é gravado por cima do que o atleta escreveu,
+> porque nada é gravado: a mescla acontece na leitura.
 Escrito antes de tocar em código, a pedido do Bruno, em 23/11/2026.
 
 Este documento responde a uma pergunta que apareceu no dia em que o nado pelo

@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.16"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.16"></script>
+<script src="./persistencia-segura.js?v=v2.19.17"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.17"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.16';
+const VER='v2.19.17';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -4271,7 +4271,7 @@ function telaTreinoDetalhe(){
                  :'Quem criou o treino pode recalcular.'}</div>`;})()}
   ${(()=>{const u=urlSegura(t.pdf); return u?`<a class="btnlink" href="${u}" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin:8px 0;padding:11px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink)">📄 Abrir treino em PDF</a>`
     :(t.pdf?`<div class="note warn" style="margin:8px 0">Anexo ignorado: o formato do arquivo deste treino não é aceito (só PDF ou imagem).</div>`:'');})()}
-  ${at?(function(){const fz=treinoFeito(t,at.id),s=(t.sessao&&t.sessao[at.id])||{};return`<div class="card tight" style="margin-top:8px">
+  ${at?(function(){const fz=treinoFeito(t,at.id),s=sessaoDoTreino(t,at.id);return`<div class="card tight" style="margin-top:8px">
     <div class="row"><span class="grow"><b>${fz?'Treino feito':'Marcar como feito'}</b><div class="xs muted">${fz?'consolidado no relatório de performance':'marque quando terminar — só então entra no relatório'}</div></span>
       <button class="sm" style="${fz?'background:var(--ok);color:var(--sobre-acento);font-weight:800':''}" onclick="toggleFeito('${t.id}','${at.id}')">${fz?'✓ Feito':'Feito'}</button></div>
     <div class="grid2" style="margin-top:8px">
@@ -4280,6 +4280,13 @@ function telaTreinoDetalhe(){
       <div class="field"><label>Duração <span class="xs muted">mm:ss ou hh:mm:ss</span></label>
         <input inputmode="text" value="${s.dur!=null?s.dur:''}" onchange="setSessao('${t.id}','${at.id}','dur',durMin(this.value))"></div>
     </div>
+    ${/* ⚠️ O RELÓGIO PREENCHE O QUE FICOU EM BRANCO, E DIZ QUE FOI ELE. O que o
+         atleta digitou nunca é sobrescrito: `sessaoDoTreino` só entra onde não
+         há número. E a FC média aparece como leitura, sem campo, porque não há
+         o que digitar ali — ou o relógio mediu, ou não existe. */''}
+    ${(s.durDoRelogio||s.fcDoRelogio)?`<div class="row xs muted" style="gap:10px;padding-top:4px">
+      ${s.durDoRelogio?`<span>duração <b>do relógio</b></span>`:''}
+      ${s.fcDoRelogio?`<span>FC média <b>${s.fc} bpm</b> do relógio</span>`:''}</div>`:''}
     <div class="xs muted">carga da sessão${info('RPE × duração',
       `RPE × duração vira a <b>carga da sessão</b>, em UA. É o que põe natação e musculação na mesma escala no relatório.`)}</div>
   </div>`})():''}
@@ -7384,6 +7391,71 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
      existe mais. É o mesmo motivo por que `hrvF` está na lista. */
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
+});
+teste('saúde','atividade adotada vira treino e para de contar duas vezes',a=>{
+  const bk=[S.pro,VOLDIA];
+  try{
+    /* ⚠️ O DOBRO É O RISCO DESTE DESENHO. A atividade continua no pacote — é a
+       medida, e medida não se apaga — mas, depois de virar treino fora d'água,
+       quem conta a carga é o treino. Sem a chave, a mesma sessão entraria duas
+       vezes no mesmo dia. */
+    _atleta({garmin:[{data:'2026-11-26',fc:59,
+      ativs:[{k:'A2',tipo:'cardio_esteira',min:66,fc:110,kcal:399,origem:'garmin'}]}]});
+    VOLDIA={};
+    a.ok(!ativAdotada('A2'),'antes de salvar, não está adotada');
+    a.ok(/Cardiovascular/.test(detalhesDoDia('2026-11-26')),'e aparece solta, para lançar');
+    a.ok(/lançar</.test(detalhesDoDia('2026-11-26')),'com botão de lançar, não de RPE');
+    const g=S.pro.garmin[0];
+    a.ok(cargaDasAtividades(g,42),'e entra na carga por estimativa');
+    S.pro.seco=[{id:'s1',tipo:'Funcional',data:'2026-11-26',dur:66,rpe:7,fc:110,calorias:399,ativK:'A2'}];
+    a.ok(ativAdotada('A2'),'depois de salva, está adotada');
+    a.ok(!/Cardiovascular/.test(detalhesDoDia('2026-11-26')),'some da lista de soltas');
+    a.eq(cargaDasAtividades(g,42),null,'e para de gerar carga por si — quem conta é o treino');
+  } finally { S.pro=bk[0]; VOLDIA=bk[1]; }
+});
+teste('saúde','o tipo que vem do relógio é palpite, e cai na lista do formulário',a=>{
+  a.eq(tipoSecoDoRelogio('corrida_na_rua'),'Corrida','corrida');
+  a.eq(tipoSecoDoRelogio('cycling'),'Bicicleta','bike');
+  a.eq(tipoSecoDoRelogio('strength_training'),'Musculação','força');
+  a.eq(tipoSecoDoRelogio('cardio_esteira'),'Funcional','cardio cai em Funcional');
+  a.eq(tipoSecoDoRelogio('paraquedismo'),'Outro','o que não se reconhece não se inventa');
+  for(const t of ['corrida','cycling','strength','cardio','yoga','xyz'])
+    a.ok(SECO_TIPOS.indexOf(tipoSecoDoRelogio(t))>=0,'“'+t+'” cai dentro da lista do formulário');
+});
+teste('carga','a sessão do treino escrito é alimentada pelo relógio',a=>{
+  const bk=[S.pro,S.u];
+  try{
+    _atleta({garmin:[{data:'2026-11-26',fc:59,ativs:[
+      {k:'N1',tipo:'natacao_piscina',min:53,fc:139,dist:1450,origem:'garmin'}]}]});
+    const t={id:'t1',data:'2026-11-26',sessao:{}};
+    let s=sessaoDoTreino(t,'A1');
+    a.eq(s.dur,53,'a duração vem do relógio quando o campo está vazio');
+    a.ok(s.durDoRelogio,'e a tela sabe dizer que foi o relógio');
+    a.eq(s.fc,139,'a FC média também');
+    a.eq(s.rpe,null,'o RPE continua sendo do atleta — relógio nenhum mede isso');
+    /* ⚠️ O DIGITADO NUNCA É SOBRESCRITO */
+    t.sessao={A1:{dur:70,rpe:8}};
+    s=sessaoDoTreino(t,'A1');
+    a.eq(s.dur,70,'onde o atleta digitou, o relógio não encosta');
+    a.ok(!s.durDoRelogio,'e a tela não alega que foi o relógio');
+    /* ⚠️ SÓ PARA O PRÓPRIO ATLETA. `coletarEsforcos` também roda com o técnico
+       logado, e a série do relógio é de quem está logado. */
+    t.sessao={};
+    a.eq(sessaoDoTreino(t,'OUTRO').dur,null,'o relógio de quem está logado não alimenta a sessão de outro');
+  } finally { S.pro=bk[0]; S.u=bk[1]; }
+});
+teste('saúde','nado de dia com treino escrito não aparece solto',a=>{
+  const bk=[S.pro,VOLDIA];
+  try{
+    /* ele entra na sessão do treino; repetir aqui seria a mesma sessão duas
+       vezes, com números levemente diferentes */
+    _atleta({garmin:[{data:'2026-11-26',fc:59,ativs:[
+      {k:'N1',tipo:'natacao_piscina',min:53,fc:139,dist:1450,origem:'garmin'}]}]});
+    VOLDIA={'2026-11-26':4000};
+    a.ok(!/Natação em piscina/.test(detalhesDoDia('2026-11-26')),'com treino escrito, não aparece solto');
+    VOLDIA={};
+    a.ok(/Natação em piscina/.test(detalhesDoDia('2026-11-26')),'sem treino escrito, aparece — águas abertas vive disso');
+  } finally { S.pro=bk[0]; VOLDIA=bk[1]; }
 });
 teste('pacotes','o relógio não encosta nos tempos dos tiros',a=>{
   /* ⚠️ É A RAZÃO DE O APP EXISTIR. O relógio não dá tempo de tiro, parcial nem
@@ -12345,6 +12417,53 @@ const horasBr=h=>(h==null?'—':String(h.toFixed(1)).replace('.',',')+' h');
 /* `soExtra` é o modo calendário dos Treinos: ali o treino já foi desenhado
    acima, então o bloco entra com título próprio e cala quando não tem nada —
    um “nada registrado” embaixo de um treino que está ali seria mentira. */
+const ehNado=t=>/swim|nata/i.test(String(t||''));
+/* ⚠️ ADOTADA = JÁ VIROU TREINO. A atividade continua existindo no pacote do
+   relógio — é a medida, e medida não se apaga — mas deixa de aparecer solta e
+   deixa de contar carga por si: quem conta passa a ser o treino fora d'água
+   que o atleta salvou a partir dela. Sem esta checagem, a mesma sessão
+   entraria duas vezes na carga do dia. */
+function ativAdotada(k){
+  if(k==null)return false;
+  return ((S.pro&&S.pro.seco)||[]).some(x=>x&&x.ativK!=null&&String(x.ativK)===String(k));
+}
+/* O tipo do relógio não é a lista do formulário. Isto é um PALPITE INICIAL,
+   e o campo abre editável justamente por isso: “cardio” pode ser funcional,
+   esteira ou elíptico, e quem sabe é quem treinou. */
+function tipoSecoDoRelogio(t){
+  const x=String(t||'');
+  if(/run|corrid/i.test(x))return 'Corrida';
+  if(/bike|cycl|pedal/i.test(x))return 'Bicicleta';
+  if(/strength|weight|muscul/i.test(x))return 'Musculação';
+  if(/yoga|pilates|mobil|stretch/i.test(x))return 'Mobilidade';
+  if(/cardio|ellip|row|remo|walk|caminh|hiit|cross/i.test(x))return 'Funcional';
+  return 'Outro';
+}
+/* ⚠️ A SESSÃO DO TREINO ESCRITO, JÁ ALIMENTADA PELO RELÓGIO. O que o atleta
+   digitou sempre vence; o relógio preenche o que ficou em branco. É por isso
+   que a atividade de nado não precisa aparecer solta num dia que tem treino
+   escrito: ela entra AQUI, no lado realizado do treino, que é onde a pergunta
+   “fiz o que foi passado?” vive.
+
+   ⚠️ SÓ PARA O PRÓPRIO ATLETA. `coletarEsforcos` também roda com o técnico
+   logado, e `S.pro.garmin` é de quem está logado: sem esta guarda, o relógio do
+   técnico alimentaria a sessão do atleta. */
+function sessaoDoTreino(t,atId){
+  const s=(t&&t.sessao&&t.sessao[atId])||{};
+  const out={rpe:s.rpe!=null?s.rpe:null,dur:s.dur!=null?s.dur:null,fc:null,
+    durDoRelogio:false,fcDoRelogio:false};
+  if(!S.u||atId!==S.u.id||!t||!t.data)return out;
+  const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===t.data);
+  const nados=(((rec&&rec.ativs)||[]).map(atividadeEfetiva)
+    .filter(x=>x&&!x.fora&&!ativAdotada(x.k)&&ehNado(x.tipo)&&x.min));
+  if(!nados.length)return out;
+  if(out.dur==null){ const m=nados.reduce((a,x)=>a+x.min,0);
+    if(m>0){ out.dur=Math.round(m); out.durDoRelogio=true; } }
+  const cf=nados.filter(x=>x.fc!=null);
+  if(cf.length){ const tot=cf.reduce((a,x)=>a+x.min,0);
+    out.fc=Math.round(cf.reduce((a,x)=>a+x.fc*x.min,0)/tot); out.fcDoRelogio=true; }
+  return out;
+}
 function detalhesDoDia(ds,opt){
   const soExtra=!!(opt&&opt.soExtra);
   const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===ds)||null;
@@ -12360,7 +12479,13 @@ function detalhesDoDia(ds,opt){
      que a tabela da Prontidão já usa e que os testes fixam. */
   if(m&&m.cent)lin.push(['Nado',String(nadoKm(m.cent)).replace('.',',')+' km',
     m.fonte==='treino'?'do treino escrito':(m.fonte==='mao'?'informado por você':(m.fonte==='relogio'?'medido pelo relógio':''))]);
-  const ativs=((rec&&rec.ativs)||[]).filter(x=>x);
+  /* ⚠️ SÓ APARECE SOLTA A ATIVIDADE QUE NÃO TEM ONDE MORAR. A adotada virou
+     cartão de treino fora d'água, logo acima; a de nado de um dia com treino
+     escrito entra na sessão daquele treino. Repetir aqui seria mostrar a mesma
+     sessão duas vezes, com números levemente diferentes. */
+  const comTreino=((VOLDIA||{})[ds]||0)>0;
+  const ativs=((rec&&rec.ativs)||[]).filter(x=>x&&!ativAdotada(x.k))
+    .filter(x=>!(comTreino&&ehNado(atividadeEfetiva(x).tipo)));
   const tabela=lin.length?`<table style="margin-top:4px"><tbody>${lin.map(r=>
     `<tr><td class="small">${r[0]}</td><td class="n" style="text-align:right;font-weight:700">${r[1]}</td>`
     +`<td class="xs muted" style="padding-left:10px">${r[2]||''}</td></tr>`).join('')}</tbody></table>`:'';
@@ -12377,8 +12502,15 @@ function detalhesDoDia(ds,opt){
       return`<div class="row" style="gap:8px;padding:7px 0;border-top:1px solid var(--line);${x.fora?'opacity:.55':''}">
         <span class="grow"><b>${esc(rotuloAtividade(x.tipo))}</b>${x.fora?' <span class="xs" style="color:var(--clock)">fora da conta</span>':''}
         ${det?`<span class="xs muted" style="display:block">${det}${(x.min&&x.rpe!=null)?` · carga <b>${Math.round(x.min*x.rpe)}</b>`:''}${mex?' · <b>corrigido por você</b>':''}</span>`:''}
-        ${(!x.fora&&x.rpe==null&&x.min)?`<span class="xs" style="display:block;color:var(--clock)">sem RPE — entra só por estimativa</span>`:''}</span>
-        <button class="sm ${(!x.fora&&x.rpe==null&&x.min)?'':'ghost '}noprint" onclick="abrirEditarAtividade('${ds}','${esc(String(x0.k))}')">${(!x.fora&&x.rpe==null&&x.min)?'+ RPE':'editar'}</button></div>`;}).join('')}`:'';
+        ${(!x.fora&&x.rpe==null&&x.min)?`<span class="xs" style="display:block;color:var(--clock)">${ehNado(x.tipo)?'sem RPE — entra só por estimativa':'ainda não lançada como treino'}</span>`:''}</span>
+        ${ehNado(x.tipo)
+          ? `<button class="sm ${(!x.fora&&x.rpe==null&&x.min)?'':'ghost '}noprint" onclick="abrirEditarAtividade('${ds}','${esc(String(x0.k))}')">${(!x.fora&&x.rpe==null&&x.min)?'+ RPE':'editar'}</button>`
+          /* ⚠️ FORA D'ÁGUA NÃO GANHA FOLHA PRÓPRIA. Abre o MESMO formulário do
+             treino extra, já preenchido com o que o relógio mediu — tipo,
+             duração, FC média e calorias — e com RPE, observação, anexo e
+             transcrição para o atleta completar. Uma tela de lançamento, não
+             duas, e o registro que sai dali é um treino como qualquer outro. */
+          : `<button class="sm noprint" onclick="abrirTreinoExtra('${ds}',null,'${esc(String(x0.k))}')">lançar</button>`}</div>`;}).join('')}`:'';
   /* ⚠️ A MESMA SESSÃO CONTADA DUAS VEZES É O ERRO QUE ESTE DESENHO PODE CRIAR.
      O app NÃO decide sozinho que a Funcional lançada à mão e a Cardiovascular do
      relógio são a mesma coisa — palpite de correspondência foi justamente o que
@@ -12405,7 +12537,7 @@ function detalhesDoDia(ds,opt){
     Se forem a mesma, abra uma delas e marque como <b>fora da conta</b> — o app não decide isso por você.</div></div>`:'';
   if(!tabela&&!cards)return soExtra?'':`<div class="small muted" style="margin:10px 0;text-align:center">Nada registrado nesse dia.</div>`;
   return soExtra
-    ? `<div class="card" style="margin-top:10px"><div class="eyebrow">o que o relógio mediu</div>${tabela}${cards}${aviso}</div>`
+    ? `<div class="card" style="margin-top:10px"><div class="eyebrow">detalhes diários</div>${tabela}${cards}${aviso}</div>`
     : tabela+cards+aviso;
 }
 function acharAtividade(ds,k){
@@ -14068,18 +14200,34 @@ function fotoSeco(inp){
 }
 /* Treino extra (fora d'água / cross-training) como FOLHA — não é apagado pelo sync,
    corrigindo o antigo bug do formulário inline. Abre novo (data) ou edita (id). */
-function abrirTreinoExtra(data,id){
+function abrirTreinoExtra(data,id,k){
   const ed=id?(((S.pro&&S.pro.seco)||[]).find(x=>x.id===id)):null;
+  /* vindo do relógio: o formulário abre com o que ele mediu, e o atleta só
+     acrescenta o que relógio nenhum sabe — RPE, observação, anexo, transcrição */
+  const rr=(!ed&&k)?acharAtividade(data,k):null;
+  const av=rr?atividadeEfetiva(rr.x0):null;
   S.secoEdit=ed?ed.id:null;
   S.secoDraft=ed
-    ?{tipo:ed.tipo,data:ed.data,rpe:ed.rpe,durTxt:ed.durTxt||minParaHMS(ed.dur),fc:ed.fc,calorias:ed.calorias,obs:ed.obs||'',trans:ed.transcricao||''}
-    :{tipo:'Musculação',data:data||hoje(),rpe:null,durTxt:'',fc:null,calorias:null,obs:'',trans:''};
+    ?{tipo:ed.tipo,data:ed.data,rpe:ed.rpe,durTxt:ed.durTxt||minParaHMS(ed.dur),fc:ed.fc,calorias:ed.calorias,obs:ed.obs||'',trans:ed.transcricao||'',ativK:ed.ativK||null}
+    :(av
+      ?{tipo:tipoSecoDoRelogio(av.tipo),data:data||hoje(),rpe:null,
+        durTxt:av.min!=null?minParaHMS(Math.round(av.min)):'',
+        fc:av.fc!=null?av.fc:null,calorias:av.kcal!=null?Math.round(av.kcal):null,
+        obs:'',trans:'',ativK:String(k),doRelogio:rotuloAtividade(av.tipo)}
+      :{tipo:'Musculação',data:data||hoje(),rpe:null,durTxt:'',fc:null,calorias:null,obs:'',trans:'',ativK:null});
   FOTO=null; SECOPDF=null;
   sheet(formTreinoExtra());
 }
 function formTreinoExtra(){
   const d=S.secoDraft||{};
   return`<h2>${S.secoEdit?'Editar treino':'Novo treino'}</h2>
+    ${d.doRelogio?`<div class="note ok" style="margin:6px 0 10px"><div class="xs">
+      <b>Veio do relógio</b> como “${esc(d.doRelogio)}”. Duração, FC média e calorias já estão preenchidas
+      — confira o <b>tipo</b>, que é palpite, e informe o <b>RPE</b>, que relógio nenhum mede.
+      ${info('Lançar a atividade do relógio',
+        `O relógio não sabe o nome que você dá ao treino: ele manda um tipo genérico, e o campo <b>Tipo</b> abre editável por isso. Troque para o que foi de verdade.`
+        +`<br><br>Ao salvar, isto vira um treino fora d'água igual a qualquer outro — entra no calendário, na carga e no relatório. A atividade do relógio fica guardada como a medida que é, e <b>deixa de aparecer solta</b>, para a mesma sessão não contar duas vezes.`
+        +`<br><br>Se o relógio reenviar a atividade depois, o que você escreveu aqui <b>não é tocado</b>.`)}</div></div>`:''}
     <div class="small muted" style="margin-bottom:8px">Musculação, bike, corrida, funcional, core, mobilidade…${info('Treino fora d\'água',
       `Entra no seu calendário e no relatório, somando com a natação na <b>carga</b> e na <b>fadiga</b>.`
       +`<br><br>É o que põe a musculação e a piscina na mesma escala: duração × RPE.`)}</div>
@@ -14123,6 +14271,11 @@ async function salvarSeco(){
     rpe:d.rpe!=null?d.rpe:null, dur:durMin(durTxt), durTxt:durTxt||null,
     fc:d.fc!=null?d.fc:null, calorias:d.calorias!=null?d.calorias:null,
     exercicios:_pf.itens, cargaEstruturada:_ce, img:FOTO, arquivo:SECOPDF};
+  /* ⚠️ A CHAVE DA ATIVIDADE É O QUE IMPEDE O DOBRO. É por ela que a atividade
+     do relógio sabe que já virou treino, para de aparecer solta e para de
+     contar carga por si. Só é gravada quando existe: atribuir `null` aqui
+     apagaria o vínculo de um registro que está sendo apenas editado. */
+  if(d.ativK)reg.ativK=String(d.ativK);
   /* anexo NÃO vai mais dentro do documento: sobe para o Storage e guardamos a
      URL. Se o upload falhar, mantemos o base64 (melhor um documento grande do
      que perder o anexo do usuário) — a trava de tamanho avisa se for o caso. */
@@ -14305,8 +14458,10 @@ async function coletarEsforcos(opts){
        faltado. Dois treinos no mesmo dia somam ENTRE SI — são duas sessões da
        mesma fonte; o que nunca se soma é fonte com fonte. */
     if(t.data){ const vt=volTreino(t); if(vt>0)vol[t.data]=(vol[t.data]||0)+vt; }
-    const sj=t.sessao&&t.sessao[alvo];
-    if(sj&&sj.rpe!=null&&sj.dur){ diag.comSessao++; ses.push({data:t.data||meta.data,tipo:'natação',load:sj.rpe*sj.dur}); }
+    /* a sessão efetiva: digitado onde há, relógio onde faltava. É o que faz a
+       duração deixar de ser o campo que mais falta no app — agora basta o RPE */
+    const sj=sessaoDoTreino(t,alvo);
+    if(sj.rpe!=null&&sj.dur){ diag.comSessao++; ses.push({data:t.data||meta.data,tipo:'natação',load:sj.rpe*sj.dur}); }
     else diag.semSessao++;
     for(const b of t.blocos||[])for(const i of ((b&&b.itens)||[])){
       const r=t.registros?.[alvo]?.[i.id]; if(!r)continue;
@@ -14486,7 +14641,8 @@ function rpeDeFC(fcMedia,fcRepouso,idade){
    sessão: carga = duração × RPE, a mesma conta da piscina e do fora d'água.
    Atividade sem RPE continua entrando por estimativa, como entrava. */
 function cargaDasAtividades(g,idade){
-  const a=((g&&g.ativs)||[]).map(atividadeEfetiva).filter(x=>x&&!x.fora&&x.min);
+  /* adotada já é treino fora d'água: quem conta a carga dela é o treino */
+  const a=((g&&g.ativs)||[]).map(atividadeEfetiva).filter(x=>x&&!x.fora&&x.min&&!ativAdotada(x.k));
   if(!a.length)return null;
   let load=0, informadas=0, estimadas=0;
   for(const x of a){
