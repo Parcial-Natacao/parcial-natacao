@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.14"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.14"></script>
+<script src="./persistencia-segura.js?v=v2.19.15"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.15"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.14';
+const VER='v2.19.15';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -7355,6 +7355,57 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
 });
+teste('carga','RPE na atividade do relógio vira carga informada',a=>{
+  const bk=[S.pro,SESSOES,S.u];
+  try{
+    /* ⚠️ O CASO REAL: o atleta recebia a atividade do relógio e lançava À MÃO
+       um treino fora d'água com os MESMOS números, só para que virasse carga —
+       e o dia terminava com a mesma sessão duas vezes. O RPE é a única coisa
+       que o relógio não mede; agora é a única que ele precisa digitar. */
+    _atleta(); SESSOES=[];
+    const g={data:hoje(),fc:58,ativs:[{k:'A1',tipo:'cardio_esteira',min:66,fc:110}]};
+    S.pro.garmin=[g];
+    const semRpe=cargaDasAtividades(g,42);
+    a.ok(semRpe&&semRpe.estimadas===1,'sem RPE, entra por estimativa');
+    a.eq(semRpe.informadas,0,'e nada é dado como informado');
+    g.ativs[0].fix={rpe:7};
+    const comRpe=cargaDasAtividades(g,42);
+    a.eq(comRpe.load,462,'66 min × RPE 7 = 462, a mesma conta da piscina');
+    a.eq(comRpe.informadas,1,'e agora é dado informado');
+    a.ok(diasComCargaInformada()[hoje()],'o dia conta como informado');
+    /* informar o RPE não é corrigir: o relógio não mediu esforço percebido */
+    S.pro.garmin=[g]; VOLDIA={};
+    a.ok(!/corrigido por você/.test(detalhesDoDia(hoje())),'e a linha NÃO diz “corrigido”');
+    g.ativs[0].fix={rpe:7,min:70};
+    a.ok(/corrigido por você/.test(detalhesDoDia(hoje())),'mas diz quando um número medido foi trocado');
+    g.ativs[0].fix={rpe:7};
+    /* ⚠️ SEM ISSO A ESTIMATIVA VIRIA POR CIMA do número que o atleta deu */
+    a.eq(loadDiario(7)[0],462,'a carga do dia é a informada, sem estimativa somada');
+    g.ativs[0].fix={rpe:7,fora:true};
+    a.eq(cargaDasAtividades(g,42),null,'atividade fora da conta não gera carga');
+  } finally { S.pro=bk[0]; SESSOES=bk[1]; S.u=bk[2]; }
+});
+teste('carga','duas sessões parecidas no mesmo dia viram aviso, não palpite',a=>{
+  const bk=[S.pro,VOLDIA];
+  try{
+    /* o app NÃO decide que a Funcional à mão e a Cardiovascular do relógio são
+       a mesma sessão: palpite de correspondência foi o que o desenho proibiu */
+    _atleta({seco:[{id:'s1',tipo:'Funcional',data:'2026-11-26',dur:66,rpe:7}],
+      garmin:[{data:'2026-11-26',fc:59,ativs:[{k:'A1',tipo:'cardio_esteira',min:66,fc:110}]}]});
+    VOLDIA={};
+    const h=detalhesDoDia('2026-11-26');
+    a.ok(/mesma sessão, contada duas vezes/.test(h),'avisa da suspeita');
+    a.ok(/fora da conta/.test(h),'e diz o que fazer');
+    /* ⚠️ O PAR TEM DE SER O CERTO. A primeira versão apontou a Funcional de
+       66 min contra a NATAÇÃO de 53 — o palpite errado que o aviso existe
+       para não dar. */
+    a.ok(/Cardiovascular/.test(h),'aponta a atividade fora d’água…');
+    a.ok(!/Funcional<\/b> \(66 min, à mão\) e <b>Natação/.test(h),'…e nunca o nado');
+    S.pro.seco[0].dur=20;
+    a.ok(!/mesma sessão, contada duas vezes/.test(detalhesDoDia('2026-11-26')),
+      'durações distantes não viram suspeita');
+  } finally { S.pro=bk[0]; VOLDIA=bk[1]; }
+});
 teste('pacotes','a correção do atleta sobrevive ao reenvio da Garmin',a=>{
   /* ⚠️ O CASO QUE OBRIGA O DESENHO. A Garmin reenvia a atividade quando a
      pessoa a edita no aplicativo dela. Se a correção tivesse sido gravada por
@@ -12264,17 +12315,48 @@ function detalhesDoDia(ds,opt){
     `<tr><td class="small">${r[0]}</td><td class="n" style="text-align:right;font-weight:700">${r[1]}</td>`
     +`<td class="xs muted" style="padding-left:10px">${r[2]||''}</td></tr>`).join('')}</tbody></table>`:'';
   const cards=ativs.length?`<div class="eyebrow" style="margin-top:12px">atividades do relógio</div>
-    ${ativs.map(x0=>{const x=atividadeEfetiva(x0), mex=!!x0.fix;
-      const det=[x.min?Math.round(x.min)+' min':'',x.dist?Math.round(x.dist)+' m':'',x.fc?x.fc+' bpm':'']
+    ${ativs.map(x0=>{const x=atividadeEfetiva(x0);
+      /* ⚠️ INFORMAR O RPE NÃO É CORRIGIR O RELÓGIO — ele não mediu nada ali.
+         Só é correção o que substitui um número que o relógio deu; dizer
+         “corrigido” de um campo que só existe porque o atleta respondeu seria
+         acusar a medida de um erro que ela não cometeu. */
+      const mex=!!(x0.fix&&['tipo','dist','min','fc','kcal'].some(c=>x0.fix[c]!=null));
+      const det=[x.min?Math.round(x.min)+' min':'',x.dist?Math.round(x.dist)+' m':'',x.fc?x.fc+' bpm':'',
+        x.kcal?Math.round(x.kcal)+' kcal':'',x.rpe!=null?'RPE '+x.rpe:'']
       .filter(Boolean).join(' · ');
       return`<div class="row" style="gap:8px;padding:7px 0;border-top:1px solid var(--line);${x.fora?'opacity:.55':''}">
         <span class="grow"><b>${esc(rotuloAtividade(x.tipo))}</b>${x.fora?' <span class="xs" style="color:var(--clock)">fora da conta</span>':''}
-        ${det?`<span class="xs muted" style="display:block">${det}${mex?' · <b>corrigido por você</b>':''}</span>`:''}</span>
-        <button class="sm ghost noprint" onclick="abrirEditarAtividade('${ds}','${esc(String(x0.k))}')">editar</button></div>`;}).join('')}`:'';
+        ${det?`<span class="xs muted" style="display:block">${det}${(x.min&&x.rpe!=null)?` · carga <b>${Math.round(x.min*x.rpe)}</b>`:''}${mex?' · <b>corrigido por você</b>':''}</span>`:''}
+        ${(!x.fora&&x.rpe==null&&x.min)?`<span class="xs" style="display:block;color:var(--clock)">sem RPE — entra só por estimativa</span>`:''}</span>
+        <button class="sm ${(!x.fora&&x.rpe==null&&x.min)?'':'ghost '}noprint" onclick="abrirEditarAtividade('${ds}','${esc(String(x0.k))}')">${(!x.fora&&x.rpe==null&&x.min)?'+ RPE':'editar'}</button></div>`;}).join('')}`:'';
+  /* ⚠️ A MESMA SESSÃO CONTADA DUAS VEZES É O ERRO QUE ESTE DESENHO PODE CRIAR.
+     O app NÃO decide sozinho que a Funcional lançada à mão e a Cardiovascular do
+     relógio são a mesma coisa — palpite de correspondência foi justamente o que
+     o desenho proibiu. Ele mostra a suspeita e deixa a decisão com quem nadou. */
+  const secoDia=((S.pro&&S.pro.seco)||[]).filter(x=>x&&x.data===ds&&x.dur);
+  const parecidas=[];
+  for(const sk of secoDia){
+    /* ⚠️ SESSÃO FORA D'ÁGUA NÃO SE PAREIA COM NADO. `SECO_TIPOS` não tem
+       natação — se o atleta lançou como fora d'água, nado é outra coisa. Sem
+       este corte o aviso apontou uma Funcional de 66 min como possível duplicata
+       da natação de 53 min, que é justamente o palpite errado que ele existe
+       para não dar. */
+    const cand=ativs.map(atividadeEfetiva)
+      .filter(x=>x&&!x.fora&&x.min&&!/swim|nata/i.test(x.tipo||''))
+      /* 10% é a folga de quem para o relógio um pouco depois; 20% fazia 53 e 66
+         minutos passarem por “a mesma sessão” */
+      .filter(x=>Math.abs(x.min-sk.dur)<=Math.max(3,sk.dur*0.1))
+      .sort((p,q)=>Math.abs(p.min-sk.dur)-Math.abs(q.min-sk.dur));
+    const x=cand[0]; if(!x)continue;
+    parecidas.push(`<b>${esc(sk.tipo||'sessão')}</b> (${Math.round(sk.dur)} min, à mão) e <b>${esc(rotuloAtividade(x.tipo))}</b> (${Math.round(x.min)} min, do relógio)`);
+  }
+  const aviso=parecidas.length?`<div class="note warn" style="margin-top:10px"><div class="xs">
+    <b>Pode ser a mesma sessão, contada duas vezes.</b> ${parecidas[0]} têm duração parecida neste dia.
+    Se forem a mesma, abra uma delas e marque como <b>fora da conta</b> — o app não decide isso por você.</div></div>`:'';
   if(!tabela&&!cards)return soExtra?'':`<div class="small muted" style="margin:10px 0;text-align:center">Nada registrado nesse dia.</div>`;
   return soExtra
-    ? `<div class="card" style="margin-top:10px"><div class="eyebrow">o que o relógio mediu</div>${tabela}${cards}</div>`
-    : tabela+cards;
+    ? `<div class="card" style="margin-top:10px"><div class="eyebrow">o que o relógio mediu</div>${tabela}${cards}${aviso}</div>`
+    : tabela+cards+aviso;
 }
 function acharAtividade(ds,k){
   const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===ds)||null;
@@ -12305,8 +12387,15 @@ function abrirEditarAtividade(ds,k){
         <input id="eaD" inputmode="numeric" placeholder="—" value="${x.dist!=null?Math.round(x.dist):''}"></div>
       <div class="field" style="margin:0"><label>Duração <span class="xs muted">minutos</span></label>
         <input id="eaM" inputmode="numeric" placeholder="—" value="${x.min!=null?Math.round(x.min):''}"></div></div>
-    <div class="field" style="margin-top:8px"><label>FC média <span class="xs muted">bpm</span></label>
-      <input id="eaF" inputmode="numeric" placeholder="—" value="${x.fc!=null?x.fc:''}"></div>
+    <div class="grid2" style="margin-top:8px">
+      <div class="field" style="margin:0"><label>FC média <span class="xs muted">bpm</span></label>
+        <input id="eaF" inputmode="numeric" placeholder="—" value="${x.fc!=null?x.fc:''}"></div>
+      <div class="field" style="margin:0"><label>RPE <span class="xs muted">0–10</span>${info('O RPE é a sua parte',
+        `É a única coisa desta tela que o relógio <b>não tem como medir</b>: o quanto o esforço custou a você. Duração, FC média e calorias já vieram dele.`
+        +`<br><br>Com o RPE preenchido, esta atividade vira <b>sessão</b>: carga = duração × RPE, a mesma conta da piscina e do treino fora d'água. Sem ele, o app estima pela FC — e estimativa é sempre pior que a sua resposta.`
+        +`<br><br>Preenchendo aqui, você não precisa lançar o mesmo treino de novo à mão.`)}</label>
+        <select id="eaR"><option value="">—</option>${[1,2,3,4,5,6,7,8,9,10].map(v=>
+          `<option value="${v}" ${x.rpe==v?'selected':''}>${v}</option>`).join('')}</select></div></div>
     <button class="primary full" style="margin-top:12px" onclick="salvarAtividadeEditada('${ds}','${esc(String(k))}')">Salvar correção</button>
     <button class="ghost full" style="margin-top:8px" onclick="ignorarAtividade('${ds}','${esc(String(k))}',${x.fora?'false':'true'})">${x.fora?'Voltar a contar esta atividade':'Não contar esta atividade'}</button>
     ${tem?`<button class="sm ghost full" style="margin-top:8px" onclick="limparFixAtividade('${ds}','${esc(String(k))}')">Voltar ao que o relógio mediu</button>`:''}
@@ -12325,6 +12414,8 @@ async function salvarAtividadeEditada(ds,k){
   const por=(campo,val)=>{ if(val===undefined)return;
     if(val===null||val===x0[campo])delete fix[campo]; else fix[campo]=val; };
   por('dist',ler('eaD')); por('min',ler('eaM')); por('fc',ler('eaF'));
+  /* o RPE não tem valor cru do relógio para comparar: ou existe, ou sai */
+  const rp=ler('eaR'); if(rp!==undefined){ if(rp==null)delete fix.rpe; else fix.rpe=rp; }
   await gravarFixAtividade(r.rec,x0,fix,'Correção salva ✓');
 }
 async function ignorarAtividade(ds,k,fora){
@@ -13641,7 +13732,9 @@ function cardConferirGarmin(){
 function atividadeEfetiva(x){
   if(!x||!x.fix)return x;
   const o=Object.assign({},x);
-  for(const c of ['tipo','dist','min','fc'])if(x.fix[c]!=null)o[c]=x.fix[c];
+  /* `rpe` só existe aqui: relógio nenhum mede esforço percebido, então ele
+     nunca chega no pacote e nunca tem valor cru para comparar. */
+  for(const c of ['tipo','dist','min','fc','kcal','rpe'])if(x.fix[c]!=null)o[c]=x.fix[c];
   if(x.fix.fora)o.fora=true;
   return o;
 }
@@ -14304,6 +14397,14 @@ function loadDiario(dias){
      ignora a maior parte dos treinos. */
   const jaTem=diasComCargaInformada(), id=idadeDoUsuario();
   for(const g of ((S.pro&&S.pro.garmin)||[])){
+    /* ⚠️ ATIVIDADE COM RPE É DADO INFORMADO, NÃO ESTIMADO — e por isso entra
+       mesmo em dia que já tem treino lançado. São duas sessões diferentes do
+       mesmo dia (a piscina de manhã e a academia à tarde), e carga de sessão
+       soma. O que NÃO pode somar é a mesma sessão contada duas vezes: quando o
+       app suspeita disso, ele avisa na tela do dia e deixa o atleta marcar uma
+       como fora da conta — em vez de adivinhar a correspondência sozinho. */
+    const c=cargaDasAtividades(g,id);
+    if(c&&c.informadas){ push(g.data,c.load); continue; }
     if(jaTem[g.data])continue;
     const e=loadGarminDia(g,id); if(e)push(g.data,e.load);
   }
@@ -14323,6 +14424,25 @@ function rpeDeFC(fcMedia,fcRepouso,idade){
   const pct=(fcMedia-rep)/reserva;
   return Math.max(1,Math.min(10,Math.round(pct*100)/10));
 }
+/* ⚠️ O QUE O RELÓGIO NÃO MEDE É SÓ O RPE — E ERA ISSO QUE OBRIGAVA A DIGITAR
+   TUDO DE NOVO. O atleta recebia a atividade do relógio (duração, FC média,
+   calorias) e, para que ela virasse carga, lançava À MÃO um treino fora d'água
+   com os mesmos números — e o dia terminava com a mesma sessão duas vezes, uma
+   chamada Funcional e outra Cardiovascular.
+
+   Agora o RPE entra NA atividade, pela mesma porta das correções, e ela vira
+   sessão: carga = duração × RPE, a mesma conta da piscina e do fora d'água.
+   Atividade sem RPE continua entrando por estimativa, como entrava. */
+function cargaDasAtividades(g,idade){
+  const a=((g&&g.ativs)||[]).map(atividadeEfetiva).filter(x=>x&&!x.fora&&x.min);
+  if(!a.length)return null;
+  let load=0, informadas=0, estimadas=0;
+  for(const x of a){
+    if(x.rpe!=null){ load+=x.min*x.rpe; informadas++; }
+    else { const r=rpeDeFC(x.fc,g&&g.fc,idade); if(r!=null){ load+=x.min*r; estimadas++; } }
+  }
+  return (load>0)?{load:Math.round(load),informadas:informadas,estimadas:estimadas}:null;
+}
 function loadGarminDia(g,idade){
   if(!g||!g.ativDur)return null;
   const rpe=rpeDeFC(g.ativFc,g.fc,idade);
@@ -14334,6 +14454,10 @@ function diasComCargaInformada(){
   const m={};
   for(const s of (SESSOES||[]))m[s.data]=true;
   for(const s of ((S.pro&&S.pro.seco)||[]))if(s.rpe!=null&&s.dur)m[s.data]=true;
+  /* atividade do relógio com RPE também é carga informada: sem isto o dia
+     receberia a estimativa POR CIMA do número que o atleta acabou de dar */
+  for(const g of ((S.pro&&S.pro.garmin)||[]))
+    if(((g&&g.ativs)||[]).map(atividadeEfetiva).some(x=>x&&!x.fora&&x.min&&x.rpe!=null))m[g.data]=true;
   return m;
 }
 function idadeDoUsuario(){ try{ return (typeof anos==='function'&&S.u)?anos(S.u):null; }catch(_){ return null; } }
