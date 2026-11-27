@@ -86,7 +86,12 @@ ela foi construída como se fosse.
    v2.19.6 com o push. A Garmin reenvia a mesma atividade quando a pessoa a
    edita no aplicativo dela; dois nados no mesmo dia chegam em pushes
    separados.
-5. **Águas abertas não é exceção, é o caso em que o relógio é a fonte
+5. **O relógio não substitui o treino escrito, e na piscina nem a metragem.**
+   Tempo de tiro, parcial e estilo só existem no treino escrito; o relógio não
+   tem como dar isso, e se um dia o pacote passar a escrever em `registros` o
+   app vira um espelho pior do Garmin Connect. Há teste travando essa
+   fronteira. A metragem segue a mesma regra por outro motivo: ponto cego.
+6. **Águas abertas não é exceção, é o caso em que o relógio é a fonte
    primária.** Não existe série escrita para 5 km na represa: distância, ritmo e
    FC só existem no relógio. Ali o relógio não complementa o treino do técnico —
    ele *é* o registro.
@@ -141,17 +146,30 @@ volume. Uma atividade que não é nado não produz metragem nenhuma.
 Uma função só decide a metragem de um dia, nesta ordem:
 
 ```
-relógio (soma das atividades de nado do dia)   — MEDIDO
-  → digitado à mão ("Quanto nadei")          — INFORMADO
-    → treino escrito, e só se marcado FEITO   — PRESCRITO
+treino escrito, e só se marcado FEITO        — REGISTRO COMPLETO
+  → digitado à mão ("Quanto nadei")        — INFORMADO
+    → relógio (atividades de nado do dia)   — MEDIDO COM PONTO CEGO
 ```
 
-> **Correção de 23/11, na implementação.** A primeira versão deste documento
-> punha o treino escrito à frente do digitado, e isso contradiz a regra que o
-> próprio app já segue para carga em `diasComCargaInformada`: *dado medido tem
-> prioridade sobre dado estimado*. O treino escrito é **prescrição** — diz o que
-> estava planejado. Quem digita está dizendo o que **de fato** nadou. Deixar a
-> prescrição por cima descartaria em silêncio o que a pessoa afirmou.
+> **A ordem mudou duas vezes, e a segunda é a que vale.**
+>
+> Em 23/11 eu pus o relógio na frente, com o argumento de que *dado medido tem
+> prioridade sobre dado estimado* — a regra que o app já segue para carga. O
+> argumento estava certo e a aplicação estava errada, porque **na piscina o
+> relógio não mede tudo**. Ele conta braçada: perna com prancha, educativo de
+> um braço e nado atado não entram. Um treino escrito de 4.000 m com 800 de
+> perna volta do relógio como 3.200, e o erro é **sempre para menos**.
+>
+> Sensor com ponto cego conhecido não sobrepõe registro completo. O treino
+> escrito — pelo técnico ou pelo próprio atleta — tem o volume inteiro.
+>
+> Isto não contradiz a regra da carga: lá, o que o relógio entrega (duração,
+> FC) ele mede inteiro. E **fora da piscina a ordem se inverte de novo**: em
+> corrida e pedalada o relógio é a melhor fonte que existe, e é dele que o app
+> tira tudo.
+>
+> O relógio continua sendo a fonte quando não há treino escrito nem número
+> digitado — águas abertas e nado avulso vivem disso.
 >
 > E o treino escrito só conta quando marcado como **feito**. Sem isso, um dia
 > de treino faltado apareceria com 4.000 m na coluna — exatamente o tipo de

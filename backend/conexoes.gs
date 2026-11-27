@@ -596,6 +596,9 @@ function atividade_(item, r) {
     at.min = +v.toFixed(r.min.casas != null ? r.min.casas : 1);
   }
   if (r.fc && item[r.fc] != null) at.fc = Math.round(Number(item[r.fc]));
+  /* Calorias: só entra se a regra `kcal` existir no mapa. O nome do campo do
+     fabricante mora LÁ, na propriedade — aqui só há a nossa palavra. */
+  if (r.kcal && item[r.kcal] != null) at.kcal = Math.round(Number(item[r.kcal]));
   return at;
 }
 
@@ -653,13 +656,59 @@ function gravarPacote_(uid, dia, campos, ativs) {
   return true;
 }
 
+/* ── VER E ALTERAR O MAPA SEM EDITAR JSON À MÃO ───────────────────────
+   O `GARMIN_MAPA` é a única cópia que existe do mapa: ele não pode estar no
+   repositório, porque carrega nomes de campo da documentação do fabricante.
+   Editar JSON à mão numa caixa de texto de uma linha é onde se perde um mapa:
+   basta uma vírgula e `mapaGarmin_` passa a lançar, o push para de processar, e
+   o valor anterior já foi por cima. Estas duas funções existem para isso não
+   acontecer — a de escrita valida, guarda o anterior e é idempotente. */
+function conexoesVerMapa() {
+  const txt = props_().getProperty('GARMIN_MAPA');
+  if (!txt) { Logger.log('GARMIN_MAPA ainda nao existe nas Propriedades do script.'); return 'vazio'; }
+  let bonito;
+  try { bonito = JSON.stringify(JSON.parse(txt), null, 2); }
+  catch (e) { Logger.log('ATENCAO: o mapa atual NAO e JSON valido (' + e.message + '). Conteudo cru:\n' + txt); return 'invalido'; }
+  Logger.log(bonito);
+  return bonito;
+}
+/* Uso: conexoesMapaKcal('nomeDoCampoDeCalorias') — o nome vem da página do
+   resumo de atividade no portal de endpoints. Rodar duas vezes não duplica
+   nada: a segunda apenas troca o valor. */
+function conexoesMapaKcal(campo) {
+  if (!campo) throw new Error('Diga o nome do campo: conexoesMapaKcal("nomeDoCampo")');
+  const p = props_();
+  const txt = p.getProperty('GARMIN_MAPA');
+  if (!txt) throw new Error('Falta a propriedade GARMIN_MAPA.');
+  const m = JSON.parse(txt);   /* se nao for JSON valido, para aqui, antes de gravar */
+  if (!m.activities || !m.activities.atividade)
+    throw new Error('O mapa nao tem activities.atividade. Habilite o resumo de atividade antes.');
+  const antes = m.activities.atividade.kcal || null;
+  m.activities.atividade.kcal = String(campo);
+  /* a copia do valor anterior fica guardada: desfazer e so devolver esta */
+  p.setProperty('GARMIN_MAPA_ANTES', txt);
+  p.setProperty('GARMIN_MAPA', JSON.stringify(m));
+  const msg = antes
+    ? 'kcal trocado de "' + antes + '" para "' + campo + '".'
+    : 'kcal acrescentado: "' + campo + '".';
+  Logger.log(msg + '\n\nMapa agora:\n' + JSON.stringify(m, null, 2)
+    + '\n\nO anterior ficou em GARMIN_MAPA_ANTES.');
+  return msg;
+}
 /* gatilho da fila: separado do gatilho do coletor antigo, de propósito */
 function conexoesInstalarGatilho() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'drenarFila') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('drenarFila').timeBased().everyMinutes(10).create();
-  const msg = 'Gatilho instalado: drenarFila a cada 10 minutos.';
+  /* ⚠️ 5 MINUTOS É ONDE A CONTA FECHA. A cota diária de execução do Apps
+     Script é de 90 minutos; cada drenagem em vazio leva ~1,5 s. A cada 5
+     minutos são 288 execuções por dia, ~7 minutos de cota. A cada 1 minuto
+     seriam 1.440 e ~36 minutos — 40% da cota gasta girando em vazio, para
+     ganhar 4 minutos num caminho que já depende da sincronia do relógio com
+     o celular, que costuma levar mais do que isso e não está sob nosso
+     controle. */
+  ScriptApp.newTrigger('drenarFila').timeBased().everyMinutes(5).create();
+  const msg = 'Gatilho instalado: drenarFila a cada 5 minutos.';
   Logger.log(msg); return msg;
 }
 
