@@ -681,8 +681,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.19"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.19"></script>
+<script src="./persistencia-segura.js?v=v2.19.20"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.20"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -703,7 +703,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.19';
+const VER='v2.19.20';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3908,6 +3908,10 @@ function grupoTreinos(lista,cardFn){
    bloco do corpo não entra. */
 const podeVerSaude=()=>!!(S.u&&(S.u.perfil==='pro'||S.u.podeSaude)&&!S.laudoAtleta&&!ehGestor());
 function calendarioTreinos(lista,cardFn,criarFn,saude){
+  /* a metragem do dia sai do treino escrito, e isso exige os documentos lidos.
+     Antes só a tela de Saúde pedia a consolidação, e aqui a coluna Nado dizia
+     “medido pelo relógio” num dia que tinha treino escrito. */
+  if(saude)garantirVolDia();
   const porDia={}; for(const t of lista){const d=t.data||''; if(d)(porDia[d]=porDia[d]||[]).push(t);}
   if(!S.calYM){S.calYM=(lista.length?[...lista].sort((a,b)=>(b.data||'').localeCompare(a.data||''))[0].data:hoje()).slice(0,7);}
   const Y=+S.calYM.slice(0,4), M=+S.calYM.slice(5,7);
@@ -4304,9 +4308,12 @@ function telaTreinoDetalhe(){
          atleta digitou nunca é sobrescrito: `sessaoDoTreino` só entra onde não
          há número. E a FC média aparece como leitura, sem campo, porque não há
          o que digitar ali — ou o relógio mediu, ou não existe. */''}
-    ${(s.durDoRelogio||s.fcDoRelogio)?`<div class="row xs muted" style="gap:10px;padding-top:4px">
-      ${s.durDoRelogio?`<span>duração <b>do relógio</b></span>`:''}
-      ${s.fcDoRelogio?`<span>FC média <b>${s.fc} bpm</b> do relógio</span>`:''}</div>`:''}
+    ${(s.durDoRelogio||s.fcDoRelogio||s.kcalDoRelogio)?`<div class="note" style="margin-top:8px;padding:8px 10px"><div class="xs">
+      <b>Do relógio neste dia:</b>
+      ${[s.durDoRelogio?`duração <b>${fmtDur(s.dur)}</b>`:'',
+         s.fcDoRelogio?`FC média <b>${s.fc} bpm</b>`:'',
+         s.kcalDoRelogio?`<b>${s.kcal} kcal</b>`:''].filter(Boolean).join(' · ')}.
+      ${s.durDoRelogio?'':'<span class="muted">A duração acima é a que você digitou — o relógio não a substitui.</span>'}</div></div>`:''}
     <div class="xs muted">carga da sessão${info('RPE × duração',
       `RPE × duração vira a <b>carga da sessão</b>, em UA. É o que põe natação e musculação na mesma escala no relatório.`)}</div>
   </div>`})():''}
@@ -7526,17 +7533,27 @@ teste('carga','a sessão do treino escrito é alimentada pelo relógio',a=>{
   } finally { S.pro=bk[0]; S.u=bk[1]; }
 });
 teste('saúde','nado de dia com treino escrito não aparece solto',a=>{
-  const bk=[S.pro,VOLDIA];
+  const bk=[S.pro,VOLDIA,S.tridx];
   try{
     /* ele entra na sessão do treino; repetir aqui seria a mesma sessão duas
        vezes, com números levemente diferentes */
     _atleta({garmin:[{data:'2026-11-26',fc:59,ativs:[
       {k:'N1',tipo:'natacao_piscina',min:53,fc:139,dist:1450,origem:'garmin'}]}]});
-    VOLDIA={'2026-11-26':4000};
-    a.ok(!/Natação em piscina/.test(detalhesDoDia('2026-11-26')),'com treino escrito, não aparece solto');
+    /* ⚠️ QUEM RESPONDE É O ÍNDICE, NÃO O `VOLDIA`. A primeira versão perguntava
+       ao VOLDIA, que só existe depois da consolidação — e este painel vive no
+       calendário dos Treinos, onde ela não era disparada. Na prática a natação
+       aparecia solta mesmo havendo treino escrito. Por isso o teste agora monta
+       o ÍNDICE, que é o que a tela realmente tem na mão. */
     VOLDIA={};
+    S.tridx=[{id:'t1',data:'2026-11-26',titulo:'Treino',vol:4000,para:['A1']}];
+    a.ok(!/Natação em piscina/.test(detalhesDoDia('2026-11-26')),
+      'com treino escrito, não aparece solto — mesmo sem a consolidação ter rodado');
+    S.tridx=[{id:'t1',data:'2026-11-26',titulo:'Treino',vol:4000,para:['OUTRO']}];
+    a.ok(/Natação em piscina/.test(detalhesDoDia('2026-11-26')),
+      'treino de OUTRO atleta no mesmo dia não esconde o nado deste');
+    S.tridx=[];
     a.ok(/Natação em piscina/.test(detalhesDoDia('2026-11-26')),'sem treino escrito, aparece — águas abertas vive disso');
-  } finally { S.pro=bk[0]; VOLDIA=bk[1]; }
+  } finally { S.pro=bk[0]; VOLDIA=bk[1]; S.tridx=bk[2]; }
 });
 teste('pacotes','o relógio não encosta nos tempos dos tiros',a=>{
   /* ⚠️ É A RAZÃO DE O APP EXISTIR. O relógio não dá tempo de tiro, parcial nem
@@ -12531,8 +12548,8 @@ function tipoSecoDoRelogio(t){
    técnico alimentaria a sessão do atleta. */
 function sessaoDoTreino(t,atId){
   const s=(t&&t.sessao&&t.sessao[atId])||{};
-  const out={rpe:s.rpe!=null?s.rpe:null,dur:s.dur!=null?s.dur:null,fc:null,
-    durDoRelogio:false,fcDoRelogio:false};
+  const out={rpe:s.rpe!=null?s.rpe:null,dur:s.dur!=null?s.dur:null,fc:null,kcal:null,
+    durDoRelogio:false,fcDoRelogio:false,kcalDoRelogio:false};
   if(!S.u||atId!==S.u.id||!t||!t.data)return out;
   const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===t.data);
   const nados=(((rec&&rec.ativs)||[]).map(atividadeEfetiva)
@@ -12543,6 +12560,10 @@ function sessaoDoTreino(t,atId){
   const cf=nados.filter(x=>x.fc!=null);
   if(cf.length){ const tot=cf.reduce((a,x)=>a+x.min,0);
     out.fc=Math.round(cf.reduce((a,x)=>a+x.fc*x.min,0)/tot); out.fcDoRelogio=true; }
+  /* calorias entram pelo mesmo caminho: são do relógio, como a FC, e somam
+     entre as atividades de nado do dia em vez de ponderar */
+  const ck=nados.filter(x=>x.kcal!=null);
+  if(ck.length){ out.kcal=Math.round(ck.reduce((a,x)=>a+x.kcal,0)); out.kcalDoRelogio=true; }
   return out;
 }
 function detalhesDoDia(ds,opt){
@@ -12564,7 +12585,14 @@ function detalhesDoDia(ds,opt){
      cartão de treino fora d'água, logo acima; a de nado de um dia com treino
      escrito entra na sessão daquele treino. Repetir aqui seria mostrar a mesma
      sessão duas vezes, com números levemente diferentes. */
-  const comTreino=((VOLDIA||{})[ds]||0)>0;
+  /* ⚠️ ISTO NÃO PODE DEPENDER DA CONSOLIDAÇÃO. A primeira versão perguntava ao
+     `VOLDIA`, que só existe depois de `coletarEsforcos` ter lido documento por
+     documento — e quem dispara isso é a tela de Saúde. Este painel vive no
+     calendário dos TREINOS, onde o `VOLDIA` estava vazio: a natação aparecia
+     solta mesmo havendo treino escrito, e o mesmo dia mudava de aparência
+     conforme a consolidação tivesse rodado ou não.
+     O índice responde na hora, sem depender de nada ter rodado antes. */
+  const comTreino=(S.tridx||[]).some(t=>t&&t.data===ds&&(t.para||[]).includes(S.u&&S.u.id));
   const ativs=((rec&&rec.ativs)||[]).filter(x=>x&&!ativAdotada(x.k))
     .filter(x=>!(comTreino&&ehNado(atividadeEfetiva(x).tipo)));
   const tabela=lin.length?`<table style="margin-top:4px"><tbody>${lin.map(r=>
