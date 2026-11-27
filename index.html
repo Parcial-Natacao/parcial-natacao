@@ -681,8 +681,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.19"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.19"></script>
+<script src="./persistencia-segura.js?v=v2.19.21"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.21"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -703,7 +703,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.19';
+const VER='v2.19.21';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -3908,6 +3908,10 @@ function grupoTreinos(lista,cardFn){
    bloco do corpo não entra. */
 const podeVerSaude=()=>!!(S.u&&(S.u.perfil==='pro'||S.u.podeSaude)&&!S.laudoAtleta&&!ehGestor());
 function calendarioTreinos(lista,cardFn,criarFn,saude){
+  /* a metragem do dia sai do treino escrito, e isso exige os documentos lidos.
+     Antes só a tela de Saúde pedia a consolidação, e aqui a coluna Nado dizia
+     “medido pelo relógio” num dia que tinha treino escrito. */
+  if(saude)garantirVolDia();
   const porDia={}; for(const t of lista){const d=t.data||''; if(d)(porDia[d]=porDia[d]||[]).push(t);}
   if(!S.calYM){S.calYM=(lista.length?[...lista].sort((a,b)=>(b.data||'').localeCompare(a.data||''))[0].data:hoje()).slice(0,7);}
   const Y=+S.calYM.slice(0,4), M=+S.calYM.slice(5,7);
@@ -4304,9 +4308,12 @@ function telaTreinoDetalhe(){
          atleta digitou nunca é sobrescrito: `sessaoDoTreino` só entra onde não
          há número. E a FC média aparece como leitura, sem campo, porque não há
          o que digitar ali — ou o relógio mediu, ou não existe. */''}
-    ${(s.durDoRelogio||s.fcDoRelogio)?`<div class="row xs muted" style="gap:10px;padding-top:4px">
-      ${s.durDoRelogio?`<span>duração <b>do relógio</b></span>`:''}
-      ${s.fcDoRelogio?`<span>FC média <b>${s.fc} bpm</b> do relógio</span>`:''}</div>`:''}
+    ${(s.durDoRelogio||s.fcDoRelogio||s.kcalDoRelogio)?`<div class="note" style="margin-top:8px;padding:8px 10px"><div class="xs">
+      <b>Do relógio neste dia:</b>
+      ${[s.durDoRelogio?`duração <b>${fmtDur(s.dur)}</b>`:'',
+         s.fcDoRelogio?`FC média <b>${s.fc} bpm</b>`:'',
+         s.kcalDoRelogio?`<b>${s.kcal} kcal</b>`:''].filter(Boolean).join(' · ')}.
+      ${s.durDoRelogio?'':'<span class="muted">A duração acima é a que você digitou — o relógio não a substitui.</span>'}</div></div>`:''}
     <div class="xs muted">carga da sessão${info('RPE × duração',
       `RPE × duração vira a <b>carga da sessão</b>, em UA. É o que põe natação e musculação na mesma escala no relatório.`)}</div>
   </div>`})():''}
@@ -4577,6 +4584,7 @@ function abrirBroken(itemId,atletaId,item,at,rec,nrd){
   const tot=atual.tot;
   sheet(`<h2>Broken ${bk.dist} ${esc(item.estilo)}</h2>
     <div class="small muted">${esc(at.nome)} · ${bk.trecho?`${bk.n}×${bk.trecho}m`:bk.trechos.join('+')+'m'} com ${bk.desc}s de descanso${nrd>1?` · rodada ${rd+1} de ${nrd}`:''}</div>
+    ${faixaAtletasLancamento(itemId,atletaId)}
     ${bk.opts.length>1?`<div class="field" style="margin:10px 0 4px"><label>Parciais a cada</label>
       <div class="opt">${bk.opts.map(iv=>`<button class="${iv===bk.trecho?'on':''}" onclick="setTrechoBroken('${itemId}','${atletaId}',${iv})">${iv}m</button>`).join('')}</div>
       <div class="xs muted" style="margin-top:2px">Você e o técnico decidem: ${bk.opts.map(iv=>`${bk.dist/iv}×${iv}m`).join(' ou ')}.</div></div>`
@@ -4720,6 +4728,48 @@ async function salvarBroken(itemId,atletaId,n,rd,dist){
   const s=tot!=null?tot:somaBroken(tv);
   fecharSheet(); toast(s!=null?`Broken salvo · ${fmt(s,true)}`:'Broken salvo'); render();
 }
+/* ⚠️ O QUE FAZIA O TÉCNICO DESISTIR NÃO ERA DIGITAR, ERA VOLTAR. Para lançar o
+   mesmo tiro de outro atleta ele tinha de fechar a folha, achar a faixa do
+   elenco na tela do treino, tocar no próximo, rolar até o item de novo e
+   reabrir. Com o cronômetro na mão e a próxima série saindo, isso não se
+   sustenta — e num treino de quatro atletas terminou com um lançado e três
+   digitando à mão depois.
+
+   A faixa troca de atleta SEM SAIR DO TIRO. E diz quem falta, que é a pergunta
+   real à beira da piscina: não “quem já lancei”, e sim “de quem ainda não
+   peguei o tempo”.
+
+   ⚠️ MANTÉM OS CAMPOS GRANDES. A alternativa era uma grade com todos os
+   atletas de uma vez, mas aí cada campo encolhe — e quem está com o celular na
+   mão, molhado, precisa de alvo grande. Um atleta por vez, troca em um toque. */
+function faixaAtletasLancamento(itemId,atletaId){
+  const t=S.treino;
+  if(!ehGestor()||!t)return '';
+  const alvo=(S.elenco||[]).filter(a=>a&&(t.para||[]).includes(a.id));
+  if(alvo.length<2)return '';
+  const temTempo=id=>{
+    const r=(t.registros&&t.registros[id]&&t.registros[id][itemId])||null;
+    if(!r)return false;
+    if((r.tempos||[]).some(x=>x!=null))return true;
+    if(r.tot!=null||r.ritmo100!=null)return true;
+    return (r.rd||[]).some(x=>x&&(x.tempos||[]).some(y=>y!=null));
+  };
+  const faltam=alvo.filter(a=>!temTempo(a.id)).length;
+  return`<div class="row wrap noprint" style="gap:6px;margin:10px 0 2px">${alvo.map(a=>{
+    const eu=a.id===atletaId, ok=temTempo(a.id);
+    return`<button class="sm ${eu?'primary':'ghost'}" onclick="trocarAtletaLancamento('${itemId}','${esc(a.id)}')"
+      style="${(ok&&!eu)?'border-color:var(--ok)':''}">${esc(prim(a.nome))}${ok?' ✓':''}</button>`;}).join('')}</div>
+    <div class="xs muted" style="margin:2px 0 6px">${faltam
+      ?`Falta${faltam>1?'m':''} <b>${faltam}</b> ${faltam>1?'atletas':'atleta'} neste tiro.`
+      :'Todos com tempo neste tiro.'}</div>`;
+}
+function trocarAtletaLancamento(itemId,atletaId){
+  /* ⚠️ A RODADA É POR ATLETA. Sem zerar, abrir o próximo na “rodada 3” do
+     anterior mostraria campos vazios de uma rodada que ele não fez — e o
+     técnico digitaria o tempo da rodada 1 dentro da 3. */
+  S.atletaSel=atletaId; S.rd=0;
+  abrirLancamento(itemId,atletaId);
+}
 function abrirLancamento(itemId,atletaId){
   const t=S.treino,item=(t.blocos.flatMap(b=>b.itens)).find(i=>i.id===itemId);
   const at=(ehGestor()?S.elenco:[S.u]).find(a=>a.id===atletaId)||S.u;
@@ -4727,6 +4777,7 @@ function abrirLancamento(itemId,atletaId){
   if(t.piscina==='AA'){
     sheet(`<h2>${item.reps>1?item.reps+'×':''}${item.dist} ${item.estilo}</h2>
       <div class="small muted">${esc(at.nome)} · águas abertas</div>
+      ${faixaAtletasLancamento(itemId,atletaId)}
       <div class="field" style="margin-top:12px"><label>Ritmo médio por 100m</label>
         ${campoTempoCasas('aaRitmo',rec.ritmo100!=null?rec.ritmo100:null,100,false)}</div>
       <div class="xs muted">Uma casa para cada unidade: minuto, segundo, centésimo — ex.: 1 : 45 . 00</div>
@@ -4747,6 +4798,7 @@ function abrirLancamento(itemId,atletaId){
     const rd=S.rd, rr=(rec.rd&&rec.rd[rd])||{tempos:[],parciais:[]};
     sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
       <div class="small muted">${esc(at.nome)} · ${nrd} rodadas${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
+      ${faixaAtletasLancamento(itemId,atletaId)}
       <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">
         ${Array.from({length:nrd},(_,ri)=>{const feito=rec.rd&&rec.rd[ri]&&(rec.rd[ri].tempos||[]).some(x=>x!=null);return`<button class="sm ${ri===rd?'primary':'ghost'}" onclick="S.rd=${ri};abrirLancamento('${itemId}','${atletaId}')">Rodada ${ri+1}${feito?' ✓':''}</button>`}).join('')}
       </div>
@@ -4761,6 +4813,7 @@ function abrirLancamento(itemId,atletaId){
   const r=(rec.tempos?rec:{tempos:[],parciais:[]});
   sheet(`<h2>${item.reps}×${item.dist} ${item.estilo}</h2>
     <div class="small muted">${esc(at.nome)}${item.parcial?` · parcial a cada ${item.dist/2}m`:''}</div>
+    ${faixaAtletasLancamento(itemId,atletaId)}
     <div class="xs muted" style="margin-top:6px">Toque no <b style="color:var(--ok)">✓</b> para salvar cada tempo — grava na hora. O <b style="color:var(--clock)">✕</b> apaga. Use <b>+ adicionar rodada</b> se a série se repete (ex.: bloco 2×).</div>
     ${podeParcialAvulsa(item,S.treino&&S.treino.piscina)&&!item.parcial?`
       <button class="sm ghost full" style="margin-top:8px" onclick="alternarParcialAvulsa('${itemId}','${atletaId}')">${parcialLigada(item,itemId)?`Ocultar a passagem dos ${item.dist/2}m`:`+ Marcar a passagem dos ${item.dist/2}m`}</button>
@@ -4807,6 +4860,7 @@ function abrirSplits(itemId,atletaId,item,at,rec){
   }).join('');
   sheet(`<h2>${reps>1?reps+'×':''}${item.dist} ${item.estilo}${nrd>1?' · rodada '+(S.rd+1):''}</h2>
     <div class="small muted">${esc(at.nome)} · parciais a cada ${iv}m${nrd>1?' · '+nrd+' rodadas':''}</div>
+    ${faixaAtletasLancamento(itemId,atletaId)}
     ${toggle}
     ${abas}
     <div class="xs muted" style="margin-top:6px">Digite o tempo <b>acumulado</b> em cada passagem (como no painel da prova). O último = tempo total. Pode deixar em branco o que não pegou.</div>
@@ -7443,6 +7497,33 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
 });
+teste('treinos','a folha de lançamento diz quem falta e troca de atleta sem sair',a=>{
+  const bk=[S.u,S.elenco,S.treino];
+  try{
+    /* ⚠️ O QUE FAZIA O TÉCNICO DESISTIR NÃO ERA DIGITAR, ERA VOLTAR: fechar a
+       folha, achar a faixa do elenco, tocar no próximo, rolar até o item e
+       reabrir. Num treino de quatro, terminou com um lançado e três à mão. */
+    _atleta(); S.u.perfil='tecnico';
+    S.elenco=[{id:'A1',nome:'Bruno Barbato'},{id:'A2',nome:'Rafael Cordeiro'},
+      {id:'A3',nome:'Alexandre Souza'}];
+    S.treino={id:'t1',data:'2026-11-27',para:['A1','A2','A3'],
+      registros:{A1:{i1:{tempos:[24060,11400]}},A3:{i1:{rd:[{tempos:[29950]}]}}}};
+    const h=faixaAtletasLancamento('i1','A2');
+    a.ok(/Bruno/.test(h)&&/Rafael/.test(h)&&/Alexandre/.test(h),'os três inscritos aparecem');
+    a.eq((h.match(/✓/g)||[]).length,2,'dois já têm tempo — inclusive o que gravou em rodada');
+    /* a pergunta à beira da piscina não é “quem lancei”, é “de quem falta” */
+    a.ok(/Falta <b>1<\/b> atleta/.test(h),'e a folha diz quantos faltam');
+    a.ok(/primary[^>]*onclick="trocarAtletaLancamento\('i1','A2'/.test(h),'o atleta aberto vem marcado');
+    S.treino.registros.A2={i1:{tempos:[56800]}};
+    a.ok(/Todos com tempo neste tiro/.test(faixaAtletasLancamento('i1','A2')),'completou, a folha diz');
+    /* com um inscrito só, faixa seria enfeite */
+    S.treino.para=['A1'];
+    a.eq(faixaAtletasLancamento('i1','A1'),'','com um atleta só, não há faixa');
+    /* ⚠️ É FERRAMENTA DE TÉCNICO. O atleta vê apenas a si próprio. */
+    S.treino.para=['A1','A2','A3']; S.u.perfil='pro';
+    a.eq(faixaAtletasLancamento('i1','A1'),'','atleta não vê a faixa do elenco');
+  } finally { S.u=bk[0]; S.elenco=bk[1]; S.treino=bk[2]; }
+});
 teste('extrato','o PDF do mês sai inteiro, assinado e sem botão',a=>{
   const ym='2026-11';
   const bk=[S.extratoCalc,S.acc,S.u,window.enviarParaImpressao,window.render];
@@ -7526,17 +7607,27 @@ teste('carga','a sessão do treino escrito é alimentada pelo relógio',a=>{
   } finally { S.pro=bk[0]; S.u=bk[1]; }
 });
 teste('saúde','nado de dia com treino escrito não aparece solto',a=>{
-  const bk=[S.pro,VOLDIA];
+  const bk=[S.pro,VOLDIA,S.tridx];
   try{
     /* ele entra na sessão do treino; repetir aqui seria a mesma sessão duas
        vezes, com números levemente diferentes */
     _atleta({garmin:[{data:'2026-11-26',fc:59,ativs:[
       {k:'N1',tipo:'natacao_piscina',min:53,fc:139,dist:1450,origem:'garmin'}]}]});
-    VOLDIA={'2026-11-26':4000};
-    a.ok(!/Natação em piscina/.test(detalhesDoDia('2026-11-26')),'com treino escrito, não aparece solto');
+    /* ⚠️ QUEM RESPONDE É O ÍNDICE, NÃO O `VOLDIA`. A primeira versão perguntava
+       ao VOLDIA, que só existe depois da consolidação — e este painel vive no
+       calendário dos Treinos, onde ela não era disparada. Na prática a natação
+       aparecia solta mesmo havendo treino escrito. Por isso o teste agora monta
+       o ÍNDICE, que é o que a tela realmente tem na mão. */
     VOLDIA={};
+    S.tridx=[{id:'t1',data:'2026-11-26',titulo:'Treino',vol:4000,para:['A1']}];
+    a.ok(!/Natação em piscina/.test(detalhesDoDia('2026-11-26')),
+      'com treino escrito, não aparece solto — mesmo sem a consolidação ter rodado');
+    S.tridx=[{id:'t1',data:'2026-11-26',titulo:'Treino',vol:4000,para:['OUTRO']}];
+    a.ok(/Natação em piscina/.test(detalhesDoDia('2026-11-26')),
+      'treino de OUTRO atleta no mesmo dia não esconde o nado deste');
+    S.tridx=[];
     a.ok(/Natação em piscina/.test(detalhesDoDia('2026-11-26')),'sem treino escrito, aparece — águas abertas vive disso');
-  } finally { S.pro=bk[0]; VOLDIA=bk[1]; }
+  } finally { S.pro=bk[0]; VOLDIA=bk[1]; S.tridx=bk[2]; }
 });
 teste('pacotes','o relógio não encosta nos tempos dos tiros',a=>{
   /* ⚠️ É A RAZÃO DE O APP EXISTIR. O relógio não dá tempo de tiro, parcial nem
@@ -12531,8 +12622,8 @@ function tipoSecoDoRelogio(t){
    técnico alimentaria a sessão do atleta. */
 function sessaoDoTreino(t,atId){
   const s=(t&&t.sessao&&t.sessao[atId])||{};
-  const out={rpe:s.rpe!=null?s.rpe:null,dur:s.dur!=null?s.dur:null,fc:null,
-    durDoRelogio:false,fcDoRelogio:false};
+  const out={rpe:s.rpe!=null?s.rpe:null,dur:s.dur!=null?s.dur:null,fc:null,kcal:null,
+    durDoRelogio:false,fcDoRelogio:false,kcalDoRelogio:false};
   if(!S.u||atId!==S.u.id||!t||!t.data)return out;
   const rec=((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===t.data);
   const nados=(((rec&&rec.ativs)||[]).map(atividadeEfetiva)
@@ -12543,6 +12634,10 @@ function sessaoDoTreino(t,atId){
   const cf=nados.filter(x=>x.fc!=null);
   if(cf.length){ const tot=cf.reduce((a,x)=>a+x.min,0);
     out.fc=Math.round(cf.reduce((a,x)=>a+x.fc*x.min,0)/tot); out.fcDoRelogio=true; }
+  /* calorias entram pelo mesmo caminho: são do relógio, como a FC, e somam
+     entre as atividades de nado do dia em vez de ponderar */
+  const ck=nados.filter(x=>x.kcal!=null);
+  if(ck.length){ out.kcal=Math.round(ck.reduce((a,x)=>a+x.kcal,0)); out.kcalDoRelogio=true; }
   return out;
 }
 function detalhesDoDia(ds,opt){
@@ -12564,7 +12659,14 @@ function detalhesDoDia(ds,opt){
      cartão de treino fora d'água, logo acima; a de nado de um dia com treino
      escrito entra na sessão daquele treino. Repetir aqui seria mostrar a mesma
      sessão duas vezes, com números levemente diferentes. */
-  const comTreino=((VOLDIA||{})[ds]||0)>0;
+  /* ⚠️ ISTO NÃO PODE DEPENDER DA CONSOLIDAÇÃO. A primeira versão perguntava ao
+     `VOLDIA`, que só existe depois de `coletarEsforcos` ter lido documento por
+     documento — e quem dispara isso é a tela de Saúde. Este painel vive no
+     calendário dos TREINOS, onde o `VOLDIA` estava vazio: a natação aparecia
+     solta mesmo havendo treino escrito, e o mesmo dia mudava de aparência
+     conforme a consolidação tivesse rodado ou não.
+     O índice responde na hora, sem depender de nada ter rodado antes. */
+  const comTreino=(S.tridx||[]).some(t=>t&&t.data===ds&&(t.para||[]).includes(S.u&&S.u.id));
   const ativs=((rec&&rec.ativs)||[]).filter(x=>x&&!ativAdotada(x.k))
     .filter(x=>!(comTreino&&ehNado(atividadeEfetiva(x).tipo)));
   const tabela=lin.length?`<table style="margin-top:4px"><tbody>${lin.map(r=>
