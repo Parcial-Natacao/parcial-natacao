@@ -696,8 +696,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.22"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.22"></script>
+<script src="./persistencia-segura.js?v=v2.19.23"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.23"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -718,7 +718,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.22';
+const VER='v2.19.23';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -5797,8 +5797,20 @@ function imprimirExtrato(ym){
   rod.innerHTML=`<span class="rod-marca"><img src="./icone-m360-512.png" alt="" width="512" height="512"><b>${esc(APP_NOME)}</b><span class="rod-url">meros360.com</span></span>`
     +`<span class="rod-quem">${esc(nomeLaudo())} — extrato de ${esc(mes)} · emitido em ${brData(hoje())}</span>`
     +`<span class="rod-ver">${VER}</span>`;
+  /* ⚠️ A FOLHA PRECISA SE APRESENTAR NO TOPO, NÃO SÓ NO RODAPé. O PDF saía com
+     “EXTRATO · NOVEMBRO 2026” e mais nada — o nome do atleta aparecia só no pé
+     da página, em corpo 8. Quem recebe o arquivo por mensagem abre na primeira
+     página e precisa saber de quem é ali. */
+  const capa=document.createElement('div'); capa.className='doc-cap';
+  capa.innerHTML=`<div class="doc-logo"><img src="./icone-m360-512.png" alt="" width="512" height="512" style="width:30px;height:30px">`
+    +`<b style="font-family:var(--disp);text-transform:uppercase;letter-spacing:.06em">${esc(APP_NOME)}</b></div>`
+    +`<h1>Extrato de ${esc(mes)}</h1>`
+    +`<div class="small muted">${esc(nomeLaudo())} · emitido em ${brData(hoje())}</div>`;
+  /* o cartão já repete “extrato · novembro 2026” na primeira linha; com a capa
+     acima, isso vira o mesmo título duas vezes */
+  const dup=clone.querySelector('.eyebrow'); if(dup)dup.remove();
   const folha=document.createElement('div');
-  folha.appendChild(clone); folha.appendChild(rod);
+  folha.appendChild(capa); folha.appendChild(clone); folha.appendChild(rod);
   setTimeout(()=>{ S.acc=JSON.parse(antes); render(); },400);
   enviarParaImpressao(folha.innerHTML,nomeLaudo()+' — extrato de '+mes);
 }
@@ -5863,7 +5875,22 @@ function leituraDoMes(x,sinais){
     return {nivel:'dividido',txt:'Os sinais estão divididos: '+favor.length+' a favor e '+contra.length+' contra. Não dá para concluir pelo conjunto — olhe linha a linha e decida com o técnico.'};
   if(!contra.length&&favor.length>=3)
     return {nivel:'ok',txt:favor.length+' sinais favoráveis e nenhum contrário. As condições do mês permitem progredir a carga, com o aumento gradual de sempre.'};
-  return {nivel:'dividido',txt:'Dados insuficientes para uma leitura de conjunto neste mês.'};
+  /* ⚠️ FALTAVA O CASO MAIS COMUM DE TODOS: mais favoráveis que contrários, sem
+     ser unânime. Um mês com 4 sinais a favor e 1 contra caía no fundo do poço e
+     saía como “dados insuficientes para uma leitura de conjunto” — com 93 tiros
+     medidos, 100% de cobertura e os cinco sinais calculados. Era falso e era
+     o pior tipo de falso: o app desistindo de ler o que ele mesmo tinha lido. */
+  /* ⚠️ O MÍNIMO DE TRÊS CONTINUA VALENDO, e a primeira versão deste ramo o
+     furou: com 2 a favor e nenhum contra ele concluía “pode progredir”, e há
+     um teste desde sempre dizendo que dois não bastam. O ramo é para o mês que
+     TEM contrário e ainda assim pende a favor — o caso que não existia. */
+  if(contra.length&&favor.length>contra.length&&favor.length>=3)
+    return {nivel:'ok',txt:favor.length+' sinal(is) favorável(is) contra '+contra.length+
+      ', e nenhum conjunto de alerta. O mês comporta progredir a carga, com atenção ao que o sinal contrário aponta — ele está listado abaixo.'};
+  /* e só é insuficiência de verdade quando não há sinal nenhum para somar */
+  if(!sinais.length)
+    return {nivel:'parcial',txt:'Nenhum sinal pôde ser calculado neste mês — falta dado para cada um deles. O extrato descreve o que há, mas não tem o que somar.'};
+  return {nivel:'dividido',txt:'Os sinais não formam um conjunto claro neste mês. Olhe linha a linha abaixo.'};
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -7511,6 +7538,30 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
      existe mais. É o mesmo motivo por que `hrvF` está na lista. */
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
+});
+teste('extrato','o veredito do mês cobre o caso mais comum de todos',a=>{
+  /* ⚠️ FALTAVA O RAMO DE “MAIS FAVORÁVEIS QUE CONTRÁRIOS, SEM SER UNÂNIME”, e
+     o mês caía no fundo do poço: “dados insuficientes para uma leitura de
+     conjunto”. Em novembro/2026 isso saiu num mês com 93 tiros medidos, 100%
+     de cobertura e os cinco sinais calculados — o app desistindo de ler o que
+     ele mesmo havia lido. */
+  const base={cobertura:1,comparavel:true,semanasHist:20,deltaCarga:14,pct:94.3,pctAnt:82,nAnt:40};
+  const f=k=>({k:k,estado:'favor',txt:k});
+  const c=k=>({k:k,estado:'contra',txt:k});
+  let r=leituraDoMes(base,[f('carga'),f('acwr'),c('vfc'),f('sono'),f('pct')]);
+  a.eq(r.nivel,'ok','4 a favor e 1 contra é um mês bom com uma ressalva');
+  a.ok(!/insuficientes/.test(r.txt),'e NÃO “dados insuficientes”');
+  a.ok(/4/.test(r.txt)&&/1/.test(r.txt),'o texto conta os dois lados');
+  /* os ramos que já existiam continuam valendo */
+  a.eq(leituraDoMes(base,[f('a'),f('b'),f('c')]).nivel,'ok','três favoráveis e nenhum contra');
+  a.eq(leituraDoMes(base,[c('a'),c('b'),f('c')]).nivel,'atencao','mais contrários pede cautela');
+  a.eq(leituraDoMes(base,[c('a'),f('b')]).nivel,'dividido','empate é empate');
+  /* e insuficiência passa a significar o que a palavra diz */
+  r=leituraDoMes(base,[]);
+  a.eq(r.nivel,'parcial','sem sinal nenhum, aí sim falta dado');
+  a.ok(/Nenhum sinal/.test(r.txt),'e o texto diz exatamente isso');
+  /* cobertura baixa continua recusando antes de qualquer soma */
+  a.eq(leituraDoMes({cobertura:0.2,comparavel:true},[f('a')]).nivel,'recusa','cobertura baixa recusa');
 });
 teste('treinos','a folha de lançamento diz quem falta e troca de atleta sem sair',a=>{
   const bk=[S.u,S.elenco,S.treino];
@@ -18279,7 +18330,26 @@ function enviarParaImpressao(corpo,titulo){
      resolve — a logo sairia quebrada no PDF. O <base> amarra os caminhos
      relativos ao endereço de onde o app está servido. */
   const base=`<base href="${location.href.replace(/[^/]*$/,'')}">`;
-  const cabeca=base+`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)}</title>${estilos}<style>body{padding:14px;background:#fff}@media print{body{padding:0}}</style>`;
+  /* ⚠️ TRÊS COISAS QUE SÓ APARECEM NO PAPEL, E TODAS SAEM ERRADAS SEM ISTO.
+
+     1. O NAVEGADOR NÃO IMPRIME FUNDO. Por padrão o Chrome descarta `background`
+        ao imprimir, para poupar tinta. O extrato desenha as barras do dia a dia
+        e os pontos de marcação com `background` — e elas simplesmente sumiam,
+        deixando “S1 S2 S3 S4” sozinhos ao lado de um gráfico vazio.
+
+     2. O BOTÃO DE INFORMAÇÃO VIRA A LETRA “i”. Em papel ele não abre nada; o que
+        chegava era “Descritivoi” e “DIA A DIA i”, colados no texto.
+
+     3. `@page{margin:0}` + padding no corpo É O QUE TIRA O CABEÇALHO DO
+        NAVEGADOR. Com margem de página, o Chrome imprime nela a URL e a hora —
+        e como a janela nasce de `document.write`, a URL é “about:blank”. Com
+        margem zero ele suprime o cabeçalho, e a margem real passa a ser nossa. */
+  const cabeca=base+`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(nome)}</title>${estilos}<style>
+    body{padding:14px;background:#fff}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .info-i{display:none!important}
+    @page{margin:0}
+    @media print{body{padding:14mm 12mm}}</style>`;
   const script='<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},500);};window.onafterprint=function(){setTimeout(function(){try{window.close();}catch(e){}},300);};</scr'+'ipt>';
   const doc='<!doctype html><html lang="pt-BR"><head>'+cabeca+'</head><body>'+corpo+script+'</body></html>';
   let w=null; try{ w=window.open('','_blank'); }catch(e){}
