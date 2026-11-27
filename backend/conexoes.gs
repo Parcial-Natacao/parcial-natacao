@@ -596,6 +596,9 @@ function atividade_(item, r) {
     at.min = +v.toFixed(r.min.casas != null ? r.min.casas : 1);
   }
   if (r.fc && item[r.fc] != null) at.fc = Math.round(Number(item[r.fc]));
+  /* Calorias: só entra se a regra `kcal` existir no mapa. O nome do campo do
+     fabricante mora LÁ, na propriedade — aqui só há a nossa palavra. */
+  if (r.kcal && item[r.kcal] != null) at.kcal = Math.round(Number(item[r.kcal]));
   return at;
 }
 

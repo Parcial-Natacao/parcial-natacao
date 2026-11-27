@@ -661,8 +661,8 @@ svg.chart{width:100%;height:auto;display:block}
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js" integrity="sha384-/SBCyt0JELVRyyrOp+QG5CdnpVoAry+uw9hdherLgyZxxePtHjOvQmJU5CHymUhT" crossorigin="anonymous"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js" integrity="sha384-VO0GH7RfQiDC7I0YL1aFi4lktZJcotqgMxtf2twzlJlYaZC9zvwd99hiQQoEUhEI" crossorigin="anonymous"></script>
 
-<script src="./persistencia-segura.js?v=v2.19.15"></script>
-<script src="./inicio-e-grupos.js?v=v2.19.15"></script>
+<script src="./persistencia-segura.js?v=v2.19.16"></script>
+<script src="./inicio-e-grupos.js?v=v2.19.16"></script>
 <script>
 /* =====================================================================
    Meros360 — prancheta digital  ·  iPhone-first
@@ -683,7 +683,7 @@ svg.chart{width:100%;height:auto;display:block}
    `?v=v211` e o sw guardava `?v=v216`; URL diferente é cache diferente, e os
    dois arquivos externos deixaram de vir do cache sem ninguém notar. O teste
    `versao` compara as tags com esta constante. ---------------------------- */
-const VER='v2.19.15';
+const VER='v2.19.16';
 /* O cabeçalho já existe no HTML acima deste script, então dá para preencher
    aqui mesmo. Antes o número era texto fixo ("v67") e ficou desatualizado por
    várias versões — o usuário achava que o app não estava atualizando. */
@@ -2714,7 +2714,7 @@ function nadoKm(nado){ return ((nado||0)/10).toFixed(1); }
    consome. Vazio enquanto a consolidação não rodou — e vazio significa
    “ainda não sei”, nunca “não nadou”. */
 let VOLDIA={};
-const MARCA_NADO={mao:'inf',treino:'tr'};
+const MARCA_NADO={mao:'inf',relogio:'rel'};
 /* ⚠️ UMA FONTE POR DIA, NUNCA A SOMA DE DUAS.
 
    A coluna Nado nasceu lendo só o relógio. Quem escreveu 4.000 m na aba
@@ -2725,15 +2725,25 @@ const MARCA_NADO={mao:'inf',treino:'tr'};
 
    Agora a metragem do dia tem UMA decisão, nesta ordem:
 
-     1. MEDIDO   — o relógio entregou atividade de nado com distância
+     1. ESCRITO  — soma dos treinos daquele dia MARCADOS COMO FEITOS
      2. INFORMADO — a pessoa digitou em “Quanto nadei” (`nadoF==='mao'`)
-     3. ESCRITO  — soma dos treinos daquele dia MARCADOS COMO FEITOS
+     3. RELÓGIO  — atividade de nado com distância
 
-   É a mesma regra que o app já aplica à carga em `diasComCargaInformada`:
-   dado medido tem prioridade sobre dado estimado, sempre. O treino escrito
-   vem por último porque é PRESCRIÇÃO — diz o que estava planejado, não o
-   que aconteceu. E o digitado vence o escrito porque a pessoa está dizendo
-   o que de fato nadou, contra um número que o treino só previa.
+   ⚠️ O RELÓGIO VEM POR ÚLTIMO NA NATAÇÃO, E SÓ NELA. Em corrida e pedalada
+   ele mede bem e é a melhor fonte que existe. Na piscina ele tem um ponto
+   cego conhecido: conta braçada. Perna com prancha, educativo de um braço,
+   nado atado — nada disso ele vê. Um treino escrito de 4.000 m com 800 de
+   perna volta do relógio como 3.200, e o erro é sempre para MENOS.
+
+   Sensor com ponto cego conhecido não pode sobrepor registro completo. O
+   treino escrito — pelo técnico ou pelo próprio atleta — tem o volume
+   inteiro, inclusive o que o pulso não percebeu, e por isso manda.
+
+   Isto NÃO contradiz “dado medido vence estimado” da carga: lá o que o
+   relógio entrega (duração, FC) ele mede inteiro. Aqui, não.
+
+   O relógio continua sendo a fonte quando não há treino escrito nem número
+   digitado — águas abertas, nado avulso —, e ali ele é ótimo.
 
    ⚠️ E NÃO SE SOMA. 4.000 escritos + 3.200 medidos no mesmo dia são a mesma
    natação contada duas vezes — foi o erro da v166, que dobrou volume e carga.
@@ -2745,12 +2755,14 @@ const MARCA_NADO={mao:'inf',treino:'tr'};
    o número aparece, a origem não. */
 function metragemDoDia(data,rec){
   const r=(rec!==undefined)?rec:((S.pro&&S.pro.garmin)||[]).find(x=>x&&x.data===data);
-  if(r&&r.nado!=null){
-    const medido=Array.isArray(r.ativs)&&r.ativs.some(x=>x&&/swim|nata/i.test(x.tipo||'')&&x.dist);
-    return {cent:r.nado,fonte:medido?'relogio':(r.nadoF==='mao'?'mao':null)};
-  }
   const v=(VOLDIA||{})[data];
   if(v>0)return {cent:Math.round(v/100),fonte:'treino'};
+  if(r&&r.nado!=null){
+    if(r.nadoF==='mao')return {cent:r.nado,fonte:'mao'};
+    const medido=Array.isArray(r.ativs)&&r.ativs.map(atividadeEfetiva)
+      .some(x=>x&&!x.fora&&/swim|nata/i.test(x.tipo||'')&&x.dist);
+    return {cent:r.nado,fonte:medido?'relogio':null};
+  }
   return null;
 }
 /* ⚠️ A TABELA DA PRONTIDÃO NÃO É MAIS “OS DIAS DO RELÓGIO”. Um dia com treino
@@ -7313,24 +7325,42 @@ teste('saúde','metragem do dia: uma fonte, nunca a soma de duas',a=>{
     let m=metragemDoDia('2026-11-16',null);
     a.eq(m&&m.cent,40,'treino escrito de 4.000 m enche a coluna — antes mostrava “—” para sempre');
     a.eq(m&&m.fonte,'treino','e se apresenta como escrito');
-    /* o digitado vence o prescrito: a pessoa diz o que nadou, o treino só previa */
+    /* ⚠️ O RELÓGIO NÃO VÊ PERNA. Na piscina ele conta braçada: perna com
+       prancha, educativo de um braço e nado atado não entram, e o erro é sempre
+       para MENOS. Um treino escrito de 4.000 com 800 de perna volta do relógio
+       como 3.200 — sensor com ponto cego conhecido não sobrepõe registro
+       completo. Esta ordem foi invertida na v2.19.16, e invertê-la de volta
+       faria o app mostrar menos metragem do que o atleta de fato nadou. */
+    m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:32,
+      ativs:[{k:'A1',tipo:'natacao_piscina',dist:3200}]});
+    a.eq(m&&m.cent,40,'o treino escrito vence o relógio');
+    a.eq(m&&m.fonte,'treino','e continua se apresentando como escrito');
     m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:32,nadoF:'mao'});
-    a.eq(m&&m.cent,32,'o digitado vence o treino escrito');
-    a.eq(m&&m.fonte,'mao','e diz que foi informado');
-    m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:38,nadoF:'mao',
+    a.eq(m&&m.cent,40,'e também vence o digitado');
+    VOLDIA={};
+    /* sem treino escrito, o digitado manda — e vence o relógio */
+    m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:32,nadoF:'mao',
       ativs:[{k:'A1',tipo:'natacao_piscina',dist:3800}]});
-    a.eq(m&&m.cent,38,'a atividade medida vence o digitado');
-    a.eq(m&&m.fonte,'relogio','e a fonte é o relógio');
+    a.eq(m&&m.cent,32,'o digitado vence o relógio');
+    a.eq(m&&m.fonte,'mao','e diz que foi informado');
+    /* sem treino e sem digitado, o relógio é a fonte: águas abertas vive disso */
+    m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:50,
+      ativs:[{k:'A1',tipo:'natacao_aguas_abertas',dist:5000}]});
+    a.eq(m&&m.cent,50,'sozinho, o relógio vale');
+    a.eq(m&&m.fonte,'relogio','e se apresenta como relógio');
     /* ⚠️ O ERRO DA v166 EM UMA LINHA: 4.000 escritos + 3.800 medidos no mesmo
        dia são a mesma natação contada duas vezes, não 7.800 m. */
+    VOLDIA={'2026-11-16':4000};
+    m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:38,
+      ativs:[{k:'A1',tipo:'natacao_piscina',dist:3800}]});
     a.ok(m.cent!==78,'e NUNCA a soma das duas fontes');
+    VOLDIA={};
     /* sem procedência não se afirma origem: pode ser acúmulo do export antigo */
     m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:45});
     a.eq(m&&m.cent,45,'o número do modelo antigo continua aparecendo');
     a.eq(m&&m.fonte,null,'mas sem alegar de onde veio');
     m=metragemDoDia('2026-11-16',{data:'2026-11-16',nado:12,ativs:[{k:'c',tipo:'RUNNING',dist:9000}]});
     a.eq(m&&m.fonte,null,'atividade que não é nado não torna o número medido');
-    VOLDIA={};
     a.eq(metragemDoDia('2026-11-16',null),null,'dia sem fonte nenhuma não inventa zero');
   } finally { VOLDIA=bkV; S.pro=bkP; }
 });
@@ -7354,6 +7384,26 @@ teste('saúde','remover as medidas do dia leva também a procedência da metrage
      existe mais. É o mesmo motivo por que `hrvF` está na lista. */
   a.ok(CAMPOS_RELOGIO.indexOf('nadoF')>=0,'nadoF sai junto');
   a.ok(CAMPOS_RELOGIO.indexOf('nado')>=0,'ao lado do próprio número');
+});
+teste('pacotes','o relógio não encosta nos tempos dos tiros',a=>{
+  /* ⚠️ É A RAZÃO DE O APP EXISTIR. O relógio não dá tempo de tiro, parcial nem
+     estilo: isso só existe no treino escrito, em `registros[atleta][item]`. Se
+     algum dia a mescla de pacotes passar a escrever ali, o app vira um espelho
+     pior do Garmin Connect. Este teste existe para que essa mudança seja
+     deliberada, e nunca um efeito colateral.
+
+     A metragem segue a mesma lógica, por outro motivo: o relógio conta
+     braçada e não vê perna com prancha nem educativo. */
+  const t={id:'t1',data:'2026-11-26',piscina:'SC25',
+    blocos:[{id:'b1',titulo:'PRINCIPAL',itens:[{id:'i1',rodadas:1,reps:4,dist:50,estilo:'peito',tags:[],vol:200}]}],
+    registros:{A1:{i1:{tempos:[32500,33100,33400,33900]}}},feito:{A1:true}};
+  const antes=JSON.stringify(t.registros);
+  const serie=[{data:'2026-11-26',ativs:[{k:'A1',tipo:'natacao_piscina',dist:3200,min:60,origem:'garmin'}]}];
+  mesclarPacotesGarmin(serie,[{data:'2026-11-26',
+    ativs:[{k:'A1',tipo:'natacao_piscina',dist:3200,min:60,fc:140,origem:'garmin'}]}]);
+  a.eq(JSON.stringify(t.registros),antes,'a mescla do pacote não toca nos registros do treino');
+  a.eq(t.registros.A1.i1.tempos.length,4,'os quatro tempos continuam lá');
+  a.eq(volTreino(t),200,'e a metragem do treino escrito é a do texto, não a do relógio');
 });
 teste('carga','RPE na atividade do relógio vira carga informada',a=>{
   const bk=[S.pro,SESSOES,S.u];
@@ -12443,10 +12493,12 @@ function telaGarmin(){
       return `<table style="margin-top:10px"><thead><tr><th>Data</th>${/* o cabeçalho de coluna numérica também leva `n`: `td.n` alinha à direita e o `th` sem a classe ficava à esquerda, com o rótulo fora de prumo com os números */''}<th class="n">FC rep</th><th class="n">VFC</th><th class="n">Sono</th><th class="n">Nado${info('De onde vem a metragem',
         `O número é de <b>uma</b> fonte, nunca a soma de duas — 4.000 escritos e 3.200 medidos no mesmo dia são a mesma natação contada duas vezes.`
         +`<br><br>A ordem é esta:`
-        +`<br><br><b>1. O relógio</b>, quando entregou atividade de nado com distância. Sem marca na tabela — é a fonte esperada.`
+        +`<br><br><b>1. O treino escrito</b> daquele dia, somando os que você marcou como <b>feitos</b>. Sem marca na tabela — é a fonte esperada.`
         +`<br><br><b>2. O que você digitou</b> em “Quanto nadei”, marcado <b>inf</b> de informado.`
-        +`<br><br><b>3. O treino escrito</b> daquele dia, somando os que você marcou como <b>feitos</b>, marcado <b>tr</b>. Vem por último porque é prescrição: diz o que estava planejado, não o que foi medido.`
-        +`<br><br>Número sem marca e sem atividade do relógio é metragem do export antigo, de antes de o app guardar atividade por atividade. A <b>conferência de volume</b>, em “importar”, diz quais dias são esses — e por que podem estar inflados.`)}</th><th></th></tr></thead><tbody>
+        +`<br><br><b>3. O relógio</b>, marcado <b>rel</b>.`
+        +`<br><br><b>Por que o relógio vem por último — e só na natação.</b> Na piscina ele conta braçada: perna com prancha, educativo de um braço e nado atado não entram. Um treino de 4.000 m com 800 de perna volta como 3.200, e o erro é sempre para menos. O treino escrito tem o volume inteiro. Em corrida e pedalada é o contrário: ali o relógio mede tudo, e é a melhor fonte que existe.`
+        +`<br><br>Sem treino escrito e sem número digitado, o relógio é a fonte — águas abertas e nado avulso vivem disso.`
+        +`<br><br>Número sem marca nenhuma e sem atividade é metragem do export antigo, de antes de o app guardar atividade por atividade. A <b>conferência de volume</b>, em “importar”, diz quais dias são esses.`)}</th><th></th></tr></thead><tbody>
       ${dias.slice(0,12).map(d=>{const x=g.find(r=>r&&r.data===d)||{data:d};
         const m=metragemDoDia(d,g.find(r=>r&&r.data===d)||null);
         const mk=(m&&MARCA_NADO[m.fonte])?` <span class="xs muted">${MARCA_NADO[m.fonte]}</span>`:'';
@@ -12499,7 +12551,7 @@ function telaGarmin(){
       `Os metros do dia alimentam a coluna <b>Nado</b> da Prontidão, ao lado da VFC e do sono — é assim que uma queda de VFC aparece ao lado da semana em que o volume subiu.`
       +`<br><br><b>Na maioria dos dias não é preciso digitar nada aqui.</b> O app conta sozinho os metros do <b>treino escrito</b> que você marcou como feito, e os do <b>relógio</b> quando ele entrega a atividade. Este campo é para o que não está em nenhum dos dois — um nado avulso, uma travessia que ninguém escreveu.`
       +`<br><br>Some tudo o que nadou no dia, em metros. Se nadou duas vezes, some as duas.`
-      +`<br><br>O que você digitar aqui <b>vence o treino escrito</b>: ele é prescrição, e você está dizendo o que de fato nadou. Mas <b>cede ao relógio</b> — se depois chegar a atividade medida daquele dia, ela assume o lugar, porque é medida e não memória.`)}</label>
+      +`<br><br>O que você digitar aqui <b>vence o relógio</b>, mas <b>cede ao treino escrito</b>. O treino tem o volume inteiro, inclusive perna e educativo, que o relógio não vê — então, havendo treino escrito e marcado como feito, é ele que vale.`)}</label>
       <input id="gN" inputmode="numeric" placeholder="ex.: 3000" value="${reloDia.nado!=null?reloDia.nado*100:''}">
       ${/* ⚠️ NÃO PREENCHE O CAMPO COM O QUE JÁ SE SABE, SÓ CONTA. Valor pré-posto
            volta gravado como se tivesse sido digitado (`nadoF:'mao'`) e a
@@ -12507,7 +12559,7 @@ function telaGarmin(){
       ${(()=>{const m=metragemDoDia(gDia,reloDia.data?reloDia:null);
         if(!m||!m.cent||m.fonte==='mao')return '';
         const de=m.fonte==='treino'?' do treino escrito que você marcou como feito'
-          :(m.fonte==='relogio'?' medidos pelo relógio':'');
+          :(m.fonte==='relogio'?' medidos pelo relógio (que não conta perna nem educativo)':'');
         return `<div class="xs muted" style="margin-top:4px">${brData(gDia)} já conta <b>${nadoKm(m.cent)} km</b>${de} — preencha só se o número foi outro.</div>`;})()}
       </div>
     ${S.mostrarFC?'':`<button class="sm ghost full" style="margin-top:8px" onclick="S.mostrarFC=true;render()">Informar FC de repouso</button>`}
